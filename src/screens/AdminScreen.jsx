@@ -46,7 +46,6 @@ export default function AdminScreen({ onBack }) {
   }
 
   async function handleDeleteLog(id) {
-    if (!confirm('この記録を削除しますか？')) return
     await deleteLog(id)
     loadLogs()
   }
@@ -117,12 +116,28 @@ function LogsTab({
 }) {
   const [editingLog, setEditingLog] = useState(null)
   const [editTime, setEditTime] = useState('')
+  const [modalStep, setModalStep] = useState('edit') // 'edit' | 'confirmSave' | 'confirmDelete'
 
-  async function handleSaveTime() {
-    if (!editTime || !editingLog) return
-    await updateLogTime(editingLog.id, editTime)
+  function openModal(log) {
+    setEditingLog(log)
+    setEditTime(log.time ? log.time.substring(0, 5) : '')
+    setModalStep('edit')
+  }
+
+  function closeModal() {
     setEditingLog(null)
+    setModalStep('edit')
+  }
+
+  async function handleConfirmSave() {
+    await updateLogTime(editingLog.id, editTime)
+    closeModal()
     onRefreshLogs()
+  }
+
+  async function handleConfirmDelete() {
+    await onDeleteLog(editingLog.id)
+    closeModal()
   }
 
   return (
@@ -181,7 +196,7 @@ function LogsTab({
           <div
             key={log.id}
             className={styles.logItem}
-            onClick={() => { setEditingLog(log); setEditTime(log.time ? log.time.substring(0, 5) : '') }}
+            onClick={() => openModal(log)}
           >
             <div
               className={styles.workBadge}
@@ -193,34 +208,69 @@ function LogsTab({
               <div className={styles.logUser}>{userMap[log.user_id] || log.user_id}</div>
               <div className={styles.logTime}>{log.date} {log.time}</div>
             </div>
-            <button
-              className={styles.deleteBtn}
-              onClick={e => { e.stopPropagation(); onDeleteLog(log.id) }}
-              title="削除"
-            >
-              ✕
-            </button>
           </div>
         ))}
       </div>
 
-      {/* Time edit modal */}
+      {/* Edit / confirm modal */}
       {editingLog && (
-        <div className={styles.modalOverlay} onClick={() => setEditingLog(null)}>
+        <div className={styles.modalOverlay} onClick={closeModal}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
-            <h3>時間を変更</h3>
-            <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
-            <p className={styles.modalLabel}>{editingLog.date}</p>
-            <input
-              type="time"
-              value={editTime}
-              onChange={e => setEditTime(e.target.value)}
-              className={styles.timeInput}
-            />
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleSaveTime}>保存</button>
-              <button className={styles.cancelBtn} onClick={() => setEditingLog(null)}>キャンセル</button>
-            </div>
+
+            {modalStep === 'edit' && (
+              <>
+                <h3>記録を編集</h3>
+                <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
+                <p className={styles.modalLabel}>{editingLog.date}</p>
+                <input
+                  type="time"
+                  value={editTime}
+                  onChange={e => setEditTime(e.target.value)}
+                  className={styles.timeInput}
+                />
+                <div className={styles.modalActions}>
+                  <button className={styles.saveBtn} onClick={() => setModalStep('confirmSave')}>時間を変更</button>
+                  <button className={styles.cancelBtn} onClick={closeModal}>キャンセル</button>
+                </div>
+                <hr className={styles.modalDivider} />
+                <button className={styles.deleteTriggerBtn} onClick={() => setModalStep('confirmDelete')}>
+                  この記録を削除する
+                </button>
+              </>
+            )}
+
+            {modalStep === 'confirmSave' && (
+              <>
+                <h3>時間変更の確認</h3>
+                <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
+                <p className={styles.modalLabel}>{editingLog.date}</p>
+                <p className={styles.confirmMsg}>
+                  <span className={styles.oldTime}>{editingLog.time ? editingLog.time.substring(0, 5) : '-'}</span>
+                  {' → '}
+                  <span className={styles.newTime}>{editTime}</span>
+                  {' に変更します'}
+                </p>
+                <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+                <div className={styles.modalActions}>
+                  <button className={styles.saveBtn} onClick={handleConfirmSave}>確定する</button>
+                  <button className={styles.cancelBtn} onClick={() => setModalStep('edit')}>戻る</button>
+                </div>
+              </>
+            )}
+
+            {modalStep === 'confirmDelete' && (
+              <>
+                <h3>削除の確認</h3>
+                <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
+                <p className={styles.modalLabel}>{editingLog.date} {editingLog.time}</p>
+                <p className={styles.confirmWarn}>この記録を完全に削除します。<br />この操作は元に戻せません。</p>
+                <div className={styles.modalActions}>
+                  <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
+                  <button className={styles.cancelBtn} onClick={() => setModalStep('edit')}>戻る</button>
+                </div>
+              </>
+            )}
+
           </div>
         </div>
       )}

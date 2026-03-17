@@ -91,12 +91,14 @@ export async function isCheckedIn(userId) {
 }
 
 // Fetch all logs with optional filters
-export async function getLogs({ date, userId } = {}) {
+export async function getLogs({ date, dateFrom, dateTo, userId } = {}) {
   let query = db.logs.orderBy('timestamp').reverse()
   const results = await query.toArray()
 
   return results.filter(log => {
     if (date && log.date !== date) return false
+    if (dateFrom && log.date < dateFrom) return false
+    if (dateTo && log.date > dateTo) return false
     if (userId && log.user_id !== userId) return false
     return true
   })
@@ -137,8 +139,8 @@ export async function updateLogTime(id, timeStr) {
 }
 
 // Export logs as CSV string
-export async function exportCSV({ date, userId } = {}) {
-  const logs = await getLogs({ date, userId })
+export async function exportCSV({ date, dateFrom, dateTo, userId } = {}) {
+  const logs = await getLogs({ date, dateFrom, dateTo, userId })
   const users = await getUsers()
   const userMap = Object.fromEntries(users.map(u => [u.id, u.name]))
 

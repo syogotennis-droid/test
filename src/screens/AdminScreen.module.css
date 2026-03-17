@@ -386,3 +386,60 @@
   gap: 8px;
   margin-top: 4px;
 }
+
+.modalDivider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 4px 0;
+}
+
+.deleteTriggerBtn {
+  background: none;
+  border: none;
+  color: #d93025;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 6px 0;
+  text-align: center;
+  width: 100%;
+}
+
+.deleteTriggerBtn:hover {
+  text-decoration: underline;
+}
+
+.confirmMsg {
+  font-size: 1rem;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.oldTime {
+  color: var(--color-subtext);
+  text-decoration: line-through;
+}
+
+.newTime {
+  font-weight: bold;
+  color: var(--color-office);
+  font-size: 1.1rem;
+}
+
+.confirmWarn {
+  font-size: 0.82rem;
+  color: #d93025;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.realDeleteBtn {
+  background: #d93025;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: bold;
+  flex: 1;
+}
