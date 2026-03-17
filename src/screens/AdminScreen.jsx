@@ -139,7 +139,8 @@ function LogsTab({
     if (mode === 'all') {
       onFilterDates('', '')
     } else if (mode === 'day') {
-      onFilterDates(navDate, navDate)
+      setNavDate(today)
+      onFilterDates(today, today)
     } else if (mode === 'month') {
       const d = new Date()
       const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
@@ -189,7 +190,7 @@ function LogsTab({
       <div className={styles.dateFilterBar}>
         <div className={styles.datePresets}>
           <button className={[styles.presetBtn, dateMode === 'all' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('all')}>全期間</button>
-          <button className={[styles.presetBtn, dateMode === 'day' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('day')}>1日</button>
+          <button className={[styles.presetBtn, dateMode === 'day' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('day')}>今日</button>
           <button className={[styles.presetBtn, dateMode === 'month' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('month')}>今月</button>
           <button className={[styles.presetBtn, dateMode === 'custom' ? styles.activePreset : ''].join(' ')} onClick={() => setDateMode('custom')}>期間指定</button>
         </div>
@@ -437,8 +438,7 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
 
 function UsersTab({ users, today, onRefresh }) {
   const [statuses, setStatuses] = useState({})
-  const [editId, setEditId] = useState(null)
-  const [newName, setNewName] = useState('')
+  const [editingUser, setEditingUser] = useState(null)
   const [adding, setAdding] = useState(false)
   const [addId, setAddId] = useState('')
   const [addName, setAddName] = useState('')
@@ -448,21 +448,6 @@ function UsersTab({ users, today, onRefresh }) {
   async function loadStatuses() {
     const s = await getTodayStatuses()
     setStatuses(s)
-  }
-
-  async function handleToggleStatus(user) {
-    const isIn = statuses[user.id]
-    await saveLog({ userId: user.id, workType: '', logType: isIn ? '退勤' : '出勤' })
-    await loadStatuses()
-    onRefresh()
-  }
-
-  async function handleSaveName(userId) {
-    if (!newName.trim()) return
-    await upsertUser({ id: userId, name: newName.trim() })
-    setEditId(null)
-    setNewName('')
-    onRefresh()
   }
 
   async function handleDelete(userId) {
@@ -477,6 +462,12 @@ function UsersTab({ users, today, onRefresh }) {
     setAdding(false)
     setAddId('')
     setAddName('')
+    onRefresh()
+  }
+
+  async function handleModalSaved() {
+    setEditingUser(null)
+    await loadStatuses()
     onRefresh()
   }
 
@@ -501,57 +492,127 @@ function UsersTab({ users, today, onRefresh }) {
       <div className={styles.list}>
         {users.map(user => {
           const isIn = statuses[user.id] === true
-          const hasRecord = user.id in statuses
           return (
             <div key={user.id} className={styles.userItem}>
               <div className={styles.userAvatar}>👤</div>
               <div className={styles.logInfo}>
-                {editId === user.id ? (
-                  <input
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleSaveName(user.id)}
-                    className={styles.editInput}
-                    autoFocus
-                  />
-                ) : (
-                  <div className={styles.logUser}>{user.name}</div>
-                )}
+                <div className={styles.logUser}>{user.name}</div>
                 <div className={styles.logTime}>{user.id}</div>
               </div>
 
-              {/* Today's status + toggle */}
-              {editId !== user.id && (
-                <div className={styles.statusArea}>
-                  <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                    {hasRecord ? (isIn ? '出勤中' : '退勤済') : '未打刻'}
-                  </span>
-                  <button
-                    className={[styles.toggleBtn, isIn ? styles.toggleBtnOut : styles.toggleBtnIn].join(' ')}
-                    onClick={() => handleToggleStatus(user)}
-                    title={isIn ? '退勤させる' : '出勤させる'}
-                  >
-                    {isIn ? '退勤↑' : '出勤↓'}
-                  </button>
-                </div>
-              )}
+              {/* Today's status — display only */}
+              <div className={styles.statusArea}>
+                <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
+                  {isIn ? '出勤中' : '退勤中'}
+                </span>
+              </div>
 
               <div className={styles.userActions}>
-                {editId === user.id ? (
-                  <>
-                    <button className={styles.saveBtn} onClick={() => handleSaveName(user.id)}>保存</button>
-                    <button className={styles.cancelBtn} onClick={() => setEditId(null)}>✕</button>
-                  </>
-                ) : (
-                  <>
-                    <button className={styles.editBtn} onClick={() => { setEditId(user.id); setNewName(user.name) }}>編集</button>
-                    <button className={styles.deleteBtn} onClick={() => handleDelete(user.id)}>✕</button>
-                  </>
-                )}
+                <button className={styles.editBtn} onClick={() => setEditingUser(user)}>編集</button>
+                <button className={styles.deleteBtn} onClick={() => handleDelete(user.id)}>✕</button>
               </div>
             </div>
           )
         })}
+      </div>
+
+      {editingUser && (
+        <UserEditModal
+          user={editingUser}
+          isIn={statuses[editingUser.id] === true}
+          onClose={() => setEditingUser(null)}
+          onSaved={handleModalSaved}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── UserEditModal ────────────────────────────────────────────────────────────
+
+function UserEditModal({ user, isIn, onClose, onSaved }) {
+  const [step, setStep] = useState('main') // 'main' | 'confirmStatus'
+  const [name, setName] = useState(user.name)
+
+  async function handleSaveName() {
+    if (!name.trim()) return
+    await upsertUser({ id: user.id, name: name.trim() })
+    onSaved()
+  }
+
+  async function handleConfirmStatus() {
+    await saveLog({ userId: user.id, workType: '', logType: isIn ? '退勤' : '出勤' })
+    onSaved()
+  }
+
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        {step === 'main' && (
+          <>
+            <h3>{user.name} の編集</h3>
+
+            {/* Name edit */}
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>氏名</label>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+                className={styles.filterInput}
+                autoFocus
+              />
+            </div>
+            <div className={styles.modalActions}>
+              <button
+                className={styles.saveBtn}
+                onClick={handleSaveName}
+                disabled={!name.trim() || name.trim() === user.name}
+              >
+                名前を保存
+              </button>
+            </div>
+
+            <hr className={styles.modalDivider} />
+
+            {/* Status toggle */}
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>本日の出勤状態</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
+                  {isIn ? '出勤中' : '退勤中'}
+                </span>
+                <button
+                  className={styles.deleteTriggerBtn}
+                  onClick={() => setStep('confirmStatus')}
+                >
+                  {isIn ? '退勤中に切り替える' : '出勤中に切り替える'}
+                </button>
+              </div>
+            </div>
+
+            <hr className={styles.modalDivider} />
+            <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>
+          </>
+        )}
+
+        {step === 'confirmStatus' && (
+          <>
+            <h3>状態変更の確認</h3>
+            <p className={styles.modalLabel}>{user.name}</p>
+            <p className={styles.confirmMsg}>
+              <span className={styles.oldTime}>{isIn ? '出勤中' : '退勤中'}</span>
+              {' → '}
+              <span className={styles.newTime}>{isIn ? '退勤中' : '出勤中'}</span>
+              {' に変更します'}
+            </p>
+            <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleConfirmStatus}>確定する</button>
+              <button className={styles.cancelBtn} onClick={() => setStep('main')}>戻る</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
