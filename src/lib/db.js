@@ -173,26 +173,43 @@ export async function updateLogTime(id, timeStr) {
   })
 }
 
-// Export logs as CSV string
-export async function exportCSV({ date, dateFrom, dateTo, userId } = {}) {
-  const logs = await getLogs({ date, dateFrom, dateTo, userId })
+// Export logs as XLSX (one sheet per user)
+export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
+  const XLSX = (await import('xlsx')).default || (await import('xlsx'))
+  const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
   const userMap = Object.fromEntries(users.map(u => [u.id, u.name]))
 
-  const header = 'ID,ユーザーID,氏名,種別,作業内容,日付,時刻'
-  const rows = logs.map(log =>
-    [
+  const wb = XLSX.utils.book_new()
+  const targetUsers = userId ? users.filter(u => u.id === userId) : users
+
+  for (const user of targetUsers) {
+    const userLogs = logs
+      .filter(l => l.user_id === user.id)
+      .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
+
+    if (userLogs.length === 0 && !userId) continue
+
+    const header = ['ID', 'ユーザーID', '氏名', '種別', '作業内容', '日付', '時刻']
+    const rows = userLogs.map(log => [
       log.id,
       log.user_id,
       userMap[log.user_id] || '',
       log.log_type || '',
-      log.work_type,
+      log.work_type || '',
       log.date,
       log.time || ''
-    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-  )
+    ])
 
-  return [header, ...rows].join('\n')
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
+  }
+
+  if (wb.SheetNames.length === 0) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['データなし']]), 'データなし')
+  }
+
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
 }
 
 export default db

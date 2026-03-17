@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
-  getLogs, getUsers, exportCSV, deleteLog, upsertUser, deleteUser,
+  getLogs, getUsers, exportXLSX, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
@@ -13,15 +13,6 @@ function toDateStr(d) {
   return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
 }
 
-function downloadCsv(csv, filename) {
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
 
 export default function AdminScreen({ onBack }) {
   const [tab, setTab] = useState('logs')
@@ -56,19 +47,20 @@ export default function AdminScreen({ onBack }) {
       ? (filterDateFrom === filterDateTo ? filterDateFrom : `${filterDateFrom}_${filterDateTo}`)
       : today
 
-    if (filterUser) {
-      const csv = await exportCSV({ dateFrom: filterDateFrom || undefined, dateTo: filterDateTo || undefined, userId: filterUser })
-      const userName = users.find(u => u.id === filterUser)?.name || filterUser
-      downloadCsv(csv, `勤怠記録_${userName}_${suffix}.csv`)
-    } else {
-      for (const user of users) {
-        const csv = await exportCSV({ dateFrom: filterDateFrom || undefined, dateTo: filterDateTo || undefined, userId: user.id })
-        if (csv.trim().split('\n').length > 1) {
-          downloadCsv(csv, `勤怠記録_${user.name}_${suffix}.csv`)
-          await new Promise(r => setTimeout(r, 150))
-        }
-      }
-    }
+    const buf = await exportXLSX({
+      dateFrom: filterDateFrom || undefined,
+      dateTo: filterDateTo || undefined,
+      userId: filterUser || undefined
+    })
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filterUser
+      ? `勤怠記録_${users.find(u => u.id === filterUser)?.name || filterUser}_${suffix}.xlsx`
+      : `勤怠記録_${suffix}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleDeleteLog(id) {
@@ -228,7 +220,7 @@ function LogsTab({
         <span className={styles.count}>{logs.length}件</span>
         <div className={styles.summaryActions}>
           <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
-          <button className={styles.exportBtn} onClick={onExport}>📥 CSV</button>
+          <button className={styles.exportBtn} onClick={onExport}>📥 Excel</button>
         </div>
       </div>
 
