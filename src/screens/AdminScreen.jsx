@@ -608,6 +608,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                 </span>
                 <button
                   className={styles.toggleTriggerBtn}
+                  style={{ color: isIn ? '#1a73e8' : '#2e7d32' }}
                   onClick={() => setStep('confirmStatus')}
                 >
                   {isIn ? '退勤中に切り替える' : '出勤中に切り替える'}
