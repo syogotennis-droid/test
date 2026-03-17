@@ -124,6 +124,41 @@ export async function deleteLog(id) {
   return db.logs.delete(id)
 }
 
+// Get today's check-in status for all users { userId: true/false }
+export async function getTodayStatuses() {
+  const today = new Date().toLocaleDateString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).replace(/\//g, '-')
+  const logs = await db.logs.where('date').equals(today).toArray()
+  const groups = {}
+  logs.forEach(l => {
+    if (!groups[l.user_id]) groups[l.user_id] = { ins: 0, outs: 0 }
+    if (l.log_type === '出勤') groups[l.user_id].ins++
+    else if (l.log_type === '退勤') groups[l.user_id].outs++
+  })
+  const result = {}
+  for (const [uid, g] of Object.entries(groups)) {
+    result[uid] = g.ins > g.outs
+  }
+  return result
+}
+
+// Manually create a log entry with specified date/time
+export async function saveLogManual({ userId, workType, logType, date, time }) {
+  const [y, mo, d] = date.split('-').map(Number)
+  const [h, m] = time.split(':').map(Number)
+  const dt = new Date(y, mo - 1, d, h, m, 0)
+  await db.logs.add({
+    user_id: userId,
+    work_type: workType || '',
+    log_type: logType,
+    timestamp: dt.toISOString(),
+    date,
+    time: time + ':00',
+    synced: 0
+  })
+}
+
 // Update the time of a log entry
 export async function updateLogTime(id, timeStr) {
   // timeStr is "HH:MM"

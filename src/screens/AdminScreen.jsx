@@ -1,48 +1,74 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, getUsers, exportCSV, deleteLog, upsertUser, deleteUser, updateLogTime } from '../lib/db'
+import {
+  getLogs, getUsers, exportCSV, deleteLog, upsertUser, deleteUser,
+  updateLogTime, saveLog, saveLogManual, getTodayStatuses
+} from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
 
-const LOG_TYPE_COLOR = {
-  '出勤': '#2e7d32',
-  '退勤': '#1a73e8'
+const LOG_TYPE_COLOR = { '出勤': '#2e7d32', '退勤': '#1a73e8' }
+const WORK_TYPES = ['事務', '清掃', '現場']
+
+function toDateStr(d) {
+  return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
+}
+
+function downloadCsv(csv, filename) {
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function AdminScreen({ onBack }) {
-  const [tab, setTab] = useState('logs') // 'logs' | 'users' | 'qr'
+  const [tab, setTab] = useState('logs')
   const [logs, setLogs] = useState([])
   const [users, setUsers] = useState([])
-  const [filterDate, setFilterDate] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [filterUser, setFilterUser] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const today = new Date().toLocaleDateString('ja-JP', {
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  }).replace(/\//g, '-')
+  const today = toDateStr(new Date())
 
   const loadLogs = useCallback(async () => {
     setLoading(true)
     const [logData, userData] = await Promise.all([
-      getLogs({ date: filterDate || undefined, userId: filterUser || undefined }),
+      getLogs({
+        dateFrom: filterDateFrom || undefined,
+        dateTo: filterDateTo || undefined,
+        userId: filterUser || undefined
+      }),
       getUsers()
     ])
     setLogs(logData)
     setUsers(userData)
     setLoading(false)
-  }, [filterDate, filterUser])
+  }, [filterDateFrom, filterDateTo, filterUser])
 
   useEffect(() => { loadLogs() }, [loadLogs])
 
   async function handleExport() {
-    const csv = await exportCSV({ date: filterDate || undefined, userId: filterUser || undefined })
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    const dateSuffix = filterDate || today
-    a.download = `勤怠記録_${dateSuffix}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const suffix = filterDateFrom
+      ? (filterDateFrom === filterDateTo ? filterDateFrom : `${filterDateFrom}_${filterDateTo}`)
+      : today
+
+    if (filterUser) {
+      const csv = await exportCSV({ dateFrom: filterDateFrom || undefined, dateTo: filterDateTo || undefined, userId: filterUser })
+      const userName = users.find(u => u.id === filterUser)?.name || filterUser
+      downloadCsv(csv, `勤怠記録_${userName}_${suffix}.csv`)
+    } else {
+      for (const user of users) {
+        const csv = await exportCSV({ dateFrom: filterDateFrom || undefined, dateTo: filterDateTo || undefined, userId: user.id })
+        if (csv.trim().split('\n').length > 1) {
+          downloadCsv(csv, `勤怠記録_${user.name}_${suffix}.csv`)
+          await new Promise(r => setTimeout(r, 150))
+        }
+      }
+    }
   }
 
   async function handleDeleteLog(id) {
@@ -60,42 +86,25 @@ export default function AdminScreen({ onBack }) {
         <div />
       </div>
 
-      {/* Tabs */}
       <div className={styles.tabs}>
-        <button
-          className={[styles.tab, tab === 'logs' ? styles.activeTab : ''].join(' ')}
-          onClick={() => setTab('logs')}
-        >
-          記録一覧
-        </button>
-        <button
-          className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')}
-          onClick={() => setTab('users')}
-        >
-          ユーザー管理
-        </button>
-        <button
-          className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')}
-          onClick={() => setTab('qr')}
-        >
-          QR印刷
-        </button>
+        <button className={[styles.tab, tab === 'logs' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('logs')}>記録一覧</button>
+        <button className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('users')}>ユーザー管理</button>
+        <button className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('qr')}>QR印刷</button>
       </div>
 
-      {tab === 'qr' && (
-        <QRGeneratorScreen onBack={() => setTab('logs')} />
-      )}
+      {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('logs')} />}
 
       {tab === 'logs' && (
         <LogsTab
           logs={logs}
           users={users}
           userMap={userMap}
-          filterDate={filterDate}
+          filterDateFrom={filterDateFrom}
+          filterDateTo={filterDateTo}
           filterUser={filterUser}
           loading={loading}
           today={today}
-          onFilterDate={setFilterDate}
+          onFilterDates={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
           onFilterUser={setFilterUser}
           onExport={handleExport}
           onDeleteLog={handleDeleteLog}
@@ -104,19 +113,53 @@ export default function AdminScreen({ onBack }) {
       )}
 
       {tab === 'users' && (
-        <UsersTab users={users} onRefresh={loadLogs} />
+        <UsersTab users={users} today={today} onRefresh={loadLogs} />
       )}
     </div>
   )
 }
 
+// ─── LogsTab ──────────────────────────────────────────────────────────────────
+
 function LogsTab({
-  logs, users, userMap, filterDate, filterUser, loading,
-  today, onFilterDate, onFilterUser, onExport, onDeleteLog, onRefreshLogs
+  logs, users, userMap, filterDateFrom, filterDateTo, filterUser, loading,
+  today, onFilterDates, onFilterUser, onExport, onDeleteLog, onRefreshLogs
 }) {
+  const [dateMode, setDateMode] = useState('all') // 'all' | 'day' | 'month' | 'custom'
+  const [navDate, setNavDate] = useState(today)
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [editingLog, setEditingLog] = useState(null)
   const [editTime, setEditTime] = useState('')
-  const [modalStep, setModalStep] = useState('edit') // 'edit' | 'confirmSave' | 'confirmDelete'
+  const [modalStep, setModalStep] = useState('edit')
+  const [showCreate, setShowCreate] = useState(false)
+
+  function applyMode(mode) {
+    setDateMode(mode)
+    if (mode === 'all') {
+      onFilterDates('', '')
+    } else if (mode === 'day') {
+      onFilterDates(navDate, navDate)
+    } else if (mode === 'month') {
+      const d = new Date()
+      const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      onFilterDates(from, today)
+    }
+  }
+
+  function navDay(delta) {
+    const d = new Date(navDate)
+    d.setDate(d.getDate() + delta)
+    const nd = toDateStr(d)
+    setNavDate(nd)
+    onFilterDates(nd, nd)
+  }
+
+  function applyCustom() {
+    const from = customFrom || customTo
+    const to = customTo || customFrom
+    if (from) onFilterDates(from, to)
+  }
 
   function openModal(log) {
     setEditingLog(log)
@@ -143,36 +186,37 @@ function LogsTab({
   return (
     <div className={styles.content}>
       {/* Date filter */}
-      <div className={styles.filters}>
-        <div className={styles.filterGroup}>
-          <label>日付</label>
-          <input
-            type="date"
-            value={filterDate}
-            max={today}
-            onChange={e => onFilterDate(e.target.value)}
-            className={styles.filterInput}
-          />
+      <div className={styles.dateFilterBar}>
+        <div className={styles.datePresets}>
+          <button className={[styles.presetBtn, dateMode === 'all' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('all')}>全期間</button>
+          <button className={[styles.presetBtn, dateMode === 'day' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('day')}>1日</button>
+          <button className={[styles.presetBtn, dateMode === 'month' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('month')}>今月</button>
+          <button className={[styles.presetBtn, dateMode === 'custom' ? styles.activePreset : ''].join(' ')} onClick={() => setDateMode('custom')}>期間指定</button>
         </div>
-        <button className={styles.clearBtn} onClick={() => { onFilterDate(''); onFilterUser('') }}>
-          クリア
-        </button>
+
+        {dateMode === 'day' && (
+          <div className={styles.dayNav}>
+            <button className={styles.navBtn} onClick={() => navDay(-1)}>◀</button>
+            <span className={styles.navDate}>{navDate}</span>
+            <button className={styles.navBtn} onClick={() => navDay(1)} disabled={navDate >= today}>▶</button>
+          </div>
+        )}
+
+        {dateMode === 'custom' && (
+          <div className={styles.customRange}>
+            <input type="date" value={customFrom} max={today} onChange={e => setCustomFrom(e.target.value)} className={styles.filterInput} />
+            <span className={styles.rangeSep}>〜</span>
+            <input type="date" value={customTo} max={today} min={customFrom} onChange={e => setCustomTo(e.target.value)} className={styles.filterInput} />
+            <button className={styles.applyBtn} onClick={applyCustom}>適用</button>
+          </div>
+        )}
       </div>
 
       {/* User tabs */}
       <div className={styles.userTabs}>
-        <button
-          className={[styles.userTab, filterUser === '' ? styles.activeUserTab : ''].join(' ')}
-          onClick={() => onFilterUser('')}
-        >
-          全員
-        </button>
+        <button className={[styles.userTab, filterUser === '' ? styles.activeUserTab : ''].join(' ')} onClick={() => onFilterUser('')}>全員</button>
         {users.map(u => (
-          <button
-            key={u.id}
-            className={[styles.userTab, filterUser === u.id ? styles.activeUserTab : ''].join(' ')}
-            onClick={() => onFilterUser(u.id)}
-          >
+          <button key={u.id} className={[styles.userTab, filterUser === u.id ? styles.activeUserTab : ''].join(' ')} onClick={() => onFilterUser(u.id)}>
             {u.name}
           </button>
         ))}
@@ -181,27 +225,19 @@ function LogsTab({
       {/* Summary */}
       <div className={styles.summary}>
         <span className={styles.count}>{logs.length}件</span>
-        <button className={styles.exportBtn} onClick={onExport}>
-          📥 CSVエクスポート
-        </button>
+        <div className={styles.summaryActions}>
+          <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
+          <button className={styles.exportBtn} onClick={onExport}>📥 CSV</button>
+        </div>
       </div>
 
       {/* Log list */}
       <div className={styles.list}>
         {loading && <div className={styles.empty}>読込中...</div>}
-        {!loading && logs.length === 0 && (
-          <div className={styles.empty}>記録がありません</div>
-        )}
+        {!loading && logs.length === 0 && <div className={styles.empty}>記録がありません</div>}
         {!loading && logs.map(log => (
-          <div
-            key={log.id}
-            className={styles.logItem}
-            onClick={() => openModal(log)}
-          >
-            <div
-              className={styles.workBadge}
-              style={{ background: LOG_TYPE_COLOR[log.log_type] || '#888' }}
-            >
+          <div key={log.id} className={styles.logItem} onClick={() => openModal(log)}>
+            <div className={styles.workBadge} style={{ background: LOG_TYPE_COLOR[log.log_type] || '#888' }}>
               {log.log_type || '-'}
             </div>
             <div className={styles.logInfo}>
@@ -216,29 +252,20 @@ function LogsTab({
       {editingLog && (
         <div className={styles.modalOverlay} onClick={closeModal}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
-
             {modalStep === 'edit' && (
               <>
                 <h3>記録を編集</h3>
                 <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
                 <p className={styles.modalLabel}>{editingLog.date}</p>
-                <input
-                  type="time"
-                  value={editTime}
-                  onChange={e => setEditTime(e.target.value)}
-                  className={styles.timeInput}
-                />
+                <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className={styles.timeInput} />
                 <div className={styles.modalActions}>
                   <button className={styles.saveBtn} onClick={() => setModalStep('confirmSave')}>時間を変更</button>
                   <button className={styles.cancelBtn} onClick={closeModal}>キャンセル</button>
                 </div>
                 <hr className={styles.modalDivider} />
-                <button className={styles.deleteTriggerBtn} onClick={() => setModalStep('confirmDelete')}>
-                  この記録を削除する
-                </button>
+                <button className={styles.deleteTriggerBtn} onClick={() => setModalStep('confirmDelete')}>この記録を削除する</button>
               </>
             )}
-
             {modalStep === 'confirmSave' && (
               <>
                 <h3>時間変更の確認</h3>
@@ -257,7 +284,6 @@ function LogsTab({
                 </div>
               </>
             )}
-
             {modalStep === 'confirmDelete' && (
               <>
                 <h3>削除の確認</h3>
@@ -270,20 +296,166 @@ function LogsTab({
                 </div>
               </>
             )}
-
           </div>
         </div>
+      )}
+
+      {/* Manual create modal */}
+      {showCreate && (
+        <CreateLogModal
+          users={users}
+          today={today}
+          onClose={() => setShowCreate(false)}
+          onSaved={() => { setShowCreate(false); onRefreshLogs() }}
+        />
       )}
     </div>
   )
 }
 
-function UsersTab({ users, onRefresh }) {
+// ─── CreateLogModal ───────────────────────────────────────────────────────────
+
+function CreateLogModal({ users, today, onClose, onSaved }) {
+  const nowTime = () => {
+    const n = new Date()
+    return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`
+  }
+
+  const [step, setStep] = useState('form') // 'form' | 'confirm'
+  const [userId, setUserId] = useState(users[0]?.id || '')
+  const [logType, setLogType] = useState('出勤')
+  const [date, setDate] = useState(today)
+  const [time, setTime] = useState(nowTime)
+  const [workTypes, setWorkTypes] = useState([])
+
+  function toggleWork(t) {
+    setWorkTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+  }
+
+  async function handleConfirm() {
+    await saveLogManual({
+      userId,
+      logType,
+      date,
+      time,
+      workType: workTypes.join(',')
+    })
+    onSaved()
+  }
+
+  const userName = users.find(u => u.id === userId)?.name || userId
+
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        {step === 'form' && (
+          <>
+            <h3>手動記録作成</h3>
+
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>担当者</label>
+              <select value={userId} onChange={e => setUserId(e.target.value)} className={styles.filterInput}>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>種別</label>
+              <div className={styles.typeToggle}>
+                <button
+                  className={[styles.typeBtn, logType === '出勤' ? styles.typeBtnActive : ''].join(' ')}
+                  style={logType === '出勤' ? { background: LOG_TYPE_COLOR['出勤'] } : {}}
+                  onClick={() => setLogType('出勤')}
+                >出勤</button>
+                <button
+                  className={[styles.typeBtn, logType === '退勤' ? styles.typeBtnActive : ''].join(' ')}
+                  style={logType === '退勤' ? { background: LOG_TYPE_COLOR['退勤'] } : {}}
+                  onClick={() => setLogType('退勤')}
+                >退勤</button>
+              </div>
+            </div>
+
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>日付</label>
+              <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)} className={styles.filterInput} />
+            </div>
+
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>時刻</label>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} className={styles.timeInput} />
+            </div>
+
+            {logType === '退勤' && (
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>作業内容</label>
+                <div className={styles.workTypeRow}>
+                  {WORK_TYPES.map(t => (
+                    <button
+                      key={t}
+                      className={[styles.workTypeBtn, workTypes.includes(t) ? styles.workTypeBtnActive : ''].join(' ')}
+                      onClick={() => toggleWork(t)}
+                    >{t}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')}>確認へ</button>
+              <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+            </div>
+          </>
+        )}
+
+        {step === 'confirm' && (
+          <>
+            <h3>作成内容の確認</h3>
+            <div className={styles.confirmTable}>
+              <div className={styles.confirmRow}><span>担当者</span><strong>{userName}</strong></div>
+              <div className={styles.confirmRow}><span>種別</span>
+                <strong style={{ color: LOG_TYPE_COLOR[logType] }}>{logType}</strong>
+              </div>
+              <div className={styles.confirmRow}><span>日付</span><strong>{date}</strong></div>
+              <div className={styles.confirmRow}><span>時刻</span><strong>{time}</strong></div>
+              {workTypes.length > 0 && (
+                <div className={styles.confirmRow}><span>作業</span><strong>{workTypes.join(' / ')}</strong></div>
+              )}
+            </div>
+            <p className={styles.confirmWarn}>この内容で記録を作成します</p>
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleConfirm}>作成する</button>
+              <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── UsersTab ─────────────────────────────────────────────────────────────────
+
+function UsersTab({ users, today, onRefresh }) {
+  const [statuses, setStatuses] = useState({})
   const [editId, setEditId] = useState(null)
   const [newName, setNewName] = useState('')
   const [adding, setAdding] = useState(false)
   const [addId, setAddId] = useState('')
   const [addName, setAddName] = useState('')
+
+  useEffect(() => { loadStatuses() }, [])
+
+  async function loadStatuses() {
+    const s = await getTodayStatuses()
+    setStatuses(s)
+  }
+
+  async function handleToggleStatus(user) {
+    const isIn = statuses[user.id]
+    await saveLog({ userId: user.id, workType: '', logType: isIn ? '退勤' : '出勤' })
+    await loadStatuses()
+    onRefresh()
+  }
 
   async function handleSaveName(userId) {
     if (!newName.trim()) return
@@ -312,25 +484,13 @@ function UsersTab({ users, onRefresh }) {
     <div className={styles.content}>
       <div className={styles.summary}>
         <span className={styles.count}>{users.length}名</span>
-        <button className={styles.exportBtn} onClick={() => setAdding(true)}>
-          ＋ ユーザー追加
-        </button>
+        <button className={styles.exportBtn} onClick={() => setAdding(true)}>＋ ユーザー追加</button>
       </div>
 
       {adding && (
         <div className={styles.addForm}>
-          <input
-            placeholder="ユーザーID (例: USER011)"
-            value={addId}
-            onChange={e => setAddId(e.target.value)}
-            className={styles.filterInput}
-          />
-          <input
-            placeholder="氏名"
-            value={addName}
-            onChange={e => setAddName(e.target.value)}
-            className={styles.filterInput}
-          />
+          <input placeholder="ユーザーID (例: USER011)" value={addId} onChange={e => setAddId(e.target.value)} className={styles.filterInput} />
+          <input placeholder="氏名" value={addName} onChange={e => setAddName(e.target.value)} className={styles.filterInput} />
           <div className={styles.addActions}>
             <button className={styles.exportBtn} onClick={handleAdd}>保存</button>
             <button className={styles.clearBtn} onClick={() => setAdding(false)}>キャンセル</button>
@@ -339,43 +499,59 @@ function UsersTab({ users, onRefresh }) {
       )}
 
       <div className={styles.list}>
-        {users.map(user => (
-          <div key={user.id} className={styles.userItem}>
-            <div className={styles.userAvatar}>👤</div>
-            <div className={styles.logInfo}>
-              {editId === user.id ? (
-                <input
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSaveName(user.id)}
-                  className={styles.editInput}
-                  autoFocus
-                />
-              ) : (
-                <div className={styles.logUser}>{user.name}</div>
-              )}
-              <div className={styles.logTime}>{user.id}</div>
-            </div>
-            <div className={styles.userActions}>
-              {editId === user.id ? (
-                <>
-                  <button className={styles.saveBtn} onClick={() => handleSaveName(user.id)}>保存</button>
-                  <button className={styles.cancelBtn} onClick={() => setEditId(null)}>✕</button>
-                </>
-              ) : (
-                <>
+        {users.map(user => {
+          const isIn = statuses[user.id] === true
+          const hasRecord = user.id in statuses
+          return (
+            <div key={user.id} className={styles.userItem}>
+              <div className={styles.userAvatar}>👤</div>
+              <div className={styles.logInfo}>
+                {editId === user.id ? (
+                  <input
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveName(user.id)}
+                    className={styles.editInput}
+                    autoFocus
+                  />
+                ) : (
+                  <div className={styles.logUser}>{user.name}</div>
+                )}
+                <div className={styles.logTime}>{user.id}</div>
+              </div>
+
+              {/* Today's status + toggle */}
+              {editId !== user.id && (
+                <div className={styles.statusArea}>
+                  <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
+                    {hasRecord ? (isIn ? '出勤中' : '退勤済') : '未打刻'}
+                  </span>
                   <button
-                    className={styles.editBtn}
-                    onClick={() => { setEditId(user.id); setNewName(user.name) }}
+                    className={[styles.toggleBtn, isIn ? styles.toggleBtnOut : styles.toggleBtnIn].join(' ')}
+                    onClick={() => handleToggleStatus(user)}
+                    title={isIn ? '退勤させる' : '出勤させる'}
                   >
-                    編集
+                    {isIn ? '退勤↑' : '出勤↓'}
                   </button>
-                  <button className={styles.deleteBtn} onClick={() => handleDelete(user.id)}>✕</button>
-                </>
+                </div>
               )}
+
+              <div className={styles.userActions}>
+                {editId === user.id ? (
+                  <>
+                    <button className={styles.saveBtn} onClick={() => handleSaveName(user.id)}>保存</button>
+                    <button className={styles.cancelBtn} onClick={() => setEditId(null)}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <button className={styles.editBtn} onClick={() => { setEditId(user.id); setNewName(user.name) }}>編集</button>
+                    <button className={styles.deleteBtn} onClick={() => handleDelete(user.id)}>✕</button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

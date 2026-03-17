@@ -157,6 +157,112 @@
   padding: 40px;
 }
 
+/* Date filter bar */
+.dateFilterBar {
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px 12px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.datePresets {
+  display: flex;
+  gap: 6px;
+}
+
+.presetBtn {
+  flex: 1;
+  padding: 7px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-subtext);
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.activePreset {
+  background: var(--color-office);
+  color: white;
+  border-color: var(--color-office);
+}
+
+.dayNav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.navBtn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.navBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.navDate {
+  font-size: 0.95rem;
+  font-weight: bold;
+  color: var(--color-text);
+  min-width: 110px;
+  text-align: center;
+}
+
+.customRange {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rangeSep {
+  color: var(--color-subtext);
+  flex-shrink: 0;
+}
+
+.applyBtn {
+  background: var(--color-office);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.summaryActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.createBtn {
+  background: none;
+  border: 1px solid var(--color-office);
+  color: var(--color-office);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
 /* User sub-tabs */
 .userTabs {
   display: flex;
@@ -385,6 +491,131 @@
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+/* Status area in UsersTab */
+.statusArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.statusBadge {
+  font-size: 0.72rem;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.statusIn {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.statusOut {
+  background: #e8eaf6;
+  color: #1a73e8;
+}
+
+.toggleBtn {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.toggleBtnIn {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.toggleBtnOut {
+  background: #fce8e6;
+  color: #d93025;
+}
+
+/* Manual create form styles */
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formLabel {
+  font-size: 0.8rem;
+  color: var(--color-subtext);
+  font-weight: 500;
+}
+
+.typeToggle {
+  display: flex;
+  gap: 8px;
+}
+
+.typeBtn {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  background: var(--color-bg);
+  color: var(--color-subtext);
+}
+
+.typeBtnActive {
+  color: white;
+  border-color: transparent;
+}
+
+.workTypeRow {
+  display: flex;
+  gap: 8px;
+}
+
+.workTypeBtn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: var(--color-bg);
+  color: var(--color-subtext);
+}
+
+.workTypeBtnActive {
+  background: var(--color-office);
+  color: white;
+  border-color: var(--color-office);
+}
+
+.confirmTable {
+  background: var(--color-bg);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirmRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.confirmRow span {
+  color: var(--color-subtext);
+  font-size: 0.82rem;
 }
 
 .modalDivider {
