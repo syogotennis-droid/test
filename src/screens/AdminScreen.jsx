@@ -551,6 +551,7 @@ function UsersTab({ users, today, onRefresh }) {
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [step, setStep] = useState('main') // 'main' | 'confirmStatus' | 'confirmDelete'
   const [name, setName] = useState(user.name)
+  const [dangerOpen, setDangerOpen] = useState(false)
 
   async function handleSaveName() {
     if (!name.trim()) return
@@ -615,7 +616,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
             </div>
 
             <hr className={styles.modalDivider} />
-            <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>このユーザーを削除する</button>
+            <button className={styles.dangerToggleBtn} onClick={() => setDangerOpen(o => !o)}>
+              {dangerOpen ? '▼' : '▶'} 危険な操作
+            </button>
+            {dangerOpen && (
+              <button className={styles.deleteTriggerBtn} style={{ marginTop: 8 }} onClick={() => setStep('confirmDelete')}>
+                このユーザーを削除する
+              </button>
+            )}
 
             <hr className={styles.modalDivider} />
             <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>

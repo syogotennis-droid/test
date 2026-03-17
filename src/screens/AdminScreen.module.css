@@ -630,6 +630,21 @@
   margin: 4px 0;
 }
 
+.dangerToggleBtn {
+  background: none;
+  border: none;
+  color: var(--color-subtext, #888);
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.dangerToggleBtn:hover {
+  color: #d93025;
+}
+
 .deleteTriggerBtn {
   background: none;
   border: none;
