@@ -603,7 +603,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>本日の出勤状態</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
+                <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')} style={{ fontSize: '1rem', padding: '4px 12px' }}>
                   {isIn ? '出勤中' : '退勤中'}
                 </span>
                 <button
@@ -617,7 +617,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
 
             <hr className={styles.modalDivider} />
             <button className={styles.dangerToggleBtn} onClick={() => setDangerOpen(o => !o)}>
-              {dangerOpen ? '▼' : '▶'} 危険な操作
+              {dangerOpen ? '▼' : '▶'} その他の操作
             </button>
             {dangerOpen && (
               <button className={styles.deleteTriggerBtn} style={{ marginTop: 8 }} onClick={() => setStep('confirmDelete')}>
