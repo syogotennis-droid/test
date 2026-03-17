@@ -1,0 +1,50 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100dvh;
+  width: 100%;
+  gap: 16px;
+  color: white;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.checkmark {
+  font-size: 5rem;
+  font-weight: bold;
+  animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pop {
+  0% { transform: scale(0); }
+  80% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.workIcon {
+  font-size: 3rem;
+}
+
+.screen h1 {
+  font-size: 2.4rem;
+  color: white;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
+.detail {
+  font-size: 1.2rem;
+  color: rgba(255,255,255,0.9);
+}
+
+.countdown {
+  margin-top: 16px;
+  font-size: 0.95rem;
+  color: rgba(255,255,255,0.7);
+}

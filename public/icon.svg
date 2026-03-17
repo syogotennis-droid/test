@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#1a73e8"/>
+  <!-- QR-style icon -->
+  <rect x="32" y="32" width="52" height="52" rx="6" fill="white"/>
+  <rect x="40" y="40" width="36" height="36" rx="4" fill="#1a73e8"/>
+  <rect x="48" y="48" width="20" height="20" rx="2" fill="white"/>
+
+  <rect x="108" y="32" width="52" height="52" rx="6" fill="white"/>
+  <rect x="116" y="40" width="36" height="36" rx="4" fill="#1a73e8"/>
+  <rect x="124" y="48" width="20" height="20" rx="2" fill="white"/>
+
+  <rect x="32" y="108" width="52" height="52" rx="6" fill="white"/>
+  <rect x="40" y="116" width="36" height="36" rx="4" fill="#1a73e8"/>
+  <rect x="48" y="124" width="20" height="20" rx="2" fill="white"/>
+
+  <!-- Dots for QR pattern -->
+  <rect x="108" y="108" width="12" height="12" rx="2" fill="white"/>
+  <rect x="128" y="108" width="12" height="12" rx="2" fill="white"/>
+  <rect x="148" y="108" width="12" height="12" rx="2" fill="white"/>
+  <rect x="108" y="128" width="12" height="12" rx="2" fill="white"/>
+  <rect x="148" y="128" width="12" height="12" rx="2" fill="white"/>
+  <rect x="128" y="148" width="12" height="12" rx="2" fill="white"/>
+  <rect x="148" y="148" width="12" height="12" rx="2" fill="white"/>
+</svg>
