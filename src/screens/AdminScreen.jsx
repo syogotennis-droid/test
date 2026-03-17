@@ -583,7 +583,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSaveName()}
                 className={styles.filterInput}
-                autoFocus
+
               />
             </div>
             <div className={styles.modalActions}>
@@ -628,8 +628,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
             <p className={styles.modalLabel}>{user.name}</p>
             <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{user.id}</p>
             <p className={styles.confirmWarn}>
-              このユーザーを削除します。<br />
-              打刻記録は残りますが、ユーザー情報は完全に削除されます。<br />
+              このユーザーと全ての打刻記録を完全に削除します。<br />
               この操作は元に戻せません。
             </p>
             <div className={styles.modalActions}>
