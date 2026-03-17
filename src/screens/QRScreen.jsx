@@ -3,7 +3,7 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { resolveUser } from '../lib/db'
 import styles from './QRScreen.module.css'
 
-export default function QRScreen({ onUserScanned }) {
+export default function QRScreen({ mode, onUserScanned, onCancel }) {
   const scannerRef = useRef(null)
   const instanceRef = useRef(null)
   const [error, setError] = useState(null)
@@ -74,8 +74,8 @@ export default function QRScreen({ onUserScanned }) {
   return (
     <div className={styles.screen}>
       <div className={styles.header}>
-        <div className={styles.icon}>📱</div>
-        <h1>QRをかざしてください</h1>
+        <div className={styles.icon}>{mode === '出勤' ? '🟢' : '🔴'}</div>
+        <h1>{mode} — QRをかざしてください</h1>
         <p>個人QRコードを読み取ります</p>
       </div>
 
@@ -104,6 +104,10 @@ export default function QRScreen({ onUserScanned }) {
       <p className={styles.hint}>
         QRコードを枠内に合わせると自動で読み取ります
       </p>
+
+      <button className={styles.backBtn} onClick={onCancel}>
+        ← 戻る
+      </button>
     </div>
   )
 }

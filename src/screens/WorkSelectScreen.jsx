@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import { saveLog } from '../lib/db'
 import styles from './WorkSelectScreen.module.css'
 
 const WORK_TYPES = [
@@ -9,15 +8,20 @@ const WORK_TYPES = [
 ]
 
 export default function WorkSelectScreen({ user, onComplete, onCancel }) {
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState([])
   const [saving, setSaving] = useState(false)
 
+  function toggleType(id) {
+    setSelected(prev =>
+      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+    )
+  }
+
   async function handleConfirm() {
-    if (!selected || saving) return
+    if (selected.length === 0 || saving) return
     setSaving(true)
     try {
-      await saveLog({ userId: user.id, workType: selected })
-      onComplete(selected)
+      await onComplete(selected)
     } catch (e) {
       console.error(e)
       setSaving(false)
@@ -34,8 +38,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
         </div>
       </div>
 
-      <h1>作業内容を選択</h1>
-      <p>今日の作業内容を選んでください</p>
+      <h1>退勤 — 作業内容を選択</h1>
+      <p>今日の作業内容を選んでください（複数可）</p>
 
       <div className={styles.buttons}>
         {WORK_TYPES.map(type => (
@@ -44,13 +48,13 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
             className={[
               styles.workBtn,
               styles[type.cls],
-              selected === type.id ? styles.selected : ''
+              selected.includes(type.id) ? styles.selected : ''
             ].join(' ')}
-            onClick={() => setSelected(type.id)}
+            onClick={() => toggleType(type.id)}
           >
             <span className={styles.workIcon}>{type.icon}</span>
             <span className={styles.workLabel}>{type.label}</span>
-            {selected === type.id && (
+            {selected.includes(type.id) && (
               <span className={styles.check}>✓</span>
             )}
           </button>
@@ -58,11 +62,11 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
       </div>
 
       <button
-        className={[styles.confirmBtn, !selected ? styles.disabled : ''].join(' ')}
+        className={[styles.confirmBtn, selected.length === 0 ? styles.disabled : ''].join(' ')}
         onClick={handleConfirm}
-        disabled={!selected || saving}
+        disabled={selected.length === 0 || saving}
       >
-        {saving ? '記録中...' : '確定'}
+        {saving ? '記録中...' : '退勤を確定'}
       </button>
 
       <button className={styles.cancelBtn} onClick={onCancel}>

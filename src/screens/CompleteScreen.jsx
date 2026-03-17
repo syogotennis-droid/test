@@ -1,35 +1,28 @@
 import React, { useEffect } from 'react'
 import styles from './CompleteScreen.module.css'
 
-const WORK_COLOR = {
-  '事務': 'var(--color-office)',
-  '清掃': 'var(--color-cleaning)',
-  '現場': 'var(--color-field)'
-}
-
-const WORK_ICON = {
-  '事務': '💼',
-  '清掃': '🧹',
-  '現場': '🏗️'
-}
-
-export default function CompleteScreen({ workType, onDone }) {
+export default function CompleteScreen({ logType, workTypes, user, onDone }) {
   useEffect(() => {
-    const timer = setTimeout(onDone, 2000)
+    const timer = setTimeout(onDone, 2500)
     return () => clearTimeout(timer)
   }, [onDone])
 
+  const isClockIn = logType === '出勤'
+  const bgColor = isClockIn ? '#2e7d32' : '#1a73e8'
+
   return (
-    <div
-      className={styles.screen}
-      style={{ background: WORK_COLOR[workType] || 'var(--color-success)' }}
-    >
+    <div className={styles.screen} style={{ background: bgColor }}>
       <div className={styles.checkmark}>✓</div>
-      <div className={styles.workIcon}>{WORK_ICON[workType]}</div>
-      <h1>記録しました</h1>
-      <p className={styles.detail}>
-        {workType} の記録が完了しました
-      </p>
+      <div className={styles.workIcon}>{isClockIn ? '🟢' : '🔴'}</div>
+      <h1>{logType}しました</h1>
+      {user && (
+        <p className={styles.detail}>{user.name} さん</p>
+      )}
+      {!isClockIn && workTypes && workTypes.length > 0 && (
+        <p className={styles.detail}>
+          {workTypes.join(' / ')}
+        </p>
+      )}
       <div className={styles.countdown}>
         <span>まもなく戻ります...</span>
       </div>

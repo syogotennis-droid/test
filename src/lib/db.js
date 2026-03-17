@@ -8,6 +8,11 @@ db.version(1).stores({
   logs: '++id, user_id, work_type, timestamp, date, synced'
 })
 
+db.version(2).stores({
+  users: 'id, name',
+  logs: '++id, user_id, work_type, log_type, timestamp, date, synced'
+})
+
 // Default users seeded from QR codes
 // In production, QR codes encode the user ID string
 const DEFAULT_USERS = [
@@ -39,7 +44,7 @@ export async function resolveUser(qrValue) {
 }
 
 // Save a work log entry
-export async function saveLog({ userId, workType }) {
+export async function saveLog({ userId, workType, logType }) {
   const now = new Date()
   const timestamp = now.toISOString()
   const date = now.toLocaleDateString('ja-JP', {
@@ -51,13 +56,26 @@ export async function saveLog({ userId, workType }) {
 
   const id = await db.logs.add({
     user_id: userId,
-    work_type: workType,
+    work_type: workType || '',
+    log_type: logType || workType || '',
     timestamp,
     date,
     time,
     synced: 0
   })
   return id
+}
+
+// Check if a user is currently checked in (more check-ins than check-outs today)
+export async function isCheckedIn(userId) {
+  const today = new Date().toLocaleDateString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).replace(/\//g, '-')
+  const logs = await db.logs.where('date').equals(today).toArray()
+  const userLogs = logs.filter(l => l.user_id === userId)
+  const ins = userLogs.filter(l => l.log_type === '出勤').length
+  const outs = userLogs.filter(l => l.log_type === '退勤').length
+  return ins > outs
 }
 
 // Fetch all logs with optional filters

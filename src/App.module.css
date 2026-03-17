@@ -52,3 +52,25 @@
 .adminTrigger:active {
   background: rgba(0,0,0,0.18);
 }
+
+/* Error overlay for already-checked-in case */
+.errorOverlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(198, 40, 40, 0.92);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: bold;
+  text-align: center;
+  padding: 32px;
+  z-index: 200;
+}
+
+.errorIcon {
+  font-size: 3rem;
+}

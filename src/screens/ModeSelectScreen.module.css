@@ -1,0 +1,77 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100dvh;
+  width: 100%;
+  padding: 24px;
+  gap: 24px;
+  background: var(--color-bg);
+}
+
+.header {
+  text-align: center;
+}
+
+.icon {
+  font-size: 3rem;
+  margin-bottom: 8px;
+}
+
+.header h1 {
+  font-size: 1.8rem;
+  margin: 0 0 8px;
+  color: var(--color-text);
+}
+
+.header p {
+  font-size: 1rem;
+  color: var(--color-subtext);
+  margin: 0;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.modeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--color-white);
+  font-size: 1.8rem;
+  font-weight: bold;
+  box-shadow: var(--shadow);
+  transition: transform 0.1s, box-shadow 0.1s;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.1em;
+}
+
+.modeBtn:active {
+  transform: scale(0.97);
+}
+
+.modeIcon {
+  font-size: 2rem;
+}
+
+.modeLabel {
+  font-size: 2rem;
+}
+
+.clockIn {
+  background: #2e7d32;
+}
+
+.clockOut {
+  background: #c62828;
+}
