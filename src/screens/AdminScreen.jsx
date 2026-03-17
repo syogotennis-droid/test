@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, getUsers, exportCSV, deleteLog, upsertUser, deleteUser } from '../lib/db'
+import { getLogs, getUsers, exportCSV, deleteLog, upsertUser, deleteUser, updateLogTime } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
-
-const WORK_COLOR = {
-  '事務': 'var(--color-office)',
-  '清掃': 'var(--color-cleaning)',
-  '現場': 'var(--color-field)'
-}
 
 const LOG_TYPE_COLOR = {
   '出勤': '#2e7d32',
@@ -106,6 +100,7 @@ export default function AdminScreen({ onBack }) {
           onFilterUser={setFilterUser}
           onExport={handleExport}
           onDeleteLog={handleDeleteLog}
+          onRefreshLogs={loadLogs}
         />
       )}
 
@@ -118,11 +113,21 @@ export default function AdminScreen({ onBack }) {
 
 function LogsTab({
   logs, users, userMap, filterDate, filterUser, loading,
-  today, onFilterDate, onFilterUser, onExport, onDeleteLog
+  today, onFilterDate, onFilterUser, onExport, onDeleteLog, onRefreshLogs
 }) {
+  const [editingLog, setEditingLog] = useState(null)
+  const [editTime, setEditTime] = useState('')
+
+  async function handleSaveTime() {
+    if (!editTime || !editingLog) return
+    await updateLogTime(editingLog.id, editTime)
+    setEditingLog(null)
+    onRefreshLogs()
+  }
+
   return (
     <div className={styles.content}>
-      {/* Filters */}
+      {/* Date filter */}
       <div className={styles.filters}>
         <div className={styles.filterGroup}>
           <label>日付</label>
@@ -134,22 +139,28 @@ function LogsTab({
             className={styles.filterInput}
           />
         </div>
-        <div className={styles.filterGroup}>
-          <label>担当者</label>
-          <select
-            value={filterUser}
-            onChange={e => onFilterUser(e.target.value)}
-            className={styles.filterInput}
-          >
-            <option value="">全員</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>{u.name} ({u.id})</option>
-            ))}
-          </select>
-        </div>
         <button className={styles.clearBtn} onClick={() => { onFilterDate(''); onFilterUser('') }}>
           クリア
         </button>
+      </div>
+
+      {/* User tabs */}
+      <div className={styles.userTabs}>
+        <button
+          className={[styles.userTab, filterUser === '' ? styles.activeUserTab : ''].join(' ')}
+          onClick={() => onFilterUser('')}
+        >
+          全員
+        </button>
+        {users.map(u => (
+          <button
+            key={u.id}
+            className={[styles.userTab, filterUser === u.id ? styles.activeUserTab : ''].join(' ')}
+            onClick={() => onFilterUser(u.id)}
+          >
+            {u.name}
+          </button>
+        ))}
       </div>
 
       {/* Summary */}
@@ -167,23 +178,16 @@ function LogsTab({
           <div className={styles.empty}>記録がありません</div>
         )}
         {!loading && logs.map(log => (
-          <div key={log.id} className={styles.logItem}>
-            <div className={styles.badgeGroup}>
-              <div
-                className={styles.workBadge}
-                style={{ background: LOG_TYPE_COLOR[log.log_type] || '#888' }}
-              >
-                {log.log_type || '-'}
-              </div>
-              {log.work_type && log.work_type.split(',').map(t => t.trim()).filter(Boolean).map(t => (
-                <div
-                  key={t}
-                  className={styles.workBadge}
-                  style={{ background: WORK_COLOR[t] || '#aaa' }}
-                >
-                  {t}
-                </div>
-              ))}
+          <div
+            key={log.id}
+            className={styles.logItem}
+            onClick={() => { setEditingLog(log); setEditTime(log.time ? log.time.substring(0, 5) : '') }}
+          >
+            <div
+              className={styles.workBadge}
+              style={{ background: LOG_TYPE_COLOR[log.log_type] || '#888' }}
+            >
+              {log.log_type || '-'}
             </div>
             <div className={styles.logInfo}>
               <div className={styles.logUser}>{userMap[log.user_id] || log.user_id}</div>
@@ -191,7 +195,7 @@ function LogsTab({
             </div>
             <button
               className={styles.deleteBtn}
-              onClick={() => onDeleteLog(log.id)}
+              onClick={e => { e.stopPropagation(); onDeleteLog(log.id) }}
               title="削除"
             >
               ✕
@@ -199,6 +203,27 @@ function LogsTab({
           </div>
         ))}
       </div>
+
+      {/* Time edit modal */}
+      {editingLog && (
+        <div className={styles.modalOverlay} onClick={() => setEditingLog(null)}>
+          <div className={styles.modal} onClick={e => e.stopPropagation()}>
+            <h3>時間を変更</h3>
+            <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
+            <p className={styles.modalLabel}>{editingLog.date}</p>
+            <input
+              type="time"
+              value={editTime}
+              onChange={e => setEditTime(e.target.value)}
+              className={styles.timeInput}
+            />
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleSaveTime}>保存</button>
+              <button className={styles.cancelBtn} onClick={() => setEditingLog(null)}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

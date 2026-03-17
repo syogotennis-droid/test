@@ -122,18 +122,33 @@ export async function deleteLog(id) {
   return db.logs.delete(id)
 }
 
+// Update the time of a log entry
+export async function updateLogTime(id, timeStr) {
+  // timeStr is "HH:MM"
+  const log = await db.logs.get(id)
+  if (!log) return
+  const [year, month, day] = log.date.split('-').map(Number)
+  const [h, m] = timeStr.split(':').map(Number)
+  const dt = new Date(year, month - 1, day, h, m, 0)
+  await db.logs.update(id, {
+    time: timeStr + ':00',
+    timestamp: dt.toISOString()
+  })
+}
+
 // Export logs as CSV string
 export async function exportCSV({ date, userId } = {}) {
   const logs = await getLogs({ date, userId })
   const users = await getUsers()
   const userMap = Object.fromEntries(users.map(u => [u.id, u.name]))
 
-  const header = 'ID,ユーザーID,氏名,作業内容,日付,時刻'
+  const header = 'ID,ユーザーID,氏名,種別,作業内容,日付,時刻'
   const rows = logs.map(log =>
     [
       log.id,
       log.user_id,
       userMap[log.user_id] || '',
+      log.log_type || '',
       log.work_type,
       log.date,
       log.time || ''

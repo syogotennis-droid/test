@@ -157,6 +157,40 @@
   padding: 40px;
 }
 
+/* User sub-tabs */
+.userTabs {
+  display: flex;
+  overflow-x: auto;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 8px;
+  flex-shrink: 0;
+  gap: 2px;
+  scrollbar-width: none;
+}
+
+.userTabs::-webkit-scrollbar { display: none; }
+
+.userTab {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--color-subtext);
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.activeUserTab {
+  color: var(--color-office);
+  border-bottom-color: var(--color-office);
+}
+
 .logItem {
   display: flex;
   align-items: center;
@@ -165,6 +199,12 @@
   border-radius: 12px;
   padding: 12px 14px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.logItem:hover {
+  box-shadow: 0 3px 10px rgba(0,0,0,0.12);
 }
 
 .badgeGroup {
@@ -298,4 +338,51 @@
 .addActions {
   display: flex;
   gap: 8px;
+}
+
+/* Time edit modal */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--color-white);
+  border-radius: 16px;
+  padding: 24px;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal h3 {
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.modalLabel {
+  font-size: 0.9rem;
+  color: var(--color-subtext);
+}
+
+.timeInput {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 1.2rem;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.modalActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
 }

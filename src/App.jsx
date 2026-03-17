@@ -53,6 +53,16 @@ export default function App() {
       setCompletedInfo({ logType: '出勤', workTypes: [], user })
       setState(STATE.COMPLETE)
     } else {
+      const checkedIn = await isCheckedIn(user.id)
+      if (!checkedIn) {
+        setError(`${user.name} さんはまだ出勤していません`)
+        setTimeout(() => {
+          setError(null)
+          setMode(null)
+          setState(STATE.MODE)
+        }, 2500)
+        return
+      }
       setCurrentUser(user)
       setState(STATE.WORK)
     }
