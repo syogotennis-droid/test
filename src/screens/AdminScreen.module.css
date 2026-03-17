@@ -167,6 +167,13 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
+.badgeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .workBadge {
   color: white;
   border-radius: 8px;

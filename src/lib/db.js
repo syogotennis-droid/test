@@ -66,6 +66,18 @@ export async function saveLog({ userId, workType, logType }) {
   return id
 }
 
+// Get the most recent clock-in record for a user today
+export async function getClockInTime(userId) {
+  const today = new Date().toLocaleDateString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).replace(/\//g, '-')
+  const logs = await db.logs.where('date').equals(today).toArray()
+  const clockIns = logs
+    .filter(l => l.user_id === userId && l.log_type === '出勤')
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+  return clockIns.length > 0 ? clockIns[clockIns.length - 1] : null
+}
+
 // Check if a user is currently checked in (more check-ins than check-outs today)
 export async function isCheckedIn(userId) {
   const today = new Date().toLocaleDateString('ja-JP', {

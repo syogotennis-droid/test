@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { initDB, saveLog, isCheckedIn } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -59,12 +59,19 @@ export default function App() {
   }
 
   async function handleWorkComplete(selectedTypes) {
+    const clockIn = await getClockInTime(currentUser.id)
     await saveLog({
       userId: currentUser.id,
       workType: selectedTypes.join(','),
       logType: '退勤'
     })
-    setCompletedInfo({ logType: '退勤', workTypes: selectedTypes, user: currentUser })
+    setCompletedInfo({
+      logType: '退勤',
+      workTypes: selectedTypes,
+      user: currentUser,
+      clockInTime: clockIn?.time,
+      clockInTimestamp: clockIn?.timestamp
+    })
     setState(STATE.COMPLETE)
   }
 
@@ -134,6 +141,8 @@ export default function App() {
           logType={completedInfo.logType}
           workTypes={completedInfo.workTypes}
           user={completedInfo.user}
+          clockInTime={completedInfo.clockInTime}
+          clockInTimestamp={completedInfo.clockInTimestamp}
           onDone={handleDone}
         />
       )}

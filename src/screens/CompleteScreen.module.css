@@ -43,6 +43,48 @@
   color: rgba(255,255,255,0.9);
 }
 
+.timeInfo {
+  background: rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.timeRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.totalRow {
+  border-top: 1px solid rgba(255,255,255,0.3);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.timeLabel {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.8);
+}
+
+.timeValue {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: white;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeValueBig {
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: white;
+}
+
 .countdown {
   margin-top: 16px;
   font-size: 0.95rem;

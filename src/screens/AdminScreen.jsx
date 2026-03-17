@@ -9,6 +9,11 @@ const WORK_COLOR = {
   '現場': 'var(--color-field)'
 }
 
+const LOG_TYPE_COLOR = {
+  '出勤': '#2e7d32',
+  '退勤': '#1a73e8'
+}
+
 export default function AdminScreen({ onBack }) {
   const [tab, setTab] = useState('logs') // 'logs' | 'users' | 'qr'
   const [logs, setLogs] = useState([])
@@ -163,11 +168,22 @@ function LogsTab({
         )}
         {!loading && logs.map(log => (
           <div key={log.id} className={styles.logItem}>
-            <div
-              className={styles.workBadge}
-              style={{ background: WORK_COLOR[log.work_type] }}
-            >
-              {log.work_type}
+            <div className={styles.badgeGroup}>
+              <div
+                className={styles.workBadge}
+                style={{ background: LOG_TYPE_COLOR[log.log_type] || '#888' }}
+              >
+                {log.log_type || '-'}
+              </div>
+              {log.work_type && log.work_type.split(',').map(t => t.trim()).filter(Boolean).map(t => (
+                <div
+                  key={t}
+                  className={styles.workBadge}
+                  style={{ background: WORK_COLOR[t] || '#aaa' }}
+                >
+                  {t}
+                </div>
+              ))}
             </div>
             <div className={styles.logInfo}>
               <div className={styles.logUser}>{userMap[log.user_id] || log.user_id}</div>
