@@ -9,13 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "dexie": "^4.0.8",
+    "html5-qrcode": "^2.3.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "html5-qrcode": "^2.3.8",
-    "dexie": "^4.0.8",
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.2.0",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.8",
     "vite-plugin-pwa": "^0.20.5"
