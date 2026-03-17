@@ -21,16 +21,25 @@ export default function QRScreen({ onUserScanned }) {
       aspectRatio: 1.0
     }
 
-    qr.start(
-      { facingMode: 'environment' },
-      config,
-      handleScan,
-      () => {}
-    )
+    const startCamera = (facingMode) =>
+      qr.start(
+        facingMode ? { facingMode } : true,
+        config,
+        handleScan,
+        () => {}
+      )
+
+    startCamera('environment')
+      .catch(() => startCamera(null))
       .then(() => setScanning(true))
       .catch(err => {
         console.error(err)
-        setError('カメラへのアクセスが許可されていません。\nブラウザの設定でカメラを許可してください。')
+        const msg = err?.message || ''
+        if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+          setError('カメラへのアクセスが許可されていません。\nブラウザのアドレスバー横のアイコンからカメラを許可してください。')
+        } else {
+          setError(`カメラを起動できませんでした。\nページを再読み込みしてお試しください。\n(${msg})`)
+        }
       })
 
     return () => {
@@ -82,6 +91,12 @@ export default function QRScreen({ onUserScanned }) {
           <div className={styles.errorOverlay}>
             <span className={styles.errorIcon}>⚠️</span>
             <span style={{ whiteSpace: 'pre-line' }}>{error}</span>
+            <button
+              onClick={() => window.location.reload()}
+              style={{ marginTop: 12, padding: '8px 20px', borderRadius: 8, border: 'none', background: '#4a90e2', color: '#fff', fontSize: 14, cursor: 'pointer' }}
+            >
+              再読み込み
+            </button>
           </div>
         )}
       </div>
