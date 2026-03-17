@@ -4,10 +4,13 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './styles/global.css'
 
-// dev環境では古いService Workerを解除してキャッシュをクリア
+// dev環境では古いService Workerを解除してページをリロード
 if (import.meta.env.DEV && 'serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(reg => reg.unregister())
+    if (regs.length > 0) {
+      regs.forEach(reg => reg.unregister())
+      window.location.reload()
+    }
   })
 }
 
