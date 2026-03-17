@@ -7,6 +7,18 @@ import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
 
 const LOG_TYPE_COLOR = { '出勤': '#2e7d32', '退勤': '#1a73e8' }
+
+function QRImage({ value, size = 200 }) {
+  const encoded = encodeURIComponent(value)
+  return (
+    <img
+      src={`https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=${size}x${size}&bgcolor=ffffff&color=000000&margin=10`}
+      alt={value}
+      width={size}
+      height={size}
+    />
+  )
+}
 const WORK_TYPES = ['事務', '清掃', '現場']
 
 function toDateStr(d) {
@@ -431,6 +443,8 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
 function UsersTab({ users, today, onRefresh }) {
   const [statuses, setStatuses] = useState({})
   const [editingUser, setEditingUser] = useState(null)
+  const [deleteTargetUser, setDeleteTargetUser] = useState(null)
+  const [qrUser, setQrUser] = useState(null)
   const [adding, setAdding] = useState(false)
   const [addId, setAddId] = useState('')
   const [addName, setAddName] = useState('')
@@ -442,19 +456,21 @@ function UsersTab({ users, today, onRefresh }) {
     setStatuses(s)
   }
 
-  async function handleDelete(userId) {
-    if (!confirm(`ユーザー「${userId}」を削除しますか？\n関連ログは残ります。`)) return
-    await deleteUser(userId)
+  async function handleConfirmDelete() {
+    await deleteUser(deleteTargetUser.id)
+    setDeleteTargetUser(null)
     onRefresh()
   }
 
   async function handleAdd() {
     if (!addId.trim() || !addName.trim()) return
-    await upsertUser({ id: addId.trim(), name: addName.trim() })
+    const newUser = { id: addId.trim(), name: addName.trim() }
+    await upsertUser(newUser)
     setAdding(false)
     setAddId('')
     setAddName('')
     onRefresh()
+    setQrUser(newUser)
   }
 
   async function handleModalSaved() {
@@ -492,7 +508,6 @@ function UsersTab({ users, today, onRefresh }) {
                 <div className={styles.logTime}>{user.id}</div>
               </div>
 
-              {/* Today's status — display only */}
               <div className={styles.statusArea}>
                 <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
                   {isIn ? '出勤中' : '退勤中'}
@@ -501,12 +516,50 @@ function UsersTab({ users, today, onRefresh }) {
 
               <div className={styles.userActions}>
                 <button className={styles.editBtn} onClick={() => setEditingUser(user)}>編集</button>
-                <button className={styles.deleteBtn} onClick={() => handleDelete(user.id)}>✕</button>
+                <button className={styles.deleteBtn} onClick={() => setDeleteTargetUser(user)}>✕</button>
               </div>
             </div>
           )
         })}
       </div>
+
+      {/* 削除確認モーダル */}
+      {deleteTargetUser && (
+        <div className={styles.modalOverlay} onClick={() => setDeleteTargetUser(null)}>
+          <div className={styles.modal} onClick={e => e.stopPropagation()}>
+            <h3>ユーザー削除の確認</h3>
+            <p className={styles.modalLabel}>{deleteTargetUser.name}</p>
+            <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{deleteTargetUser.id}</p>
+            <p className={styles.confirmWarn}>
+              このユーザーを削除します。<br />
+              打刻記録は残りますが、ユーザー情報は完全に削除されます。<br />
+              この操作は元に戻せません。
+            </p>
+            <div className={styles.modalActions}>
+              <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
+              <button className={styles.cancelBtn} onClick={() => setDeleteTargetUser(null)}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ユーザー追加後のQRモーダル */}
+      {qrUser && (
+        <div className={styles.modalOverlay} onClick={() => setQrUser(null)}>
+          <div className={styles.modal} onClick={e => e.stopPropagation()}>
+            <h3>ユーザーを追加しました</h3>
+            <p className={styles.modalLabel}>{qrUser.name}</p>
+            <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{qrUser.id}</p>
+            <div className={styles.qrCenter}>
+              <QRImage value={qrUser.id} size={200} />
+            </div>
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={() => { window.print(); }}>🖨 印刷</button>
+              <button className={styles.cancelBtn} onClick={() => setQrUser(null)}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingUser && (
         <UserEditModal

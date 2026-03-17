@@ -618,6 +618,12 @@
   font-size: 0.82rem;
 }
 
+.qrCenter {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+
 .modalDivider {
   border: none;
   border-top: 1px solid var(--color-border);
