@@ -115,8 +115,10 @@ export async function upsertUser(user) {
   return db.users.put(user)
 }
 
-// Delete a user
+// Delete a user and all their logs
 export async function deleteUser(id) {
+  const logIds = await db.logs.where('user_id').equals(id).primaryKeys()
+  await db.logs.bulkDelete(logIds)
   return db.users.delete(id)
 }
 
