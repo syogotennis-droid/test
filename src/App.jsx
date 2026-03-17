@@ -7,9 +7,8 @@ import CompleteScreen from './screens/CompleteScreen'
 import AdminScreen from './screens/AdminScreen'
 import styles from './App.module.css'
 
-// App states
 const STATE = {
-  MODE: 'mode',
+  MODE: 'mode2',
   QR: 'qr',
   WORK: 'work',
   COMPLETE: 'complete',
@@ -21,7 +20,7 @@ const ADMIN_TAP_COUNT = 5
 const ADMIN_TAP_TIMEOUT = 3000
 
 export default function App() {
-  const [state, setState] = useState(STATE.MODE)
+  const [state, setState] = useState('mode2')
   const [mode, setMode] = useState(null)       // '出勤' or '退勤'
   const [currentUser, setCurrentUser] = useState(null)
   const [completedInfo, setCompletedInfo] = useState(null) // { logType, workTypes }
@@ -47,7 +46,7 @@ export default function App() {
         setTimeout(() => {
           setError(null)
           setMode(null)
-          setState(STATE.MODE)
+          setState('mode2')
         }, 2500)
         return
       }
