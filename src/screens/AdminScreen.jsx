@@ -607,7 +607,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                   {isIn ? '出勤中' : '退勤中'}
                 </span>
                 <button
-                  className={styles.deleteTriggerBtn}
+                  className={styles.toggleTriggerBtn}
                   onClick={() => setStep('confirmStatus')}
                 >
                   {isIn ? '退勤中に切り替える' : '出勤中に切り替える'}

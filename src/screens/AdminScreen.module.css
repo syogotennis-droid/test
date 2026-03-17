@@ -630,6 +630,21 @@
   margin: 4px 0;
 }
 
+.toggleTriggerBtn {
+  background: none;
+  border: none;
+  color: #1a73e8;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 6px 0;
+  text-align: center;
+  width: 100%;
+}
+
+.toggleTriggerBtn:hover {
+  text-decoration: underline;
+}
+
 .dangerToggleBtn {
   background: none;
   border: none;
