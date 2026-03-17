@@ -8,22 +8,21 @@ import AdminScreen from './screens/AdminScreen'
 import styles from './App.module.css'
 
 const STATE = {
-  MODE: 'mode2',
+  MODE: 'mode',
   QR: 'qr',
   WORK: 'work',
   COMPLETE: 'complete',
   ADMIN: 'admin'
 }
 
-// Tap the admin area 5 times to open admin panel
 const ADMIN_TAP_COUNT = 5
 const ADMIN_TAP_TIMEOUT = 3000
 
 export default function App() {
-  const [state, setState] = useState('mode2')
-  const [mode, setMode] = useState(null)       // '出勤' or '退勤'
+  const [state, setState] = useState(STATE.MODE)
+  const [mode, setMode] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
-  const [completedInfo, setCompletedInfo] = useState(null) // { logType, workTypes }
+  const [completedInfo, setCompletedInfo] = useState(null)
   const [error, setError] = useState(null)
   const [dbReady, setDbReady] = useState(false)
   const [adminTaps, setAdminTaps] = useState(0)
@@ -46,16 +45,14 @@ export default function App() {
         setTimeout(() => {
           setError(null)
           setMode(null)
-          setState('mode2')
+          setState(STATE.MODE)
         }, 2500)
         return
       }
-      // Save check-in immediately
       await saveLog({ userId: user.id, workType: '', logType: '出勤' })
       setCompletedInfo({ logType: '出勤', workTypes: [], user })
       setState(STATE.COMPLETE)
     } else {
-      // 退勤 — go to work type selection
       setCurrentUser(user)
       setState(STATE.WORK)
     }
@@ -84,7 +81,6 @@ export default function App() {
     setState(STATE.MODE)
   }
 
-  // Secret admin entry: tap corner 5 times
   function handleAdminTap() {
     if (adminTapTimer.current) clearTimeout(adminTapTimer.current)
 
@@ -149,8 +145,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Secret admin button - tiny tap target in bottom-right corner */}
-      {(state === STATE.MODE) && (
+      {state === STATE.MODE && (
         <button
           className={styles.adminTrigger}
           onClick={handleAdminTap}
