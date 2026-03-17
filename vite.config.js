@@ -12,6 +12,7 @@ export default defineConfig({
     basicSsl(),
     react(),
     VitePWA({
+      devOptions: { enabled: false },
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
