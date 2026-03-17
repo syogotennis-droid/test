@@ -1,4 +1,5 @@
 import Dexie from 'dexie'
+import * as XLSX from 'xlsx'
 
 // IndexedDB database definition
 const db = new Dexie('QRAttendanceDB')
@@ -175,7 +176,6 @@ export async function updateLogTime(id, timeStr) {
 
 // Export logs as XLSX (one sheet per user)
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
-  const XLSX = (await import('xlsx')).default || (await import('xlsx'))
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
   const userMap = Object.fromEntries(users.map(u => [u.id, u.name]))
