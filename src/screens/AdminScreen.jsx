@@ -443,7 +443,6 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
 function UsersTab({ users, today, onRefresh }) {
   const [statuses, setStatuses] = useState({})
   const [editingUser, setEditingUser] = useState(null)
-  const [deleteTargetUser, setDeleteTargetUser] = useState(null)
   const [qrUser, setQrUser] = useState(null)
   const [adding, setAdding] = useState(false)
   const [addId, setAddId] = useState('')
@@ -454,12 +453,6 @@ function UsersTab({ users, today, onRefresh }) {
   async function loadStatuses() {
     const s = await getTodayStatuses()
     setStatuses(s)
-  }
-
-  async function handleConfirmDelete() {
-    await deleteUser(deleteTargetUser.id)
-    setDeleteTargetUser(null)
-    onRefresh()
   }
 
   async function handleAdd() {
@@ -516,32 +509,11 @@ function UsersTab({ users, today, onRefresh }) {
 
               <div className={styles.userActions}>
                 <button className={styles.editBtn} onClick={() => setEditingUser(user)}>編集</button>
-                <button className={styles.deleteBtn} onClick={() => setDeleteTargetUser(user)}>✕</button>
               </div>
             </div>
           )
         })}
       </div>
-
-      {/* 削除確認モーダル */}
-      {deleteTargetUser && (
-        <div className={styles.modalOverlay} onClick={() => setDeleteTargetUser(null)}>
-          <div className={styles.modal} onClick={e => e.stopPropagation()}>
-            <h3>ユーザー削除の確認</h3>
-            <p className={styles.modalLabel}>{deleteTargetUser.name}</p>
-            <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{deleteTargetUser.id}</p>
-            <p className={styles.confirmWarn}>
-              このユーザーを削除します。<br />
-              打刻記録は残りますが、ユーザー情報は完全に削除されます。<br />
-              この操作は元に戻せません。
-            </p>
-            <div className={styles.modalActions}>
-              <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
-              <button className={styles.cancelBtn} onClick={() => setDeleteTargetUser(null)}>キャンセル</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ユーザー追加後のQRモーダル */}
       {qrUser && (
@@ -567,6 +539,7 @@ function UsersTab({ users, today, onRefresh }) {
           isIn={statuses[editingUser.id] === true}
           onClose={() => setEditingUser(null)}
           onSaved={handleModalSaved}
+          onDeleted={() => { setEditingUser(null); onRefresh() }}
         />
       )}
     </div>
@@ -575,8 +548,8 @@ function UsersTab({ users, today, onRefresh }) {
 
 // ─── UserEditModal ────────────────────────────────────────────────────────────
 
-function UserEditModal({ user, isIn, onClose, onSaved }) {
-  const [step, setStep] = useState('main') // 'main' | 'confirmStatus'
+function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
+  const [step, setStep] = useState('main') // 'main' | 'confirmStatus' | 'confirmDelete'
   const [name, setName] = useState(user.name)
 
   async function handleSaveName() {
@@ -588,6 +561,11 @@ function UserEditModal({ user, isIn, onClose, onSaved }) {
   async function handleConfirmStatus() {
     await saveLog({ userId: user.id, workType: '', logType: isIn ? '退勤' : '出勤' })
     onSaved()
+  }
+
+  async function handleConfirmDelete() {
+    await deleteUser(user.id)
+    onDeleted()
   }
 
   return (
@@ -637,7 +615,27 @@ function UserEditModal({ user, isIn, onClose, onSaved }) {
             </div>
 
             <hr className={styles.modalDivider} />
+            <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>このユーザーを削除する</button>
+
+            <hr className={styles.modalDivider} />
             <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>
+          </>
+        )}
+
+        {step === 'confirmDelete' && (
+          <>
+            <h3>ユーザー削除の確認</h3>
+            <p className={styles.modalLabel}>{user.name}</p>
+            <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{user.id}</p>
+            <p className={styles.confirmWarn}>
+              このユーザーを削除します。<br />
+              打刻記録は残りますが、ユーザー情報は完全に削除されます。<br />
+              この操作は元に戻せません。
+            </p>
+            <div className={styles.modalActions}>
+              <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
+              <button className={styles.cancelBtn} onClick={() => setStep('main')}>戻る</button>
+            </div>
           </>
         )}
 
