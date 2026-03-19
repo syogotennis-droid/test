@@ -94,9 +94,11 @@ export default function AdminScreen({ onBack }) {
         <button className={[styles.tab, tab === 'logs' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('logs')}>記録一覧</button>
         <button className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('users')}>ユーザー管理</button>
         <button className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('qr')}>QR印刷</button>
+        <button className={[styles.tab, tab === 'url' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('url')}>接続URL</button>
       </div>
 
       {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('logs')} />}
+      {tab === 'url' && <ConnectionUrlTab />}
 
       {tab === 'logs' && (
         <LogsTab
@@ -119,6 +121,44 @@ export default function AdminScreen({ onBack }) {
       {tab === 'users' && (
         <UsersTab users={users} today={today} onRefresh={loadLogs} />
       )}
+    </div>
+  )
+}
+
+// ─── ConnectionUrlTab ─────────────────────────────────────────────────────────
+
+function ConnectionUrlTab() {
+  const url = window.location.origin
+  const [copied, setCopied] = useState(false)
+  const encoded = encodeURIComponent(url)
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=240x240&bgcolor=ffffff&color=000000&margin=10`
+
+  function handleCopy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className={styles.content}>
+      <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+        <p style={{ fontSize: '0.9rem', color: 'var(--color-subtext)', marginBottom: 16 }}>
+          このQRコードを読み取ると、同じWi-Fiに接続した端末からアクセスできます。
+        </p>
+        <img src={qrSrc} alt={url} width={240} height={240} style={{ borderRadius: 8, border: '1px solid #e0e0e0' }} />
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <code style={{ fontSize: '0.85rem', background: '#f5f5f5', padding: '6px 12px', borderRadius: 6, wordBreak: 'break-all' }}>
+            {url}
+          </code>
+          <button className={styles.exportBtn} onClick={handleCopy} style={{ flexShrink: 0 }}>
+            {copied ? '✓ コピー済み' : 'コピー'}
+          </button>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--color-subtext)', marginTop: 12 }}>
+          Wi-Fiが変わってIPアドレスが変わった場合は、このページを再度開いてURLを確認してください。
+        </p>
+      </div>
     </div>
   )
 }
