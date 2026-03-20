@@ -188,6 +188,70 @@ function formatWorkType(wt) {
   }).join(' / ')
 }
 
+// Export monthly attendance register (出勤簿) as XLSX (one sheet per user)
+export async function exportKinmubo({ dateFrom, dateTo } = {}) {
+  const logs = await getLogs({ dateFrom, dateTo })
+  const users = await getUsers()
+
+  // Build list of dates in range
+  const days = []
+  const start = new Date(dateFrom)
+  const end = new Date(dateTo)
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    days.push(
+      d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
+    )
+  }
+
+  const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
+  const wb = XLSX.utils.book_new()
+
+  for (const user of users) {
+    const userLogs = logs.filter(l => l.user_id === user.id)
+    if (userLogs.length === 0) continue
+
+    // Group logs by date
+    const byDate = {}
+    userLogs.forEach(log => {
+      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workTypes: new Set() }
+      if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
+      else if (log.log_type === '退勤') {
+        byDate[log.date].outs.push(log.time || '')
+        if (log.work_type) {
+          log.work_type.split(',').forEach(w => {
+            const type = w.split(':')[0].trim()
+            if (type) byDate[log.date].workTypes.add(type)
+          })
+        }
+      }
+    })
+
+    const header = ['日付', '曜日', '出勤', '退勤', '作業内容']
+    const rows = days.map(dateStr => {
+      const [y, m, d] = dateStr.split('-').map(Number)
+      const dayName = DAY_NAMES[new Date(y, m - 1, d).getDay()]
+      const entry = byDate[dateStr]
+      return [
+        dateStr,
+        dayName,
+        entry ? (entry.ins.sort()[0] || '').substring(0, 5) : '',
+        entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : '',
+        entry ? [...entry.workTypes].join(' / ') : ''
+      ]
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    ws['!cols'] = [{ wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 20 }]
+    XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
+  }
+
+  if (wb.SheetNames.length === 0) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['データなし']]), 'データなし')
+  }
+
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+}
+
 // Export logs as XLSX (one sheet per user)
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })

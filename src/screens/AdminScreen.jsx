@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
-  getLogs, getUsers, exportXLSX, deleteLog, upsertUser, deleteUser,
+  getLogs, getUsers, exportXLSX, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
@@ -30,12 +30,15 @@ export default function AdminScreen({ onBack }) {
   const [tab, setTab] = useState('logs')
   const [logs, setLogs] = useState([])
   const [users, setUsers] = useState([])
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const today = toDateStr(new Date())
+  const thisMonthFrom = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  })()
+  const [filterDateFrom, setFilterDateFrom] = useState(thisMonthFrom)
+  const [filterDateTo, setFilterDateTo] = useState(today)
   const [filterUser, setFilterUser] = useState('')
   const [loading, setLoading] = useState(true)
-
-  const today = toDateStr(new Date())
 
   const loadLogs = useCallback(async () => {
     setLoading(true)
@@ -71,6 +74,21 @@ export default function AdminScreen({ onBack }) {
     a.download = filterUser
       ? `勤怠記録_${users.find(u => u.id === filterUser)?.name || filterUser}_${suffix}.xlsx`
       : `勤怠記録_${suffix}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleExportKinmubo() {
+    const buf = await exportKinmubo({
+      dateFrom: filterDateFrom || thisMonthFrom,
+      dateTo: filterDateTo || today
+    })
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const yearMonth = (filterDateFrom || thisMonthFrom).substring(0, 7)
+    a.download = `出勤簿_${yearMonth}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -111,6 +129,7 @@ export default function AdminScreen({ onBack }) {
           onFilterDates={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
           onFilterUser={setFilterUser}
           onExport={handleExport}
+          onExportKinmubo={handleExportKinmubo}
           onDeleteLog={handleDeleteLog}
           onRefreshLogs={loadLogs}
         />
@@ -127,9 +146,9 @@ export default function AdminScreen({ onBack }) {
 
 function LogsTab({
   logs, users, userMap, filterDateFrom, filterDateTo, filterUser, loading,
-  today, onFilterDates, onFilterUser, onExport, onDeleteLog, onRefreshLogs
+  today, onFilterDates, onFilterUser, onExport, onExportKinmubo, onDeleteLog, onRefreshLogs
 }) {
-  const [dateMode, setDateMode] = useState('all') // 'all' | 'day' | 'month' | 'custom'
+  const [dateMode, setDateMode] = useState('month') // 'all' | 'day' | 'month' | 'custom'
   const [navDate, setNavDate] = useState(today)
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -232,7 +251,10 @@ function LogsTab({
         <span className={styles.count}>{logs.length}件</span>
         <div className={styles.summaryActions}>
           <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
-          <button className={styles.exportBtn} onClick={onExport}>📥 Excel</button>
+          {dateMode === 'month' && filterUser === ''
+            ? <button className={styles.exportBtn} onClick={onExportKinmubo}>📥 出勤簿</button>
+            : <button className={styles.exportBtn} onClick={onExport}>📥 Excel</button>
+          }
         </div>
       </div>
 
