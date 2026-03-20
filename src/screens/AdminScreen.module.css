@@ -221,6 +221,52 @@
   text-align: center;
 }
 
+/* ─── KinmuboTab ─── */
+.kinmuboPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 40px 24px;
+}
+
+.kinmuboDesc {
+  font-size: 0.9rem;
+  color: var(--color-subtext);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.monthSelector {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.monthLabel {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: var(--color-text);
+  min-width: 120px;
+  text-align: center;
+}
+
+.kinmuboCreateBtn {
+  background: var(--color-primary, #1a73e8);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 36px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.kinmuboCreateBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .customRange {
   display: flex;
   align-items: center;

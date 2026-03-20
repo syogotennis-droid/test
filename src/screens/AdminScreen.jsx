@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
-  getLogs, getUsers, exportXLSX, exportKinmubo, deleteLog, upsertUser, deleteUser,
+  getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
@@ -35,7 +35,7 @@ export default function AdminScreen({ onBack }) {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
   })()
-  const [filterDateFrom, setFilterDateFrom] = useState(thisMonthFrom)
+  const [filterDateFrom, setFilterDateFrom] = useState(today)
   const [filterDateTo, setFilterDateTo] = useState(today)
   const [filterUser, setFilterUser] = useState('')
   const [loading, setLoading] = useState(true)
@@ -57,42 +57,6 @@ export default function AdminScreen({ onBack }) {
 
   useEffect(() => { loadLogs() }, [loadLogs])
 
-  async function handleExport() {
-    const suffix = filterDateFrom
-      ? (filterDateFrom === filterDateTo ? filterDateFrom : `${filterDateFrom}_${filterDateTo}`)
-      : today
-
-    const buf = await exportXLSX({
-      dateFrom: filterDateFrom || undefined,
-      dateTo: filterDateTo || undefined,
-      userId: filterUser || undefined
-    })
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filterUser
-      ? `勤怠記録_${users.find(u => u.id === filterUser)?.name || filterUser}_${suffix}.xlsx`
-      : `勤怠記録_${suffix}.xlsx`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function handleExportKinmubo() {
-    const buf = await exportKinmubo({
-      dateFrom: filterDateFrom || thisMonthFrom,
-      dateTo: filterDateTo || today
-    })
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    const yearMonth = (filterDateFrom || thisMonthFrom).substring(0, 7)
-    a.download = `出勤簿_${yearMonth}.xlsx`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
   async function handleDeleteLog(id) {
     await deleteLog(id)
     loadLogs()
@@ -110,6 +74,7 @@ export default function AdminScreen({ onBack }) {
 
       <div className={styles.tabs}>
         <button className={[styles.tab, tab === 'logs' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('logs')}>記録一覧</button>
+        <button className={[styles.tab, tab === 'kinmubo' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('kinmubo')}>出勤簿作成</button>
         <button className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('users')}>ユーザー管理</button>
         <button className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('qr')}>QR印刷</button>
       </div>
@@ -128,12 +93,12 @@ export default function AdminScreen({ onBack }) {
           today={today}
           onFilterDates={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
           onFilterUser={setFilterUser}
-          onExport={handleExport}
-          onExportKinmubo={handleExportKinmubo}
           onDeleteLog={handleDeleteLog}
           onRefreshLogs={loadLogs}
         />
       )}
+
+      {tab === 'kinmubo' && <KinmuboTab today={today} />}
 
       {tab === 'users' && (
         <UsersTab users={users} today={today} onRefresh={loadLogs} />
@@ -146,9 +111,9 @@ export default function AdminScreen({ onBack }) {
 
 function LogsTab({
   logs, users, userMap, filterDateFrom, filterDateTo, filterUser, loading,
-  today, onFilterDates, onFilterUser, onExport, onExportKinmubo, onDeleteLog, onRefreshLogs
+  today, onFilterDates, onFilterUser, onDeleteLog, onRefreshLogs
 }) {
-  const [dateMode, setDateMode] = useState('month') // 'all' | 'day' | 'month' | 'custom'
+  const [dateMode, setDateMode] = useState('day') // 'all' | 'day' | 'month' | 'custom'
   const [navDate, setNavDate] = useState(today)
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -212,9 +177,9 @@ function LogsTab({
       {/* Date filter */}
       <div className={styles.dateFilterBar}>
         <div className={styles.datePresets}>
-          <button className={[styles.presetBtn, dateMode === 'all' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('all')}>全期間</button>
-          <button className={[styles.presetBtn, dateMode === 'day' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('day')}>今日</button>
+          <button className={[styles.presetBtn, dateMode === 'day' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('day')}>本日</button>
           <button className={[styles.presetBtn, dateMode === 'month' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('month')}>今月</button>
+          <button className={[styles.presetBtn, dateMode === 'all' ? styles.activePreset : ''].join(' ')} onClick={() => applyMode('all')}>全期間</button>
           <button className={[styles.presetBtn, dateMode === 'custom' ? styles.activePreset : ''].join(' ')} onClick={() => setDateMode('custom')}>期間指定</button>
         </div>
 
@@ -251,10 +216,6 @@ function LogsTab({
         <span className={styles.count}>{logs.length}件</span>
         <div className={styles.summaryActions}>
           <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
-          {dateMode === 'month' && filterUser === ''
-            ? <button className={styles.exportBtn} onClick={onExportKinmubo}>📥 出勤簿</button>
-            : <button className={styles.exportBtn} onClick={onExport}>📥 Excel</button>
-          }
         </div>
       </div>
 
@@ -455,6 +416,55 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── KinmuboTab ───────────────────────────────────────────────────────────────
+
+function KinmuboTab({ today }) {
+  const currentYM = today.substring(0, 7) // "YYYY-MM"
+  const [selectedYM, setSelectedYM] = useState(currentYM)
+  const [exporting, setExporting] = useState(false)
+
+  function shiftMonth(delta) {
+    const [y, m] = selectedYM.split('-').map(Number)
+    const d = new Date(y, m - 1 + delta, 1)
+    setSelectedYM(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  async function handleCreate() {
+    setExporting(true)
+    const [y, m] = selectedYM.split('-').map(Number)
+    const dateFrom = `${selectedYM}-01`
+    const lastDay = new Date(y, m, 0).getDate()
+    const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
+    const buf = await exportKinmubo({ dateFrom, dateTo })
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `出勤簿_${selectedYM}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    setExporting(false)
+  }
+
+  const [displayY, displayM] = selectedYM.split('-').map(Number)
+
+  return (
+    <div className={styles.content}>
+      <div className={styles.kinmuboPanel}>
+        <p className={styles.kinmuboDesc}>対象月を選択して出勤簿を作成します。<br />担当者ごとにシートが分かれたExcelファイルが出力されます。</p>
+        <div className={styles.monthSelector}>
+          <button className={styles.navBtn} onClick={() => shiftMonth(-1)}>◀</button>
+          <span className={styles.monthLabel}>{displayY}年{displayM}月</span>
+          <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
+        </div>
+        <button className={styles.kinmuboCreateBtn} onClick={handleCreate} disabled={exporting}>
+          {exporting ? '作成中...' : '📥 出勤簿を作成'}
+        </button>
       </div>
     </div>
   )
