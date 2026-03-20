@@ -84,6 +84,14 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
   async function handleConfirm() {
     if (selected.length === 0 || saving) return
+    const zeroTypes = selected.filter(id => {
+      const t = workTimes[id] || { h: 0, m: 0 }
+      return t.h === 0 && t.m === 0
+    })
+    if (zeroTypes.length > 0) {
+      setTimeError(`時間が0の作業があります：${zeroTypes.join('、')}`)
+      return
+    }
     if (workingMinutes !== null && totalInputMinutes !== workingMinutes) {
       setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
       return
