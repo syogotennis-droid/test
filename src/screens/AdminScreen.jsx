@@ -19,7 +19,7 @@ function QRImage({ value, size = 200 }) {
     />
   )
 }
-const WORK_TYPES = ['事務', '清掃', '現場']
+const WORK_TYPES = ['現場', '清掃', '事務']
 
 function toDateStr(d) {
   return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')

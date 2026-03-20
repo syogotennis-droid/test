@@ -68,11 +68,11 @@ export default function App() {
     }
   }
 
-  async function handleWorkComplete(selectedTypes) {
+  async function handleWorkComplete(selectedTypes, workTypeStr) {
     const clockIn = await getClockInTime(currentUser.id)
     await saveLog({
       userId: currentUser.id,
-      workType: selectedTypes.join(','),
+      workType: workTypeStr || selectedTypes.join(','),
       logType: '退勤'
     })
     setCompletedInfo({

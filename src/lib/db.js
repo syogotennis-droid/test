@@ -176,6 +176,18 @@ export async function updateLogTime(id, timeStr) {
   })
 }
 
+// Format work_type string for display (handles "現場:90,清掃:30" and "事務,清掃")
+function formatWorkType(wt) {
+  if (!wt) return ''
+  return wt.split(',').map(entry => {
+    const [type, mins] = entry.split(':')
+    if (mins === undefined) return type
+    const h = Math.floor(Number(mins) / 60)
+    const m = Number(mins) % 60
+    return h > 0 ? `${type} ${h}時間${m}分` : `${type} ${m}分`
+  }).join(' / ')
+}
+
 // Export logs as XLSX (one sheet per user)
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
@@ -198,7 +210,7 @@ export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
       log.user_id,
       userMap[log.user_id] || '',
       log.log_type || '',
-      log.work_type || '',
+      formatWorkType(log.work_type),
       log.date,
       log.time || ''
     ])
