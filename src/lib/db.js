@@ -188,6 +188,38 @@ function formatWorkType(wt) {
   }).join(' / ')
 }
 
+const KINMUBO_WORK_TYPES = ['現場', '清掃', '事務']
+
+function minsToHM(mins) {
+  if (!mins || mins <= 0) return ''
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${h}:${String(m).padStart(2, '0')}`
+}
+
+function timeDiffMins(t1, t2) {
+  // "HH:MM" or "HH:MM:SS"
+  const [h1, m1] = t1.split(':').map(Number)
+  const [h2, m2] = t2.split(':').map(Number)
+  return (h2 * 60 + m2) - (h1 * 60 + m1)
+}
+
+// Parse work_type string → { '現場': mins|0|null, '清掃': ..., '事務': ... }
+// null = not worked, 0 = worked but no time recorded, N = worked N minutes
+function parseWorkMins(workType) {
+  const result = {}
+  KINMUBO_WORK_TYPES.forEach(t => { result[t] = null })
+  if (!workType) return result
+  workType.split(',').forEach(entry => {
+    const parts = entry.split(':')
+    const type = parts[0].trim()
+    if (type in result) {
+      result[type] = parts.length > 1 ? Number(parts[1]) : 0
+    }
+  })
+  return result
+}
+
 // Export monthly attendance register (出勤簿) as XLSX (one sheet per user)
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
@@ -197,7 +229,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const days = []
   const start = new Date(dateFrom)
   const end = new Date(dateTo)
-  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     days.push(
       d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
     )
@@ -206,6 +238,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
   const wb = XLSX.utils.book_new()
 
+  // Year-month label from dateFrom
+  const [ym_y, ym_m] = (dateFrom || days[0] || '').split('-')
+  const yearMonthLabel = ym_y && ym_m ? `${ym_y}年${Number(ym_m)}月` : ''
+
   for (const user of users) {
     const userLogs = logs.filter(l => l.user_id === user.id)
     if (userLogs.length === 0) continue
@@ -213,35 +249,55 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // Group logs by date
     const byDate = {}
     userLogs.forEach(log => {
-      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workTypes: new Set() }
+      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workType: '' }
       if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
       else if (log.log_type === '退勤') {
         byDate[log.date].outs.push(log.time || '')
-        if (log.work_type) {
-          log.work_type.split(',').forEach(w => {
-            const type = w.split(':')[0].trim()
-            if (type) byDate[log.date].workTypes.add(type)
-          })
-        }
+        if (log.work_type) byDate[log.date].workType = log.work_type
       }
     })
 
-    const header = ['日付', '曜日', '出勤', '退勤', '作業内容']
+    // Title rows
+    const titleRows = [
+      [`${yearMonthLabel} 出勤簿`],
+      [`担当者: ${user.name}`],
+      []
+    ]
+
+    const header = ['日付', '曜日', '出勤', '退勤', ...KINMUBO_WORK_TYPES, '合計']
+
+    let totalMonthMins = 0
     const rows = days.map(dateStr => {
-      const [y, m, d] = dateStr.split('-').map(Number)
-      const dayName = DAY_NAMES[new Date(y, m - 1, d).getDay()]
+      const [y, mo, dy] = dateStr.split('-').map(Number)
+      const dow = new Date(y, mo - 1, dy).getDay()
+      const dayName = DAY_NAMES[dow]
+
       const entry = byDate[dateStr]
-      return [
-        dateStr,
-        dayName,
-        entry ? (entry.ins.sort()[0] || '').substring(0, 5) : '',
-        entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : '',
-        entry ? [...entry.workTypes].join(' / ') : ''
-      ]
+      const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+      const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+
+      const totalMins = (inTime && outTime) ? Math.max(0, timeDiffMins(inTime, outTime)) : 0
+      totalMonthMins += totalMins
+
+      const workMins = parseWorkMins(entry?.workType || '')
+      const typeCells = KINMUBO_WORK_TYPES.map(t => {
+        if (workMins[t] === null) return ''
+        if (workMins[t] === 0) return totalMins > 0 ? minsToHM(totalMins) : '○'
+        return minsToHM(workMins[t])
+      })
+
+      return [dateStr, dayName, inTime, outTime, ...typeCells, totalMins > 0 ? minsToHM(totalMins) : '']
     })
 
-    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
-    ws['!cols'] = [{ wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 20 }]
+    // Summary row
+    const totalRow = ['', '', '', '月合計', ...KINMUBO_WORK_TYPES.map(() => ''), minsToHM(totalMonthMins)]
+
+    const data = [...titleRows, header, ...rows, [], totalRow]
+    const ws = XLSX.utils.aoa_to_sheet(data)
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 },
+      { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }
+    ]
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }
 
