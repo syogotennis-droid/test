@@ -129,7 +129,7 @@ export default function App() {
   }
 
   return (
-    <div className={styles.container}>
+    <div className={state === STATE.WORK ? styles.containerScrollable : styles.container}>
       {state === STATE.MODE && (
         <ModeSelectScreen onSelect={handleModeSelect} />
       )}
