@@ -221,7 +221,8 @@ function parseWorkMins(workType) {
 }
 
 // Export monthly attendance register (出勤簿) as XLSX (one sheet per user)
-export async function exportKinmubo({ dateFrom, dateTo } = {}) {
+// rates = { '現場': number/h, '清掃': number/h, '事務': number/h }
+export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
 
@@ -238,7 +239,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
   const wb = XLSX.utils.book_new()
 
-  // Year-month label from dateFrom
   const [ym_y, ym_m] = (dateFrom || days[0] || '').split('-')
   const yearMonthLabel = ym_y && ym_m ? `${ym_y}年${Number(ym_m)}月` : ''
 
@@ -257,46 +257,90 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    // Title rows
+    // Column header
+    const header = [
+      '日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間',
+      '現場時間', '現場日給', '清掃時間', '清掃日給', '事務時間', '事務日給', '合計日給'
+    ]
+
+    // Monthly accumulators
+    let totalWorkMins = 0
+    const typeTotalMins = { 現場: 0, 清掃: 0, 事務: 0 }
+    const typeTotalWage = { 現場: 0, 清掃: 0, 事務: 0 }
+    let grandTotalWage = 0
+
+    const rows = days.map(dateStr => {
+      const [y, mo, dy] = dateStr.split('-').map(Number)
+      const dayName = DAY_NAMES[new Date(y, mo - 1, dy).getDay()]
+
+      const entry = byDate[dateStr]
+      const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+      const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+      const totalMins = (inTime && outTime) ? Math.max(0, timeDiffMins(inTime, outTime)) : 0
+      totalWorkMins += totalMins
+
+      const workMins = parseWorkMins(entry?.workType || '')
+      // Types selected with no specific time → share total if only one type, else blank
+      const zeroTypes = KINMUBO_WORK_TYPES.filter(t => workMins[t] === 0)
+
+      const getTypeMins = t => {
+        if (workMins[t] === null) return 0
+        if (workMins[t] > 0) return workMins[t]
+        // selected, no specific time
+        return zeroTypes.length === 1 ? totalMins : 0
+      }
+
+      let dayWage = 0
+      const typeCells = []
+      for (const t of KINMUBO_WORK_TYPES) {
+        if (workMins[t] === null) {
+          typeCells.push('', '') // 時間, 日給
+        } else {
+          const tMins = getTypeMins(t)
+          const tHM = tMins > 0 ? minsToHM(tMins) : (workMins[t] === 0 && zeroTypes.length > 1 ? '○' : '')
+          const rate = Number(rates[t]) || 0
+          const wage = rate > 0 && tMins > 0 ? Math.round(tMins / 60 * rate) : ''
+          if (typeof wage === 'number') {
+            typeTotalMins[t] += tMins
+            typeTotalWage[t] += wage
+            dayWage += wage
+          } else {
+            typeTotalMins[t] += tMins
+          }
+          typeCells.push(tHM, typeof wage === 'number' ? wage : '')
+        }
+      }
+      grandTotalWage += dayWage
+
+      return [
+        dateStr, dayName, inTime, outTime,
+        totalMins > 0 ? minsToHM(totalMins) : '',
+        ...typeCells,
+        dayWage > 0 ? dayWage : ''
+      ]
+    })
+
+    // Monthly totals row (skip 出勤時刻・退勤時刻)
+    const totalRow = [
+      '', '', '', '月合計',
+      minsToHM(totalWorkMins) || '',
+      minsToHM(typeTotalMins['現場']) || '', typeTotalWage['現場'] || '',
+      minsToHM(typeTotalMins['清掃']) || '', typeTotalWage['清掃'] || '',
+      minsToHM(typeTotalMins['事務']) || '', typeTotalWage['事務'] || '',
+      grandTotalWage || ''
+    ]
+
     const titleRows = [
       [`${yearMonthLabel} 出勤簿`],
       [`担当者: ${user.name}`],
       []
     ]
 
-    const header = ['日付', '曜日', '出勤', '退勤', ...KINMUBO_WORK_TYPES, '合計']
-
-    let totalMonthMins = 0
-    const rows = days.map(dateStr => {
-      const [y, mo, dy] = dateStr.split('-').map(Number)
-      const dow = new Date(y, mo - 1, dy).getDay()
-      const dayName = DAY_NAMES[dow]
-
-      const entry = byDate[dateStr]
-      const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-      const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-
-      const totalMins = (inTime && outTime) ? Math.max(0, timeDiffMins(inTime, outTime)) : 0
-      totalMonthMins += totalMins
-
-      const workMins = parseWorkMins(entry?.workType || '')
-      const typeCells = KINMUBO_WORK_TYPES.map(t => {
-        if (workMins[t] === null) return ''
-        if (workMins[t] === 0) return totalMins > 0 ? minsToHM(totalMins) : '○'
-        return minsToHM(workMins[t])
-      })
-
-      return [dateStr, dayName, inTime, outTime, ...typeCells, totalMins > 0 ? minsToHM(totalMins) : '']
-    })
-
-    // Summary row
-    const totalRow = ['', '', '', '月合計', ...KINMUBO_WORK_TYPES.map(() => ''), minsToHM(totalMonthMins)]
-
     const data = [...titleRows, header, ...rows, [], totalRow]
     const ws = XLSX.utils.aoa_to_sheet(data)
     ws['!cols'] = [
-      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 },
-      { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }
+      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+      { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 9 }
     ]
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }

@@ -427,6 +427,8 @@ function KinmuboTab({ today }) {
   const currentYM = today.substring(0, 7) // "YYYY-MM"
   const [selectedYM, setSelectedYM] = useState(currentYM)
   const [exporting, setExporting] = useState(false)
+  const [showRates, setShowRates] = useState(false)
+  const [rates, setRates] = useState({ 現場: '', 清掃: '', 事務: '' })
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -440,7 +442,7 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    const buf = await exportKinmubo({ dateFrom, dateTo })
+    const buf = await exportKinmubo({ dateFrom, dateTo, rates })
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -457,11 +459,37 @@ function KinmuboTab({ today }) {
     <div className={styles.content}>
       <div className={styles.kinmuboPanel}>
         <p className={styles.kinmuboDesc}>対象月を選択して出勤簿を作成します。<br />担当者ごとにシートが分かれたExcelファイルが出力されます。</p>
+
         <div className={styles.monthSelector}>
           <button className={styles.navBtn} onClick={() => shiftMonth(-1)}>◀</button>
           <span className={styles.monthLabel}>{displayY}年{displayM}月</span>
           <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
         </div>
+
+        <div className={styles.ratesSection}>
+          <button className={styles.ratesToggle} onClick={() => setShowRates(o => !o)}>
+            {showRates ? '▼' : '▶'} 時給設定
+          </button>
+          {showRates && (
+            <div className={styles.ratesGrid}>
+              {['現場', '清掃', '事務'].map(t => (
+                <div key={t} className={styles.rateRow}>
+                  <label className={styles.rateLabel}>{t}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={rates[t]}
+                    onChange={e => setRates(r => ({ ...r, [t]: e.target.value }))}
+                    className={styles.rateInput}
+                  />
+                  <span className={styles.rateUnit}>円/時</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <button className={styles.kinmuboCreateBtn} onClick={handleCreate} disabled={exporting}>
           {exporting ? '作成中...' : '📥 出勤簿を作成'}
         </button>
