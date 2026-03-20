@@ -315,7 +315,7 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
 
     // Monthly totals row (skip 出勤時刻・退勤時刻・spacer)
     const totalRow = [
-      '', '', '', '月合計',
+      '月合計', '', '', '',
       minsToHM(totalWorkMins) || '',
       '', // spacer
       minsToHM(typeTotalMins['現場']) || '', typeTotalWage['現場'] || '',
