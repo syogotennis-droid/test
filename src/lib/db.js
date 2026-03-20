@@ -257,11 +257,10 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       }
     })
 
-    // Column header
-    const header = [
-      '日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間',
-      '現場時間', '現場日給', '清掃時間', '清掃日給', '事務時間', '事務日給', '合計日給'
-    ]
+    // 2-row merged header
+    // cols: 日付(0) 曜日(1) 出勤(2) 退勤(3) 勤務時間(4) [spacer](5) 現場×2(6-7) 清掃×2(8-9) 事務×2(10-11) 合計日給(12)
+    const headerRow1 = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '', '現場', '', '清掃', '', '事務', '', '合計日給']
+    const headerRow2 = ['',    '',    '',        '',        '',          '', '作業時間', '日給', '作業時間', '日給', '作業時間', '日給', '']
 
     // Monthly accumulators
     let totalWorkMins = 0
@@ -280,13 +279,11 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       totalWorkMins += totalMins
 
       const workMins = parseWorkMins(entry?.workType || '')
-      // Types selected with no specific time → share total if only one type, else blank
       const zeroTypes = KINMUBO_WORK_TYPES.filter(t => workMins[t] === 0)
 
       const getTypeMins = t => {
         if (workMins[t] === null) return 0
         if (workMins[t] > 0) return workMins[t]
-        // selected, no specific time
         return zeroTypes.length === 1 ? totalMins : 0
       }
 
@@ -294,19 +291,14 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       const typeCells = []
       for (const t of KINMUBO_WORK_TYPES) {
         if (workMins[t] === null) {
-          typeCells.push('', '') // 時間, 日給
+          typeCells.push('', '')
         } else {
           const tMins = getTypeMins(t)
           const tHM = tMins > 0 ? minsToHM(tMins) : (workMins[t] === 0 && zeroTypes.length > 1 ? '○' : '')
           const rate = Number(rates[t]) || 0
           const wage = rate > 0 && tMins > 0 ? Math.round(tMins / 60 * rate) : ''
-          if (typeof wage === 'number') {
-            typeTotalMins[t] += tMins
-            typeTotalWage[t] += wage
-            dayWage += wage
-          } else {
-            typeTotalMins[t] += tMins
-          }
+          typeTotalMins[t] += tMins
+          if (typeof wage === 'number') { typeTotalWage[t] += wage; dayWage += wage }
           typeCells.push(tHM, typeof wage === 'number' ? wage : '')
         }
       }
@@ -315,15 +307,17 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       return [
         dateStr, dayName, inTime, outTime,
         totalMins > 0 ? minsToHM(totalMins) : '',
+        '', // spacer
         ...typeCells,
         dayWage > 0 ? dayWage : ''
       ]
     })
 
-    // Monthly totals row (skip 出勤時刻・退勤時刻)
+    // Monthly totals row (skip 出勤時刻・退勤時刻・spacer)
     const totalRow = [
       '', '', '', '月合計',
       minsToHM(totalWorkMins) || '',
+      '', // spacer
       minsToHM(typeTotalMins['現場']) || '', typeTotalWage['現場'] || '',
       minsToHM(typeTotalMins['清掃']) || '', typeTotalWage['清掃'] || '',
       minsToHM(typeTotalMins['事務']) || '', typeTotalWage['事務'] || '',
@@ -335,12 +329,28 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       [`担当者: ${user.name}`],
       []
     ]
+    // title rows occupy rows 0-2, headers at rows 3-4
+    const TITLE_ROWS = 3
 
-    const data = [...titleRows, header, ...rows, [], totalRow]
+    const data = [...titleRows, headerRow1, headerRow2, ...rows, [], totalRow]
     const ws = XLSX.utils.aoa_to_sheet(data)
     ws['!cols'] = [
-      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
-      { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 9 }
+      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 2 },
+      { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }
+    ]
+    // Merged cells for 2-row header
+    const hr = TITLE_ROWS // header group row index
+    ws['!merges'] = [
+      { s: { r: hr, c: 0  }, e: { r: hr+1, c: 0  } }, // 日付
+      { s: { r: hr, c: 1  }, e: { r: hr+1, c: 1  } }, // 曜日
+      { s: { r: hr, c: 2  }, e: { r: hr+1, c: 2  } }, // 出勤時刻
+      { s: { r: hr, c: 3  }, e: { r: hr+1, c: 3  } }, // 退勤時刻
+      { s: { r: hr, c: 4  }, e: { r: hr+1, c: 4  } }, // 勤務時間
+      { s: { r: hr, c: 5  }, e: { r: hr+1, c: 5  } }, // spacer
+      { s: { r: hr, c: 6  }, e: { r: hr,   c: 7  } }, // 現場
+      { s: { r: hr, c: 8  }, e: { r: hr,   c: 9  } }, // 清掃
+      { s: { r: hr, c: 10 }, e: { r: hr,   c: 11 } }, // 事務
+      { s: { r: hr, c: 12 }, e: { r: hr+1, c: 12 } }, // 合計日給
     ]
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }
