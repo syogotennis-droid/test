@@ -332,7 +332,7 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
     // title rows occupy rows 0-2, headers at rows 3-4
     const TITLE_ROWS = 3
 
-    const data = [...titleRows, headerRow1, headerRow2, ...rows, [], totalRow]
+    const data = [...titleRows, headerRow1, headerRow2, ...rows, totalRow]
     const ws = XLSX.utils.aoa_to_sheet(data)
     ws['!cols'] = [
       { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 2 },
