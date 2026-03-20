@@ -314,10 +314,36 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
   const [logType, setLogType] = useState('出勤')
   const [date, setDate] = useState(today)
   const [time, setTime] = useState(nowTime)
-  const [workTypes, setWorkTypes] = useState([])
+  // workTimes: { 現場: { on: bool, h: '', m: '' }, ... }
+  const [workTimes, setWorkTimes] = useState(
+    Object.fromEntries(WORK_TYPES.map(t => [t, { on: false, h: '', m: '' }]))
+  )
 
   function toggleWork(t) {
-    setWorkTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+    setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], on: !prev[t].on } }))
+  }
+
+  function setWorkH(t, v) {
+    setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], h: v } }))
+  }
+
+  function setWorkM(t, v) {
+    setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], m: v } }))
+  }
+
+  function buildWorkTypeStr() {
+    return WORK_TYPES.filter(t => workTimes[t].on).map(t => {
+      const mins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+      return mins > 0 ? `${t}:${mins}` : t
+    }).join(',')
+  }
+
+  function workSummary(t) {
+    const { h, m } = workTimes[t]
+    const hv = parseInt(h) || 0
+    const mv = parseInt(m) || 0
+    if (hv === 0 && mv === 0) return t
+    return `${t} ${hv > 0 ? `${hv}時間` : ''}${mv > 0 ? `${mv}分` : ''}`
   }
 
   async function handleConfirm() {
@@ -326,12 +352,13 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
       logType,
       date,
       time,
-      workType: workTypes.join(',')
+      workType: buildWorkTypeStr()
     })
     onSaved()
   }
 
   const userName = users.find(u => u.id === userId)?.name || userId
+  const selectedWorkTypes = WORK_TYPES.filter(t => workTimes[t].on)
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -376,13 +403,32 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
             {logType === '退勤' && (
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>作業内容</label>
-                <div className={styles.workTypeRow}>
+                <div className={styles.workTypeList}>
                   {WORK_TYPES.map(t => (
-                    <button
-                      key={t}
-                      className={[styles.workTypeBtn, workTypes.includes(t) ? styles.workTypeBtnActive : ''].join(' ')}
-                      onClick={() => toggleWork(t)}
-                    >{t}</button>
+                    <div key={t} className={styles.workTypeEntry}>
+                      <button
+                        className={[styles.workTypeBtn, workTimes[t].on ? styles.workTypeBtnActive : ''].join(' ')}
+                        onClick={() => toggleWork(t)}
+                      >{t}</button>
+                      {workTimes[t].on && (
+                        <div className={styles.workTimeInputs}>
+                          <input
+                            type="number" min="0" max="23" placeholder="0"
+                            value={workTimes[t].h}
+                            onChange={e => setWorkH(t, e.target.value)}
+                            className={styles.workTimeNum}
+                          />
+                          <span className={styles.workTimeUnit}>時間</span>
+                          <input
+                            type="number" min="0" max="59" placeholder="0"
+                            value={workTimes[t].m}
+                            onChange={e => setWorkM(t, e.target.value)}
+                            className={styles.workTimeNum}
+                          />
+                          <span className={styles.workTimeUnit}>分</span>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -405,8 +451,8 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
               </div>
               <div className={styles.confirmRow}><span>日付</span><strong>{date}</strong></div>
               <div className={styles.confirmRow}><span>時刻</span><strong>{time}</strong></div>
-              {workTypes.length > 0 && (
-                <div className={styles.confirmRow}><span>作業</span><strong>{workTypes.join(' / ')}</strong></div>
+              {selectedWorkTypes.length > 0 && (
+                <div className={styles.confirmRow}><span>作業</span><strong>{selectedWorkTypes.map(workSummary).join(' / ')}</strong></div>
               )}
             </div>
             <p className={styles.confirmWarn}>この内容で記録を作成します</p>
