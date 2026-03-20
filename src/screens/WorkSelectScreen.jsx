@@ -148,20 +148,25 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
       <div className={styles.buttons}>
         {WORK_TYPES.map(type => (
           <div key={type.id} className={styles.workTypeGroup}>
-            <button
+            <div
               className={[
                 styles.workBtn,
                 styles[type.cls],
                 selected.includes(type.id) ? styles.selected : ''
               ].join(' ')}
-              onClick={() => toggleType(type.id)}
             >
               <span className={styles.workIcon}>{type.icon}</span>
               <span className={styles.workLabel}>{type.label}</span>
-              {selected.includes(type.id) && (
-                <span className={styles.check}>✓</span>
-              )}
-            </button>
+              <button
+                className={[
+                  styles.checkboxBtn,
+                  selected.includes(type.id) ? styles.checkboxChecked : ''
+                ].join(' ')}
+                onClick={() => toggleType(type.id)}
+              >
+                {selected.includes(type.id) ? '✓' : ''}
+              </button>
+            </div>
 
             {selected.includes(type.id) && (
               <div className={styles.timeInputRow}>
