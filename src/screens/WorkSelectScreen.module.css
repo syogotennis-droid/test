@@ -155,10 +155,10 @@
 }
 
 .timeSelect {
-  width: 72px;
+  width: 88px;
   padding: 10px 4px;
   text-align: center;
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: bold;
   border: 2px solid var(--color-border);
   border-radius: 8px;
