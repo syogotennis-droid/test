@@ -43,8 +43,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   }
 
   function setTime(id, field, raw) {
-    const max = field === 'h' ? 23 : 59
-    const val = Math.max(0, Math.min(max, parseInt(raw) || 0))
+    const val = parseInt(raw) || 0
     setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
     setTimeError('')
   }
@@ -127,25 +126,25 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
             {selected.includes(type.id) && (
               <div className={styles.timeInputRow}>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  max="23"
+                <select
                   value={workTimes[type.id]?.h ?? 0}
                   onChange={e => setTime(type.id, 'h', e.target.value)}
-                  className={styles.timeInput}
-                />
+                  className={styles.timeSelect}
+                >
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
                 <span className={styles.timeUnit}>時間</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  max="59"
+                <select
                   value={workTimes[type.id]?.m ?? 0}
                   onChange={e => setTime(type.id, 'm', e.target.value)}
-                  className={styles.timeInput}
-                />
+                  className={styles.timeSelect}
+                >
+                  {Array.from({ length: 60 }, (_, i) => (
+                    <option key={i} value={i}>{i}</option>
+                  ))}
+                </select>
                 <span className={styles.timeUnit}>分</span>
               </div>
             )}
