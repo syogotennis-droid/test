@@ -201,7 +201,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                         setTimeError('')
                       }}
                     >
-                      残り{fmtMinutes(remaining)}
+                      残り時間を入力
                     </button>
                   )
                 })()}
