@@ -240,6 +240,20 @@
   margin-right: 0;
 }
 
+.remainingBtn {
+  margin-left: 8px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 20px;
+  background: var(--color-success);
+  color: white;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* エラー */
 .timeError {
   color: #e53935;

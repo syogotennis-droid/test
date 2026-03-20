@@ -171,6 +171,32 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                   label="分"
                 />
                 <span className={styles.timeUnit}>分</span>
+                {workingMinutes !== null && (() => {
+                  const otherMins = selected
+                    .filter(id => id !== type.id)
+                    .reduce((sum, id) => {
+                      const t = workTimes[id] || { h: 0, m: 0 }
+                      return sum + t.h * 60 + t.m
+                    }, 0)
+                  const remaining = workingMinutes - otherMins
+                  if (remaining <= 0) return null
+                  const rh = Math.floor(remaining / 60)
+                  const rm = remaining % 60
+                  const alreadySet = (workTimes[type.id]?.h ?? 0) * 60 + (workTimes[type.id]?.m ?? 0) === remaining
+                  if (alreadySet) return null
+                  return (
+                    <button
+                      className={styles.remainingBtn}
+                      onClick={() => {
+                        setTime(type.id, 'h', rh)
+                        setTime(type.id, 'm', rm)
+                        setTimeError('')
+                      }}
+                    >
+                      残り{fmtMinutes(remaining)}
+                    </button>
+                  )
+                })()}
               </div>
             )}
           </div>
