@@ -16,7 +16,7 @@
 }
 
 .checkmark {
-  font-size: 5rem;
+  font-size: 6rem;
   font-weight: bold;
   animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -28,30 +28,30 @@
 }
 
 .workIcon {
-  font-size: 3rem;
+  font-size: 3.5rem;
 }
 
 .screen h1 {
-  font-size: 2.4rem;
+  font-size: 3rem;
   color: white;
   font-weight: bold;
   letter-spacing: 0.05em;
 }
 
 .detail {
-  font-size: 1.2rem;
+  font-size: 1.6rem;
   color: rgba(255,255,255,0.9);
 }
 
 .timeInfo {
   background: rgba(255,255,255,0.15);
   border-radius: 12px;
-  padding: 14px 20px;
+  padding: 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  max-width: 320px;
+  max-width: 360px;
 }
 
 .timeRow {
@@ -63,30 +63,30 @@
 
 .totalRow {
   border-top: 1px solid rgba(255,255,255,0.3);
-  padding-top: 8px;
+  padding-top: 10px;
   margin-top: 2px;
 }
 
 .timeLabel {
-  font-size: 0.9rem;
+  font-size: 1.1rem;
   color: rgba(255,255,255,0.8);
 }
 
 .timeValue {
-  font-size: 1.3rem;
+  font-size: 1.6rem;
   font-weight: bold;
   color: white;
   font-variant-numeric: tabular-nums;
 }
 
 .timeValueBig {
-  font-size: 1.6rem;
+  font-size: 2rem;
   font-weight: bold;
   color: white;
 }
 
 .countdown {
   margin-top: 16px;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   color: rgba(255,255,255,0.7);
 }

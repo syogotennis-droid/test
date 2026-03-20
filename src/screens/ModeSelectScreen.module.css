@@ -15,18 +15,18 @@
 }
 
 .icon {
-  font-size: 3rem;
+  font-size: 4.5rem;
   margin-bottom: 8px;
 }
 
 .header h1 {
-  font-size: 1.8rem;
+  font-size: 2.6rem;
   margin: 0 0 8px;
   color: var(--color-text);
 }
 
 .header p {
-  font-size: 1rem;
+  font-size: 1.4rem;
   color: var(--color-subtext);
   margin: 0;
 }
@@ -43,12 +43,12 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  height: 100px;
+  height: 120px;
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
   color: var(--color-white);
-  font-size: 1.8rem;
+  font-size: 2.2rem;
   font-weight: bold;
   box-shadow: var(--shadow);
   transition: transform 0.1s, box-shadow 0.1s;
@@ -61,11 +61,11 @@
 }
 
 .modeIcon {
-  font-size: 2rem;
+  font-size: 2.6rem;
 }
 
 .modeLabel {
-  font-size: 2rem;
+  font-size: 2.6rem;
 }
 
 .clockIn {
