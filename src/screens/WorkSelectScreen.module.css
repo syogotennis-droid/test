@@ -154,9 +154,10 @@
   box-shadow: 0 4px 10px rgba(0,0,0,0.1);
 }
 
-.timeSelect {
-  width: 88px;
-  padding: 10px 4px;
+/* カスタムピッカーボタン（現在値表示） */
+.pickerBtn {
+  min-width: 80px;
+  padding: 10px 8px;
   text-align: center;
   font-size: 2rem;
   font-weight: bold;
@@ -165,13 +166,67 @@
   color: var(--color-text);
   background: var(--color-bg);
   cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
 }
 
-.timeSelect:focus {
-  outline: none;
-  border-color: var(--color-text);
+/* オーバーレイ */
+.pickerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* ボトムシート */
+.pickerSheet {
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-white);
+  border-radius: 20px 20px 0 0;
+  padding: 0 0 24px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.pickerHeader {
+  padding: 16px 20px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--color-subtext);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+/* 数字グリッド */
+.pickerGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.pickerItem {
+  height: 64px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-bg);
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.pickerItem:active {
+  transform: scale(0.93);
+}
+
+.pickerActive {
+  background: var(--color-text);
+  color: var(--color-white);
 }
 
 .timeUnit {

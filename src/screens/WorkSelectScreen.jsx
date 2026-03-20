@@ -14,6 +14,36 @@ function fmtMinutes(mins) {
   return h > 0 ? `${h}時間${m}分` : `${m}分`
 }
 
+function NumberPicker({ value, options, onChange, label }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button className={styles.pickerBtn} onClick={() => setOpen(true)}>
+        {value}
+      </button>
+      {open && (
+        <div className={styles.pickerOverlay} onClick={() => setOpen(false)}>
+          <div className={styles.pickerSheet} onClick={e => e.stopPropagation()}>
+            <div className={styles.pickerHeader}>{label}を選択</div>
+            <div className={styles.pickerGrid}>
+              {options.map(n => (
+                <button
+                  key={n}
+                  className={[styles.pickerItem, n === value ? styles.pickerActive : ''].join(' ')}
+                  onClick={() => { onChange(n); setOpen(false) }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [selected, setSelected] = useState([])
   const [workTimes, setWorkTimes] = useState({})
@@ -42,8 +72,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
     }
   }
 
-  function setTime(id, field, raw) {
-    const val = parseInt(raw) || 0
+  function setTime(id, field, val) {
     setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
     setTimeError('')
   }
@@ -75,6 +104,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   }
 
   const isConfirmDisabled = selected.length === 0 || saving
+  const hourOptions = Array.from({ length: 24 }, (_, i) => i)
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i)
 
   return (
     <div className={styles.screen}>
@@ -126,25 +157,19 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
             {selected.includes(type.id) && (
               <div className={styles.timeInputRow}>
-                <select
+                <NumberPicker
                   value={workTimes[type.id]?.h ?? 0}
-                  onChange={e => setTime(type.id, 'h', e.target.value)}
-                  className={styles.timeSelect}
-                >
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <option key={i} value={i}>{i}</option>
-                  ))}
-                </select>
+                  options={hourOptions}
+                  onChange={val => setTime(type.id, 'h', val)}
+                  label="時間"
+                />
                 <span className={styles.timeUnit}>時間</span>
-                <select
+                <NumberPicker
                   value={workTimes[type.id]?.m ?? 0}
-                  onChange={e => setTime(type.id, 'm', e.target.value)}
-                  className={styles.timeSelect}
-                >
-                  {Array.from({ length: 60 }, (_, i) => (
-                    <option key={i} value={i}>{i}</option>
-                  ))}
-                </select>
+                  options={minuteOptions}
+                  onChange={val => setTime(type.id, 'm', val)}
+                  label="分"
+                />
                 <span className={styles.timeUnit}>分</span>
               </div>
             )}
