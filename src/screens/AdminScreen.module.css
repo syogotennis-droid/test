@@ -257,6 +257,18 @@
   text-align: center;
 }
 
+.kinmuboNote {
+  font-size: 0.82rem;
+  color: var(--color-subtext);
+  text-align: center;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 8px 14px;
+  line-height: 1.5;
+  max-width: 320px;
+}
+
 .kinmuboCreateBtn {
   background: var(--color-primary, #1a73e8);
   color: white;

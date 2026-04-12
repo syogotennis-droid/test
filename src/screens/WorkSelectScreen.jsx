@@ -3,7 +3,7 @@ import { getClockInTime } from '../lib/db'
 import styles from './WorkSelectScreen.module.css'
 
 const WORK_TYPES = [
-  { id: '現場', label: '現場', icon: '🏗️', cls: 'field' },
+  { id: '現場', label: '現場', icon: '🏊', cls: 'field' },
   { id: '清掃', label: '清掃', icon: '🧹', cls: 'cleaning' },
   { id: '事務', label: '事務', icon: '💼', cls: 'office' },
   { id: '休憩', label: '休憩', icon: '☕', cls: 'break' }

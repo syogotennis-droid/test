@@ -541,26 +541,10 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
 
 // ─── KinmuboTab ───────────────────────────────────────────────────────────────
 
-const RATES_STORAGE_KEY = 'qr_kinmubo_rates'
-
 function KinmuboTab({ today }) {
   const currentYM = today.substring(0, 7) // "YYYY-MM"
   const [selectedYM, setSelectedYM] = useState(currentYM)
   const [exporting, setExporting] = useState(false)
-  const [showRates, setShowRates] = useState(false)
-  const [rates, setRates] = useState(() => {
-    try {
-      const stored = localStorage.getItem(RATES_STORAGE_KEY)
-      if (stored) return { 現場: '', 清掃: '', 事務: '', ...JSON.parse(stored) }
-    } catch {}
-    return { 現場: '', 清掃: '', 事務: '' }
-  })
-
-  function handleRateChange(type, value) {
-    const next = { ...rates, [type]: value }
-    setRates(next)
-    try { localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(next)) } catch {}
-  }
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -574,7 +558,7 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    const buf = await exportKinmubo({ dateFrom, dateTo, rates })
+    const buf = await exportKinmubo({ dateFrom, dateTo })
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -598,29 +582,7 @@ function KinmuboTab({ today }) {
           <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
         </div>
 
-        <div className={styles.ratesSection}>
-          <button className={styles.ratesToggle} onClick={() => setShowRates(o => !o)}>
-            {showRates ? '▼' : '▶'} 時給設定
-          </button>
-          {showRates && (
-            <div className={styles.ratesGrid}>
-              {['現場', '清掃', '事務'].map(t => (
-                <div key={t} className={styles.rateRow}>
-                  <label className={styles.rateLabel}>{t}</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={rates[t]}
-                    onChange={e => handleRateChange(t, e.target.value)}
-                    className={styles.rateInput}
-                  />
-                  <span className={styles.rateUnit}>円/時</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <p className={styles.kinmuboNote}>時給はユーザー管理から各担当者ごとに設定してください。</p>
 
         <button className={styles.kinmuboCreateBtn} onClick={handleCreate} disabled={exporting}>
           {exporting ? '作成中...' : '📥 出勤簿を作成'}
@@ -743,11 +705,17 @@ function UsersTab({ users, today, onRefresh }) {
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [step, setStep] = useState('main') // 'main' | 'confirmStatus' | 'confirmDelete'
   const [name, setName] = useState(user.name)
+  const [rates, setRates] = useState({ 現場: '', 清掃: '', 事務: '', ...(user.rates || {}) })
   const [dangerOpen, setDangerOpen] = useState(false)
 
   async function handleSaveName() {
     if (!name.trim()) return
-    await upsertUser({ id: user.id, name: name.trim() })
+    await upsertUser({ id: user.id, name: name.trim(), rates })
+    onSaved()
+  }
+
+  async function handleSaveRates() {
+    await upsertUser({ id: user.id, name: name || user.name, rates })
     onSaved()
   }
 
@@ -787,6 +755,30 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
               >
                 名前を保存
               </button>
+            </div>
+
+            <hr className={styles.modalDivider} />
+
+            {/* Rates */}
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>時給設定</label>
+              <div className={styles.ratesGrid}>
+                {['現場', '清掃', '事務'].map(t => (
+                  <div key={t} className={styles.rateRow}>
+                    <label className={styles.rateLabel}>{t}</label>
+                    <input
+                      type="number" min="0" placeholder="0"
+                      value={rates[t]}
+                      onChange={e => setRates(r => ({ ...r, [t]: e.target.value }))}
+                      className={styles.rateInput}
+                    />
+                    <span className={styles.rateUnit}>円/時</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleSaveRates}>時給を保存</button>
             </div>
 
             <hr className={styles.modalDivider} />
