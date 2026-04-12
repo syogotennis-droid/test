@@ -582,8 +582,6 @@ function KinmuboTab({ today }) {
           <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
         </div>
 
-        <p className={styles.kinmuboNote}>時給はユーザー管理から各担当者ごとに設定してください。</p>
-
         <button className={styles.kinmuboCreateBtn} onClick={handleCreate} disabled={exporting}>
           {exporting ? '作成中...' : '📥 出勤簿を作成'}
         </button>
