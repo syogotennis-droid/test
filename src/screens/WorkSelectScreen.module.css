@@ -141,10 +141,10 @@
   color: #222;
 }
 
-.office { background: var(--color-office); }
-.cleaning { background: var(--color-cleaning); }
-.field { background: var(--color-field); }
-.break { background: #FF8F00; }
+.office { background: #7B1FA2; }   /* 紫 — 事務 */
+.cleaning { background: #388E3C; } /* 緑 — 清掃 */
+.field { background: #1976D2; }    /* 青 — 現場（プール） */
+.break { background: #E64A19; }    /* 深オレンジ — 休憩 */
 
 .workIcon {
   font-size: 2rem;
