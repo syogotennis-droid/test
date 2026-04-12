@@ -268,9 +268,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     })
 
     // 2-row merged header
-    // cols: 日付(0) 曜日(1) 出勤(2) 退勤(3) 勤務時間(4) 休憩時間(5) [spacer](6) 現場×2(7-8) 清掃×2(9-10) 事務×2(11-12) 合計日給(13) 手当×2(14-15)
-    const headerRow1 = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '休憩時間', '', '現場', '', '清掃', '', '事務', '', '合計日給', '手当', '']
-    const headerRow2 = ['',    '',    '',        '',        '',          '',          '', '作業時間', '日給', '作業時間', '日給', '作業時間', '日給', '',     '内容', '金額']
+    // cols: 日付(0) 曜日(1) 出勤(2) 退勤(3) 勤務時間(4) 休憩時間(5) [spacer](6) 現場×2(7-8) 清掃×2(9-10) 事務×2(11-12) 合計日給(13)
+    const headerRow1 = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '休憩時間', '', '現場', '', '清掃', '', '事務', '', '合計日給']
+    const headerRow2 = ['',    '',    '',        '',        '',          '',          '', '作業時間', '日給', '作業時間', '日給', '作業時間', '日給', '']
 
     // Monthly accumulators
     let totalWorkMins = 0
@@ -326,8 +326,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         kyukeiHM, // 休憩時間
         '', // spacer
         ...typeCells,
-        dayWage > 0 ? dayWage : '',
-        '', '' // 手当内容, 手当金額 (blank — filled manually in Excel)
+        dayWage > 0 ? dayWage : ''
       ]
     })
 
@@ -340,8 +339,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       minsToHM(typeTotalMins['現場']) || '', typeTotalWage['現場'] || '',
       minsToHM(typeTotalMins['清掃']) || '', typeTotalWage['清掃'] || '',
       minsToHM(typeTotalMins['事務']) || '', typeTotalWage['事務'] || '',
-      grandTotalWage || '',
-      '手当合計', '' // 手当内容ラベル, 手当金額 (SUM formula set below)
+      grandTotalWage || ''
     ]
 
     const titleRows = [
@@ -356,8 +354,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const ws = XLSX.utils.aoa_to_sheet(data)
     ws['!cols'] = [
       { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 2 },
-      { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 },
-      { wch: 18 }, { wch: 9 }
+      { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }
     ]
     // Merged cells for 2-row header
     const hr = TITLE_ROWS // header group row index
@@ -373,14 +370,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       { s: { r: hr, c: 9  }, e: { r: hr,   c: 10 } }, // 清掃
       { s: { r: hr, c: 11 }, e: { r: hr,   c: 12 } }, // 事務
       { s: { r: hr, c: 13 }, e: { r: hr+1, c: 13 } }, // 合計日給
-      { s: { r: hr, c: 14 }, e: { r: hr,   c: 15 } }, // 手当
     ]
-    // 手当金額 SUM formula in total row (col P = index 15)
-    // Data rows: Excel row TITLE_ROWS+3 to TITLE_ROWS+2+days.length (1-indexed)
-    const handouDataStart = TITLE_ROWS + 3
-    const handouDataEnd   = TITLE_ROWS + 2 + days.length
-    const handouTotalRow  = TITLE_ROWS + 3 + days.length
-    ws[`P${handouTotalRow}`] = { t: 'n', f: `SUM(P${handouDataStart}:P${handouDataEnd})` }
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }
 
