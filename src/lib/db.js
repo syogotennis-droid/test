@@ -79,6 +79,15 @@ export async function getClockInTime(userId) {
   return clockIns.length > 0 ? clockIns[clockIns.length - 1] : null
 }
 
+// Get the most recent clock-in record for a user on a specific date
+export async function getClockInTimeForDate(userId, date) {
+  const logs = await db.logs.where('date').equals(date).toArray()
+  const clockIns = logs
+    .filter(l => l.user_id === userId && l.log_type === '出勤')
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+  return clockIns.length > 0 ? clockIns[clockIns.length - 1] : null
+}
+
 // Check if a user is currently checked in (more check-ins than check-outs today)
 export async function isCheckedIn(userId) {
   const today = new Date().toLocaleDateString('ja-JP', {
@@ -188,7 +197,7 @@ function formatWorkType(wt) {
   }).join(' / ')
 }
 
-const KINMUBO_WORK_TYPES = ['現場', '清掃', '事務']
+const KINMUBO_PAID_TYPES = ['現場', '清掃', '事務']
 
 function minsToHM(mins) {
   if (!mins || mins <= 0) return ''
@@ -204,11 +213,11 @@ function timeDiffMins(t1, t2) {
   return (h2 * 60 + m2) - (h1 * 60 + m1)
 }
 
-// Parse work_type string → { '現場': mins|0|null, '清掃': ..., '事務': ... }
+// Parse work_type string → { '現場': mins|0|null, '清掃': ..., '事務': ..., '休憩': ... }
 // null = not worked, 0 = worked but no time recorded, N = worked N minutes
 function parseWorkMins(workType) {
   const result = {}
-  KINMUBO_WORK_TYPES.forEach(t => { result[t] = null })
+  ;['現場', '清掃', '事務', '休憩'].forEach(t => { result[t] = null })
   if (!workType) return result
   workType.split(',').forEach(entry => {
     const parts = entry.split(':')
@@ -258,12 +267,13 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
     })
 
     // 2-row merged header
-    // cols: 日付(0) 曜日(1) 出勤(2) 退勤(3) 勤務時間(4) [spacer](5) 現場×2(6-7) 清掃×2(8-9) 事務×2(10-11) 合計日給(12)
-    const headerRow1 = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '', '現場', '', '清掃', '', '事務', '', '合計日給']
-    const headerRow2 = ['',    '',    '',        '',        '',          '', '作業時間', '日給', '作業時間', '日給', '作業時間', '日給', '']
+    // cols: 日付(0) 曜日(1) 出勤(2) 退勤(3) 勤務時間(4) 休憩時間(5) [spacer](6) 現場×2(7-8) 清掃×2(9-10) 事務×2(11-12) 合計日給(13)
+    const headerRow1 = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '休憩時間', '', '現場', '', '清掃', '', '事務', '', '合計日給']
+    const headerRow2 = ['',    '',    '',        '',        '',          '',          '', '作業時間', '日給', '作業時間', '日給', '作業時間', '日給', '']
 
     // Monthly accumulators
     let totalWorkMins = 0
+    let totalKyukeiMins = 0
     const typeTotalMins = { 現場: 0, 清掃: 0, 事務: 0 }
     const typeTotalWage = { 現場: 0, 清掃: 0, 事務: 0 }
     let grandTotalWage = 0
@@ -279,7 +289,12 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       totalWorkMins += totalMins
 
       const workMins = parseWorkMins(entry?.workType || '')
-      const zeroTypes = KINMUBO_WORK_TYPES.filter(t => workMins[t] === 0)
+      const zeroTypes = KINMUBO_PAID_TYPES.filter(t => workMins[t] === 0)
+
+      // 休憩時間
+      const kyukeiMins = workMins['休憩'] !== null && workMins['休憩'] > 0 ? workMins['休憩'] : 0
+      const kyukeiHM = kyukeiMins > 0 ? minsToHM(kyukeiMins) : ''
+      totalKyukeiMins += kyukeiMins
 
       const getTypeMins = t => {
         if (workMins[t] === null) return 0
@@ -289,7 +304,7 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
 
       let dayWage = 0
       const typeCells = []
-      for (const t of KINMUBO_WORK_TYPES) {
+      for (const t of KINMUBO_PAID_TYPES) {
         if (workMins[t] === null) {
           typeCells.push('', '')
         } else {
@@ -307,6 +322,7 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       return [
         dateStr, dayName, inTime, outTime,
         totalMins > 0 ? minsToHM(totalMins) : '',
+        kyukeiHM, // 休憩時間
         '', // spacer
         ...typeCells,
         dayWage > 0 ? dayWage : ''
@@ -317,6 +333,7 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
     const totalRow = [
       '月合計', '', '', '',
       minsToHM(totalWorkMins) || '',
+      minsToHM(totalKyukeiMins) || '', // 休憩合計
       '', // spacer
       minsToHM(typeTotalMins['現場']) || '', typeTotalWage['現場'] || '',
       minsToHM(typeTotalMins['清掃']) || '', typeTotalWage['清掃'] || '',
@@ -335,7 +352,7 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
     const data = [...titleRows, headerRow1, headerRow2, ...rows, totalRow]
     const ws = XLSX.utils.aoa_to_sheet(data)
     ws['!cols'] = [
-      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 2 },
+      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 2 },
       { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }
     ]
     // Merged cells for 2-row header
@@ -346,11 +363,12 @@ export async function exportKinmubo({ dateFrom, dateTo, rates = {} } = {}) {
       { s: { r: hr, c: 2  }, e: { r: hr+1, c: 2  } }, // 出勤時刻
       { s: { r: hr, c: 3  }, e: { r: hr+1, c: 3  } }, // 退勤時刻
       { s: { r: hr, c: 4  }, e: { r: hr+1, c: 4  } }, // 勤務時間
-      { s: { r: hr, c: 5  }, e: { r: hr+1, c: 5  } }, // spacer
-      { s: { r: hr, c: 6  }, e: { r: hr,   c: 7  } }, // 現場
-      { s: { r: hr, c: 8  }, e: { r: hr,   c: 9  } }, // 清掃
-      { s: { r: hr, c: 10 }, e: { r: hr,   c: 11 } }, // 事務
-      { s: { r: hr, c: 12 }, e: { r: hr+1, c: 12 } }, // 合計日給
+      { s: { r: hr, c: 5  }, e: { r: hr+1, c: 5  } }, // 休憩時間
+      { s: { r: hr, c: 6  }, e: { r: hr+1, c: 6  } }, // spacer
+      { s: { r: hr, c: 7  }, e: { r: hr,   c: 8  } }, // 現場
+      { s: { r: hr, c: 9  }, e: { r: hr,   c: 10 } }, // 清掃
+      { s: { r: hr, c: 11 }, e: { r: hr,   c: 12 } }, // 事務
+      { s: { r: hr, c: 13 }, e: { r: hr+1, c: 13 } }, // 合計日給
     ]
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }

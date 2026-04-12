@@ -567,7 +567,9 @@
   background: var(--color-white);
   border-radius: 16px;
   padding: 24px;
-  width: 280px;
+  width: min(340px, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -853,4 +855,46 @@
   cursor: pointer;
   font-weight: bold;
   flex: 1;
+}
+
+/* 勤務時間バナー (手動作成モーダル) */
+.workTimeBanner {
+  background: #f0f7ff;
+  border: 1px solid #bee3f8;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--color-text);
+}
+
+.workTimeBannerSep {
+  color: var(--color-border);
+}
+
+.totalMatch {
+  color: var(--color-success);
+  font-weight: bold;
+}
+
+.totalMismatch {
+  color: #d93025;
+  font-weight: bold;
+}
+
+/* 残り時間を入力ボタン */
+.remainingBtn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 12px;
+  background: var(--color-success);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }

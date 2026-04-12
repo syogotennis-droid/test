@@ -5,7 +5,8 @@ import styles from './WorkSelectScreen.module.css'
 const WORK_TYPES = [
   { id: '現場', label: '現場', icon: '🏗️', cls: 'field' },
   { id: '清掃', label: '清掃', icon: '🧹', cls: 'cleaning' },
-  { id: '事務', label: '事務', icon: '💼', cls: 'office' }
+  { id: '事務', label: '事務', icon: '💼', cls: 'office' },
+  { id: '休憩', label: '休憩', icon: '☕', cls: 'break' }
 ]
 
 function fmtMinutes(mins) {
@@ -135,11 +136,11 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           {selected.length > 0 && (
             <>
               <span className={styles.wtSep}>|</span>
-              <span className={styles.wtLabel}>入力合計</span>
+              <span className={styles.wtLabel}>残り</span>
               <span className={[
                 styles.wtValue,
                 totalInputMinutes === workingMinutes ? styles.totalMatch : styles.totalMismatch
-              ].join(' ')}>{fmtMinutes(totalInputMinutes)}</span>
+              ].join(' ')}>{fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}</span>
             </>
           )}
         </div>
@@ -206,7 +207,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                         setTimeError('')
                       }}
                     >
-                      残り時間を入力
+                      残り{fmtMinutes(remaining)}
                     </button>
                   )
                 })()}

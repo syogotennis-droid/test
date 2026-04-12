@@ -144,6 +144,7 @@
 .office { background: var(--color-office); }
 .cleaning { background: var(--color-cleaning); }
 .field { background: var(--color-field); }
+.break { background: #FF8F00; }
 
 .workIcon {
   font-size: 2rem;

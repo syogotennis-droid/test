@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, getTodayStatuses
+  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -19,7 +19,13 @@ function QRImage({ value, size = 200 }) {
     />
   )
 }
-const WORK_TYPES = ['現場', '清掃', '事務']
+const WORK_TYPES = ['現場', '清掃', '事務', '休憩']
+
+function fmtMinutes(mins) {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h > 0 ? `${h}時間${m}分` : `${m}分`
+}
 
 function toDateStr(d) {
   return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
@@ -318,6 +324,30 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
   const [workTimes, setWorkTimes] = useState(
     Object.fromEntries(WORK_TYPES.map(t => [t, { on: false, h: '', m: '' }]))
   )
+  const [clockInTime, setClockInTime] = useState(null) // "HH:MM" from DB
+
+  // Fetch 出勤時刻 for selected user+date when logType is 退勤
+  useEffect(() => {
+    if (logType !== '退勤') { setClockInTime(null); return }
+    getClockInTimeForDate(userId, date).then(log => {
+      setClockInTime(log ? log.time.substring(0, 5) : null)
+    })
+  }, [logType, userId, date])
+
+  // 勤務時間 (minutes) = 退勤入力時刻 - 出勤時刻
+  const workingMinutes = useMemo(() => {
+    if (!clockInTime || !time) return null
+    const [h1, m1] = clockInTime.split(':').map(Number)
+    const [h2, m2] = time.split(':').map(Number)
+    const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+    return diff > 0 ? diff : null
+  }, [clockInTime, time])
+
+  // 入力合計 minutes
+  const totalInputMinutes = WORK_TYPES.reduce((sum, t) => {
+    if (!workTimes[t].on) return sum
+    return sum + (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+  }, 0)
 
   function toggleWork(t) {
     setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], on: !prev[t].on } }))
@@ -329,6 +359,17 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
 
   function setWorkM(t, v) {
     setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], m: v } }))
+  }
+
+  function fillRemaining(t) {
+    if (workingMinutes === null) return
+    const otherMins = WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) => {
+      return sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0)
+    }, 0)
+    const remaining = workingMinutes - otherMins
+    if (remaining <= 0) return
+    setWorkH(t, String(Math.floor(remaining / 60)))
+    setWorkM(t, String(remaining % 60))
   }
 
   function buildWorkTypeStr() {
@@ -401,37 +442,68 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
             </div>
 
             {logType === '退勤' && (
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>作業内容</label>
-                <div className={styles.workTypeList}>
-                  {WORK_TYPES.map(t => (
-                    <div key={t} className={styles.workTypeEntry}>
-                      <button
-                        className={[styles.workTypeBtn, workTimes[t].on ? styles.workTypeBtnActive : ''].join(' ')}
-                        onClick={() => toggleWork(t)}
-                      >{t}</button>
-                      {workTimes[t].on && (
-                        <div className={styles.workTimeInputs}>
-                          <input
-                            type="number" min="0" max="23" placeholder="0"
-                            value={workTimes[t].h}
-                            onChange={e => setWorkH(t, e.target.value)}
-                            className={styles.workTimeNum}
-                          />
-                          <span className={styles.workTimeUnit}>時間</span>
-                          <input
-                            type="number" min="0" max="59" placeholder="0"
-                            value={workTimes[t].m}
-                            onChange={e => setWorkM(t, e.target.value)}
-                            className={styles.workTimeNum}
-                          />
-                          <span className={styles.workTimeUnit}>分</span>
+              <>
+                {workingMinutes !== null && (
+                  <div className={styles.workTimeBanner}>
+                    <span>出勤 {clockInTime}</span>
+                    <span className={styles.workTimeBannerSep}>|</span>
+                    <span>勤務 <strong>{fmtMinutes(workingMinutes)}</strong></span>
+                    {totalInputMinutes > 0 && (
+                      <>
+                        <span className={styles.workTimeBannerSep}>|</span>
+                        <span className={totalInputMinutes === workingMinutes ? styles.totalMatch : styles.totalMismatch}>
+                          残り {fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>作業内容</label>
+                  <div className={styles.workTypeList}>
+                    {WORK_TYPES.map(t => {
+                      const otherMins = workingMinutes !== null
+                        ? WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) =>
+                            sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0), 0)
+                        : 0
+                      const remaining = workingMinutes !== null ? workingMinutes - otherMins : null
+                      const currentMins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+                      const showRemainingBtn = remaining !== null && remaining > 0 && currentMins !== remaining
+                      return (
+                        <div key={t} className={styles.workTypeEntry}>
+                          <button
+                            className={[styles.workTypeBtn, workTimes[t].on ? styles.workTypeBtnActive : ''].join(' ')}
+                            onClick={() => toggleWork(t)}
+                          >{t}</button>
+                          {workTimes[t].on && (
+                            <div className={styles.workTimeInputs}>
+                              <input
+                                type="number" min="0" max="23" placeholder="0"
+                                value={workTimes[t].h}
+                                onChange={e => setWorkH(t, e.target.value)}
+                                className={styles.workTimeNum}
+                              />
+                              <span className={styles.workTimeUnit}>時間</span>
+                              <input
+                                type="number" min="0" max="59" placeholder="0"
+                                value={workTimes[t].m}
+                                onChange={e => setWorkM(t, e.target.value)}
+                                className={styles.workTimeNum}
+                              />
+                              <span className={styles.workTimeUnit}>分</span>
+                              {showRemainingBtn && (
+                                <button className={styles.remainingBtn} onClick={() => fillRemaining(t)}>
+                                  残り{fmtMinutes(remaining)}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
 
             <div className={styles.modalActions}>
@@ -469,12 +541,26 @@ function CreateLogModal({ users, today, onClose, onSaved }) {
 
 // ─── KinmuboTab ───────────────────────────────────────────────────────────────
 
+const RATES_STORAGE_KEY = 'qr_kinmubo_rates'
+
 function KinmuboTab({ today }) {
   const currentYM = today.substring(0, 7) // "YYYY-MM"
   const [selectedYM, setSelectedYM] = useState(currentYM)
   const [exporting, setExporting] = useState(false)
   const [showRates, setShowRates] = useState(false)
-  const [rates, setRates] = useState({ 現場: '', 清掃: '', 事務: '' })
+  const [rates, setRates] = useState(() => {
+    try {
+      const stored = localStorage.getItem(RATES_STORAGE_KEY)
+      if (stored) return { 現場: '', 清掃: '', 事務: '', ...JSON.parse(stored) }
+    } catch {}
+    return { 現場: '', 清掃: '', 事務: '' }
+  })
+
+  function handleRateChange(type, value) {
+    const next = { ...rates, [type]: value }
+    setRates(next)
+    try { localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(next)) } catch {}
+  }
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -526,7 +612,7 @@ function KinmuboTab({ today }) {
                     min="0"
                     placeholder="0"
                     value={rates[t]}
-                    onChange={e => setRates(r => ({ ...r, [t]: e.target.value }))}
+                    onChange={e => handleRateChange(t, e.target.value)}
                     className={styles.rateInput}
                   />
                   <span className={styles.rateUnit}>円/時</span>
