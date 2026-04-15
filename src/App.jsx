@@ -25,11 +25,17 @@ export default function App() {
   const [completedInfo, setCompletedInfo] = useState(null)
   const [error, setError] = useState(null)
   const [dbReady, setDbReady] = useState(false)
+  const [dbError, setDbError] = useState(null)
   const [adminTaps, setAdminTaps] = useState(0)
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
-    initDB().then(() => setDbReady(true))
+    initDB()
+      .then(() => setDbReady(true))
+      .catch(err => {
+        console.error('DB init error:', err)
+        setDbError(err?.message || String(err))
+      })
   }, [])
 
   function handleModeSelect(selectedMode) {
@@ -38,6 +44,7 @@ export default function App() {
   }
 
   async function handleUserScanned(user) {
+    try {
     if (mode === '出勤') {
       const alreadyIn = await isCheckedIn(user.id)
       if (alreadyIn) {
@@ -66,9 +73,15 @@ export default function App() {
       setCurrentUser(user)
       setState(STATE.WORK)
     }
+    } catch(err) {
+      console.error('handleUserScanned error:', err)
+      setError(`エラー: ${err?.message || String(err)}`)
+      setTimeout(() => { setError(null); setState(STATE.MODE); setMode(null) }, 4000)
+    }
   }
 
   async function handleWorkComplete(selectedTypes, workTypeStr) {
+    try {
     const clockIn = await getClockInTime(currentUser.id)
     await saveLog({
       userId: currentUser.id,
@@ -83,6 +96,11 @@ export default function App() {
       clockInTimestamp: clockIn?.timestamp
     })
     setState(STATE.COMPLETE)
+    } catch(err) {
+      console.error('handleWorkComplete error:', err)
+      setError(`エラー: ${err?.message || String(err)}`)
+      setTimeout(() => { setError(null); setState(STATE.MODE); setMode(null) }, 4000)
+    }
   }
 
   function handleDone() {
@@ -113,6 +131,14 @@ export default function App() {
     adminTapTimer.current = setTimeout(() => {
       setAdminTaps(0)
     }, ADMIN_TAP_TIMEOUT)
+  }
+
+  if (dbError) {
+    return (
+      <div style={{ padding: '24px', color: 'red', fontFamily: 'monospace', fontSize: '14px', whiteSpace: 'pre-wrap' }}>
+        <b>DB接続エラー:</b>{'\n'}{dbError}
+      </div>
+    )
   }
 
   if (!dbReady) {
