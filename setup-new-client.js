@@ -35,6 +35,34 @@ async function main() {
 
   const configStr = match[0]
 
+  // projectId を抽出
+  const projectIdMatch = configStr.match(/projectId:\s*["']([^"']+)["']/)
+  if (!projectIdMatch) {
+    console.error('\nエラー: projectId が見つかりませんでした。')
+    process.exit(1)
+  }
+  const projectId = projectIdMatch[1]
+
+  // 現在の .firebaserc のプロジェクトIDを確認
+  const firebasercPath = path.join(__dirname, '.firebaserc')
+  const firebasercContent = fs.readFileSync(firebasercPath, 'utf8')
+  const currentProjectMatch = firebasercContent.match(/"default":\s*"([^"]+)"/)
+  const currentProject = currentProjectMatch ? currentProjectMatch[1] : '(不明)'
+
+  if (currentProject === projectId) {
+    console.error(`\n⚠️  エラー: 現在と同じプロジェクト「${projectId}」が指定されています。`)
+    console.error('新しいプロジェクトのfirebaseConfigを貼り付けてください。\n')
+    process.exit(1)
+  }
+
+  console.log(`\n現在のプロジェクト: ${currentProject}`)
+  console.log(`新しいプロジェクト: ${projectId}`)
+
+  // .firebaserc を更新
+  const newFirebaserc = JSON.stringify({ projects: { default: projectId } }, null, 2) + '\n'
+  fs.writeFileSync(firebasercPath, newFirebaserc, 'utf8')
+  console.log('✓ .firebaserc を更新しました')
+
   // db.js を読み込んで firebaseConfig 部分を置換
   const dbPath = path.join(__dirname, 'src', 'lib', 'db.js')
   let dbContent = fs.readFileSync(dbPath, 'utf8')
@@ -45,7 +73,7 @@ async function main() {
   )
 
   fs.writeFileSync(dbPath, dbContent, 'utf8')
-  console.log('\n✓ firebaseConfig を更新しました\n')
+  console.log('✓ firebaseConfig を更新しました\n')
 
   // ビルド
   console.log('ビルド中...')
@@ -65,7 +93,8 @@ async function main() {
     process.exit(1)
   }
 
-  console.log('\n=== セットアップ完了 ===\n')
+  console.log(`\n=== セットアップ完了 ===`)
+  console.log(`URL: https://${projectId}.web.app\n`)
 }
 
 main()
