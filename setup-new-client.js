@@ -87,7 +87,7 @@ async function main() {
   // デプロイ
   console.log('\nデプロイ中...')
   try {
-    execSync('firebase deploy --only hosting', { stdio: 'inherit' })
+    execSync('firebase deploy --only hosting,firestore:rules', { stdio: 'inherit' })
   } catch {
     console.error('\nデプロイに失敗しました。firebase login を確認してください。')
     process.exit(1)
