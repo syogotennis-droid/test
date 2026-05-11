@@ -25,6 +25,25 @@
   gap: 16px;
 }
 
+.backBtn {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 1.6rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.backBtn:active { background: rgba(255, 255, 255, 0.4); }
+
 .headerIconBox {
   width: 52px;
   height: 52px;

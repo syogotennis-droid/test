@@ -10,35 +10,58 @@
 
 /* ── ヘッダー ── */
 .header {
-  padding: 28px 42px 0;
+  padding: 0 32px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #d9dde2;
+  background: linear-gradient(90deg, #41b883, #55c494);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.headerIconBox {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
   background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .headerTitle {
-  font-size: 38px;
+  font-size: 32px;
   font-weight: 800;
-  color: #111827;
+  color: #fff;
   line-height: 1;
 }
 
-.clock { text-align: right; }
+.clockBox {
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 20px;
+  text-align: right;
+  flex-shrink: 0;
+}
 
 .clockTime {
-  font-size: 48px;
+  font-size: 30px;
   font-weight: 800;
-  color: #111827;
+  color: #2f2f35;
   line-height: 1;
 }
 
 .clockDate {
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 600;
   color: #6b7280;
   margin-top: 4px;
+  white-space: nowrap;
 }
 
 /* ── メインエリア ── */

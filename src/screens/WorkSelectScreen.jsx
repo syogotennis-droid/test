@@ -168,6 +168,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
       {/* ヘッダー */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
+          <button className={styles.backBtn} onClick={onCancel}>←</button>
           <div className={styles.headerIconBox}>
             <ScanIcon size={30} color="#41b883" />
           </div>
