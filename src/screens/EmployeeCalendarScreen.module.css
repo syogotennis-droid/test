@@ -83,7 +83,7 @@
 
 .dayLabel {
   text-align: center;
-  font-size: 0.75rem;
+  font-size: 1rem;
   font-weight: bold;
   color: var(--color-subtext);
   padding: 4px 0;
@@ -100,7 +100,7 @@
   background: var(--color-white);
   border-radius: 6px;
   padding: 4px 3px;
-  min-height: 80px;
+  min-height: 100px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -115,26 +115,26 @@
 .cell.sat .dayNum { color: #1976d2; }
 
 .dayNum {
-  font-size: 1rem;
+  font-size: 1.3rem;
   font-weight: bold;
   color: var(--color-text);
   line-height: 1;
 }
 
 .inTime {
-  font-size: 0.82rem;
+  font-size: 1rem;
   color: #2e7d32;
   font-weight: bold;
 }
 
 .outTime {
-  font-size: 0.82rem;
+  font-size: 1rem;
   color: #c62828;
   font-weight: bold;
 }
 
 .duration {
-  font-size: 0.7rem;
+  font-size: 0.88rem;
   color: var(--color-subtext);
   margin-top: 1px;
 }

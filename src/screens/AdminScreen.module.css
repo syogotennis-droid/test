@@ -933,7 +933,7 @@
 
 .calDayLabel {
   text-align: center;
-  font-size: 0.7rem;
+  font-size: 1rem;
   font-weight: bold;
   color: var(--color-subtext);
   padding: 4px 0;
@@ -947,7 +947,7 @@
   background: var(--color-white);
   border-radius: 4px;
   padding: 4px 2px;
-  min-height: 72px;
+  min-height: 100px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -961,12 +961,12 @@
 .calCell.calSatCell .calDayNum { color: #1976d2; }
 
 .calDayNum {
-  font-size: 0.95rem;
+  font-size: 1.3rem;
   font-weight: bold;
   color: var(--color-text);
   line-height: 1;
 }
 
-.calIn  { font-size: 0.72rem; color: #2e7d32; font-weight: bold; }
-.calOut { font-size: 0.72rem; color: #c62828; font-weight: bold; }
-.calDur { font-size: 0.62rem; color: var(--color-subtext); }
+.calIn  { font-size: 1rem; color: #2e7d32; font-weight: bold; }
+.calOut { font-size: 1rem; color: #c62828; font-weight: bold; }
+.calDur { font-size: 0.88rem; color: var(--color-subtext); }
