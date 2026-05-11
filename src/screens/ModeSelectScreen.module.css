@@ -109,13 +109,22 @@
   overflow: hidden;
 }
 
-/* 下部左：QR読み取り */
-.scanHint {
+/* 下部左：勤務確認ボタン */
+.confirmBtn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 26px;
+  border: none;
   border-right: 1px solid #d6d9de;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.08s;
+}
+
+.confirmBtn:active {
+  background: #f0f2f5;
 }
 
 .iconCircleSmall {

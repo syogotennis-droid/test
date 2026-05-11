@@ -77,12 +77,12 @@ export default function ModeSelectScreen({ onSelect }) {
 
         {/* 下部ステータスパネル */}
         <div className={styles.bottomPanel}>
-          <div className={styles.scanHint}>
+          <button className={styles.confirmBtn} onClick={() => onSelect('確認')}>
             <div className={styles.iconCircleSmall}>
               <ScanIcon size={44} color="#555" />
             </div>
-            <span className={styles.scanHintText}>QRを読み取ります</span>
-          </div>
+            <span className={styles.scanHintText}>勤務確認</span>
+          </button>
           <div className={styles.statusPanel}>
             <span className={styles.statusIconLarge}>👥</span>
             <div>
