@@ -41,9 +41,9 @@
 
 /* ── Main buttons ── */
 .mainBtns {
+  height: 48dvh;
+  flex-shrink: 0;
   display: flex;
-  flex: 1;
-  min-height: 0;
   gap: 8px;
   padding: 8px;
 }
@@ -92,9 +92,10 @@
 
 /* ── Bottom bar ── */
 .bottomBar {
+  flex: 1;
   display: flex;
-  flex-shrink: 0;
   border-top: 1px solid #e0e0e0;
+  min-height: 0;
 }
 
 .scanHint {
