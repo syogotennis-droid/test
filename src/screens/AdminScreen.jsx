@@ -383,7 +383,6 @@ function CalendarTab({ users, today }) {
                 <div className={styles.calDayNum}>{d}</div>
                 {worked && <div className={styles.calIn}>{inTime}</div>}
                 {outTime && <div className={styles.calOut}>{outTime}</div>}
-                {worked && outTime && <div className={styles.calDur}>{timeDiffStr(inTime, outTime)}</div>}
               </div>
             )
           })}
