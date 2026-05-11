@@ -1,77 +1,92 @@
 .screen {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   height: 100dvh;
   width: 100%;
-  padding: 24px;
-  gap: 24px;
   background: var(--color-bg);
+  padding: 16px;
+  box-sizing: border-box;
+  gap: 16px;
 }
 
-.header {
-  text-align: center;
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
 }
 
-.icon {
-  font-size: 4.5rem;
-  margin-bottom: 8px;
-}
-
-.header h1 {
-  font-size: 2.6rem;
-  margin: 0 0 8px;
+.title {
+  font-size: 1.3rem;
+  font-weight: bold;
   color: var(--color-text);
 }
 
-.header p {
-  font-size: 1.4rem;
+.clock {
+  text-align: right;
+}
+
+.clockTime {
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.clockDate {
+  font-size: 0.85rem;
   color: var(--color-subtext);
-  margin: 0;
+  margin-top: 2px;
 }
 
 .buttons {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
+  flex-direction: row;
+  gap: 12px;
+  flex: 1;
 }
 
 .modeBtn {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  height: 120px;
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  color: var(--color-white);
-  font-size: 2.2rem;
-  font-weight: bold;
+  color: #fff;
   box-shadow: var(--shadow);
-  transition: transform 0.1s, box-shadow 0.1s;
+  transition: transform 0.1s;
   -webkit-tap-highlight-color: transparent;
-  letter-spacing: 0.1em;
 }
 
 .modeBtn:active {
   transform: scale(0.97);
 }
 
-.modeIcon {
-  font-size: 2.6rem;
+.iconWrap {
+  width: 80px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qrIcon {
+  width: 48px;
+  height: 48px;
+  color: #fff;
 }
 
 .modeLabel {
   font-size: 2.6rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
 }
 
-.clockIn {
-  background: #2e7d32;
-}
-
-.clockOut {
-  background: #c62828;
-}
+.clockIn  { background: #2e7d32; }
+.clockOut { background: #c62828; }
