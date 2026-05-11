@@ -43,8 +43,8 @@
 .mainBtns {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
+  gap: 24px;
+  padding: 16px 32px;
   flex-shrink: 0;
 }
 
