@@ -25,9 +25,12 @@ function buildDayMap(logs, year, month) {
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
-    if (!map[d]) map[d] = { ins: [], outs: [] }
+    if (!map[d]) map[d] = { ins: [], outs: [], workType: '' }
     if (log.log_type === '出勤') map[d].ins.push(log.time || '')
-    else if (log.log_type === '退勤') map[d].outs.push(log.time || '')
+    else if (log.log_type === '退勤') {
+      map[d].outs.push(log.time || '')
+      if (log.work_type) map[d].workType = log.work_type
+    }
   })
   return map
 }
@@ -43,12 +46,67 @@ function timeDiff(t1, t2) {
   return h > 0 ? `${h}h${m > 0 ? m + 'm' : ''}` : `${m}m`
 }
 
+function fmtMins(mins) {
+  if (mins === null || mins === undefined || isNaN(mins)) return ''
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`
+}
+
+function parseWorkType(wt) {
+  if (!wt) return []
+  return wt.split(',').map(entry => {
+    const [type, minsStr] = entry.split(':')
+    return { type: type.trim(), mins: minsStr !== undefined ? Number(minsStr) : null }
+  }).filter(e => e.type)
+}
+
+function DayModal({ day, year, month, entry, onClose }) {
+  const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+  const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+  const duration = timeDiff(inTime, outTime)
+  const workTypes = parseWorkType(entry?.workType || '')
+
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
+        <div className={styles.modalRow}>
+          <span className={styles.modalRowLabel}>出勤</span>
+          <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
+        </div>
+        <div className={styles.modalRow}>
+          <span className={styles.modalRowLabel}>退勤</span>
+          <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
+        </div>
+        <div className={styles.modalRow}>
+          <span className={styles.modalRowLabel}>勤務時間</span>
+          <span className={styles.modalRowValue}>{duration || '—'}</span>
+        </div>
+        {workTypes.length > 0 && (
+          <>
+            <div className={styles.modalDivider} />
+            {workTypes.map(({ type, mins }) => (
+              <div key={type} className={styles.modalRow}>
+                <span className={styles.modalRowLabel}>{type}</span>
+                <span className={styles.modalRowValue}>{mins !== null ? fmtMins(mins) : '—'}</span>
+              </div>
+            ))}
+          </>
+        )}
+        <button className={styles.modalClose} onClick={onClose}>閉じる</button>
+      </div>
+    </div>
+  )
+}
+
 export default function EmployeeCalendarScreen({ user, onBack }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedDay, setSelectedDay] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -98,17 +156,30 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
             const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
             const worked = !!inTime
+            const duration = worked && outTime ? timeDiff(inTime, outTime) : ''
             const dow = new Date(year, month, d).getDay()
             return (
-              <div key={d} className={[styles.cell, worked ? styles.worked : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}>
+              <div
+                key={d}
+                className={[styles.cell, worked ? styles.worked : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
+                onClick={() => worked && setSelectedDay(d)}
+              >
                 <div className={styles.dayNum}>{d}</div>
-                {worked && <div className={styles.inTime}>{inTime}</div>}
-                {outTime && <div className={styles.outTime}>{outTime}</div>}
-                {worked && outTime && <div className={styles.duration}>{timeDiff(inTime, outTime)}</div>}
+                {duration && <div className={styles.duration}>{duration}</div>}
               </div>
             )
           })}
         </div>
+      )}
+
+      {selectedDay !== null && (
+        <DayModal
+          day={selectedDay}
+          year={year}
+          month={month}
+          entry={dayMap[selectedDay]}
+          onClose={() => setSelectedDay(null)}
+        />
       )}
     </div>
   )
