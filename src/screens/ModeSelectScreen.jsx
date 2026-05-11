@@ -34,22 +34,8 @@ function Clock() {
   )
 }
 
-const CARD_W = 1260
-const CARD_H = 845
-
 export default function ModeSelectScreen({ onSelect }) {
   const [checkedInCount, setCheckedInCount] = useState(0)
-  const [scale, setScale] = useState(1)
-
-  useEffect(() => {
-    function updateScale() {
-      const s = Math.min(window.innerWidth / CARD_W, window.innerHeight / CARD_H)
-      setScale(s)
-    }
-    updateScale()
-    window.addEventListener('resize', updateScale)
-    return () => window.removeEventListener('resize', updateScale)
-  }, [])
 
   useEffect(() => {
     async function fetchCount() {
@@ -63,7 +49,7 @@ export default function ModeSelectScreen({ onSelect }) {
 
   return (
     <div className={styles.screen}>
-      <div className={styles.card} style={{ transform: `scale(${scale})`, transformOrigin: 'center center' }}>
+      <div className={styles.card}>
 
         {/* ヘッダー */}
         <div className={styles.header}>
