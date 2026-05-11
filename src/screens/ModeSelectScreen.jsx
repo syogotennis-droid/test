@@ -43,6 +43,14 @@ export default function ModeSelectScreen({ onSelect }) {
           <span className={styles.modeIcon}>🔴</span>
           <span className={styles.modeLabel}>退勤</span>
         </button>
+
+        <button
+          className={`${styles.modeBtn} ${styles.check}`}
+          onClick={() => onSelect('確認')}
+        >
+          <span className={styles.modeIcon}>📅</span>
+          <span className={styles.modeLabel}>確認</span>
+        </button>
       </div>
     </div>
   )

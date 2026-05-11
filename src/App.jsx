@@ -5,6 +5,7 @@ import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
 import CompleteScreen from './screens/CompleteScreen'
 import AdminScreen from './screens/AdminScreen'
+import EmployeeCalendarScreen from './screens/EmployeeCalendarScreen'
 import styles from './App.module.css'
 
 const STATE = {
@@ -12,7 +13,8 @@ const STATE = {
   QR: 'qr',
   WORK: 'work',
   COMPLETE: 'complete',
-  ADMIN: 'admin'
+  ADMIN: 'admin',
+  CHECK: 'check',
 }
 
 const ADMIN_TAP_COUNT = 5
@@ -25,17 +27,11 @@ export default function App() {
   const [completedInfo, setCompletedInfo] = useState(null)
   const [error, setError] = useState(null)
   const [dbReady, setDbReady] = useState(false)
-  const [dbError, setDbError] = useState(null)
   const [adminTaps, setAdminTaps] = useState(0)
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
-    initDB()
-      .then(() => setDbReady(true))
-      .catch(err => {
-        console.error('DB init error:', err)
-        setDbError(err?.message || String(err))
-      })
+    initDB().then(() => setDbReady(true))
   }, [])
 
   function handleModeSelect(selectedMode) {
@@ -44,7 +40,11 @@ export default function App() {
   }
 
   async function handleUserScanned(user) {
-    try {
+    if (mode === '確認') {
+      setCurrentUser(user)
+      setState(STATE.CHECK)
+      return
+    }
     if (mode === '出勤') {
       const alreadyIn = await isCheckedIn(user.id)
       if (alreadyIn) {
@@ -73,15 +73,9 @@ export default function App() {
       setCurrentUser(user)
       setState(STATE.WORK)
     }
-    } catch(err) {
-      console.error('handleUserScanned error:', err)
-      setError(`エラー: ${err?.message || String(err)}`)
-      setTimeout(() => { setError(null); setState(STATE.MODE); setMode(null) }, 4000)
-    }
   }
 
   async function handleWorkComplete(selectedTypes, workTypeStr) {
-    try {
     const clockIn = await getClockInTime(currentUser.id)
     await saveLog({
       userId: currentUser.id,
@@ -96,11 +90,6 @@ export default function App() {
       clockInTimestamp: clockIn?.timestamp
     })
     setState(STATE.COMPLETE)
-    } catch(err) {
-      console.error('handleWorkComplete error:', err)
-      setError(`エラー: ${err?.message || String(err)}`)
-      setTimeout(() => { setError(null); setState(STATE.MODE); setMode(null) }, 4000)
-    }
   }
 
   function handleDone() {
@@ -133,14 +122,6 @@ export default function App() {
     }, ADMIN_TAP_TIMEOUT)
   }
 
-  if (dbError) {
-    return (
-      <div style={{ padding: '24px', color: 'red', fontFamily: 'monospace', fontSize: '14px', whiteSpace: 'pre-wrap' }}>
-        <b>DB接続エラー:</b>{'\n'}{dbError}
-      </div>
-    )
-  }
-
   if (!dbReady) {
     return (
       <div className={styles.loading}>
@@ -152,6 +133,10 @@ export default function App() {
 
   if (state === STATE.ADMIN) {
     return <AdminScreen onBack={handleDone} />
+  }
+
+  if (state === STATE.CHECK && currentUser) {
+    return <EmployeeCalendarScreen user={currentUser} onBack={handleDone} />
   }
 
   return (

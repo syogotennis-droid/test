@@ -911,3 +911,60 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ─── CalendarTab ─── */
+.calMonthNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.calGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  padding: 0 8px 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.calDayLabel {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: var(--color-subtext);
+  padding: 4px 0;
+}
+.calDayLabel.calSun { color: #e53935; }
+.calDayLabel.calSat { color: #1976d2; }
+
+.calEmpty { background: transparent; }
+
+.calCell {
+  background: var(--color-white);
+  border-radius: 4px;
+  padding: 3px 2px;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.calCell.calWorked { background: #e8f5e9; }
+.calCell.calSunCell .calDayNum { color: #e53935; }
+.calCell.calSatCell .calDayNum { color: #1976d2; }
+
+.calDayNum {
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.calIn  { font-size: 0.55rem; color: #2e7d32; font-weight: bold; }
+.calOut { font-size: 0.55rem; color: #c62828; font-weight: bold; }
+.calDur { font-size: 0.5rem;  color: var(--color-subtext); }

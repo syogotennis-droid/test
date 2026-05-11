@@ -1,0 +1,140 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  width: 100%;
+  background: var(--color-bg);
+  padding: 0 0 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--color-white);
+  box-shadow: var(--shadow);
+  flex-shrink: 0;
+}
+
+.backBtn {
+  font-size: 1.4rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text);
+  padding: 4px 8px;
+}
+
+.userName {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: var(--color-text);
+}
+
+.monthNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 12px;
+  flex-shrink: 0;
+}
+
+.navBtn {
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.navBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.monthLabel {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: var(--color-text);
+  min-width: 100px;
+  text-align: center;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--color-subtext);
+}
+
+.calGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  padding: 0 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dayLabel {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: var(--color-subtext);
+  padding: 4px 0;
+}
+
+.dayLabel.sun { color: #e53935; }
+.dayLabel.sat { color: #1976d2; }
+
+.emptyCell {
+  background: transparent;
+}
+
+.cell {
+  background: var(--color-white);
+  border-radius: 6px;
+  padding: 4px 3px;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.cell.worked {
+  background: #e8f5e9;
+}
+
+.cell.sun .dayNum { color: #e53935; }
+.cell.sat .dayNum { color: #1976d2; }
+
+.dayNum {
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.inTime {
+  font-size: 0.6rem;
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.outTime {
+  font-size: 0.6rem;
+  color: #c62828;
+  font-weight: bold;
+}
+
+.duration {
+  font-size: 0.55rem;
+  color: var(--color-subtext);
+  margin-top: 1px;
+}

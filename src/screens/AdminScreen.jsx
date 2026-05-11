@@ -33,42 +33,13 @@ function toDateStr(d) {
 
 
 export default function AdminScreen({ onBack }) {
-  const [tab, setTab] = useState('logs')
-  const [logs, setLogs] = useState([])
+  const [tab, setTab] = useState('calendar')
   const [users, setUsers] = useState([])
   const today = toDateStr(new Date())
-  const thisMonthFrom = (() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-  })()
-  const [filterDateFrom, setFilterDateFrom] = useState(today)
-  const [filterDateTo, setFilterDateTo] = useState(today)
-  const [filterUser, setFilterUser] = useState('')
-  const [loading, setLoading] = useState(true)
 
-  const loadLogs = useCallback(async () => {
-    setLoading(true)
-    const [logData, userData] = await Promise.all([
-      getLogs({
-        dateFrom: filterDateFrom || undefined,
-        dateTo: filterDateTo || undefined,
-        userId: filterUser || undefined
-      }),
-      getUsers()
-    ])
-    setLogs(logData)
-    setUsers(userData)
-    setLoading(false)
-  }, [filterDateFrom, filterDateTo, filterUser])
-
-  useEffect(() => { loadLogs() }, [loadLogs])
-
-  async function handleDeleteLog(id) {
-    await deleteLog(id)
-    loadLogs()
-  }
-
-  const userMap = Object.fromEntries(users.map(u => [u.id, u.name]))
+  useEffect(() => {
+    getUsers().then(setUsers)
+  }, [])
 
   return (
     <div className={styles.screen}>
@@ -79,36 +50,16 @@ export default function AdminScreen({ onBack }) {
       </div>
 
       <div className={styles.tabs}>
-        <button className={[styles.tab, tab === 'logs' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('logs')}>記録一覧</button>
+        <button className={[styles.tab, tab === 'calendar' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('calendar')}>記録一覧</button>
         <button className={[styles.tab, tab === 'kinmubo' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('kinmubo')}>出勤簿作成</button>
         <button className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('users')}>ユーザー管理</button>
         <button className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('qr')}>QR印刷</button>
       </div>
 
-      {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('logs')} />}
-
-      {tab === 'logs' && (
-        <LogsTab
-          logs={logs}
-          users={users}
-          userMap={userMap}
-          filterDateFrom={filterDateFrom}
-          filterDateTo={filterDateTo}
-          filterUser={filterUser}
-          loading={loading}
-          today={today}
-          onFilterDates={(from, to) => { setFilterDateFrom(from); setFilterDateTo(to) }}
-          onFilterUser={setFilterUser}
-          onDeleteLog={handleDeleteLog}
-          onRefreshLogs={loadLogs}
-        />
-      )}
-
+      {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('calendar')} />}
+      {tab === 'calendar' && <CalendarTab users={users} today={today} />}
       {tab === 'kinmubo' && <KinmuboTab today={today} />}
-
-      {tab === 'users' && (
-        <UsersTab users={users} today={today} onRefresh={loadLogs} />
-      )}
+      {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} />}
     </div>
   )
 }
@@ -307,16 +258,154 @@ function LogsTab({
   )
 }
 
+// ─── CalendarTab ─────────────────────────────────────────────────────────────
+
+const CAL_DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+function getCalendarDays(year, month) {
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const days = []
+  for (let i = 0; i < firstDay; i++) days.push(null)
+  for (let d = 1; d <= daysInMonth; d++) days.push(d)
+  return days
+}
+
+function buildDayMap(logs, year, month) {
+  const map = {}
+  logs.forEach(log => {
+    const [y, m, d] = log.date.split('-').map(Number)
+    if (y !== year || m !== month + 1) return
+    if (!map[d]) map[d] = { ins: [], outs: [], workType: '' }
+    if (log.log_type === '出勤') map[d].ins.push(log.time || '')
+    else if (log.log_type === '退勤') {
+      map[d].outs.push(log.time || '')
+      if (log.work_type) map[d].workType = log.work_type
+    }
+  })
+  return map
+}
+
+function timeDiffStr(t1, t2) {
+  if (!t1 || !t2) return ''
+  const [h1, m1] = t1.split(':').map(Number)
+  const [h2, m2] = t2.split(':').map(Number)
+  const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+  if (diff <= 0) return ''
+  const h = Math.floor(diff / 60)
+  const m = diff % 60
+  return h > 0 ? `${h}h${m > 0 ? m + 'm' : ''}` : `${m}m`
+}
+
+function CalendarTab({ users, today }) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+
+  useEffect(() => {
+    if (users.length > 0 && !selectedUser) setSelectedUser(users[0])
+  }, [users])
+
+  useEffect(() => {
+    if (!selectedUser) return
+    setLoading(true)
+    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
+    const lastDay = new Date(year, month + 1, 0).getDate()
+    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id })
+      .then(data => { setLogs(data); setLoading(false) })
+  }, [selectedUser, year, month])
+
+  const days = getCalendarDays(year, month)
+  const dayMap = buildDayMap(logs, year, month)
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
+
+  function prevMonth() {
+    if (month === 0) { setYear(y => y - 1); setMonth(11) }
+    else setMonth(m => m - 1)
+  }
+  function nextMonth() {
+    if (isCurrentMonth) return
+    if (month === 11) { setYear(y => y + 1); setMonth(0) }
+    else setMonth(m => m + 1)
+  }
+
+  return (
+    <div className={styles.content}>
+      <div className={styles.userTabs}>
+        {users.map(u => (
+          <button key={u.id} className={[styles.userTab, selectedUser?.id === u.id ? styles.activeUserTab : ''].join(' ')} onClick={() => setSelectedUser(u)}>
+            {u.name}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.calMonthNav}>
+        <button className={styles.navBtn} onClick={prevMonth}>◀</button>
+        <span className={styles.navDate}>{year}年{month + 1}月</span>
+        <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
+        <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
+      </div>
+
+      {loading ? (
+        <div className={styles.empty}>読込中...</div>
+      ) : (
+        <div className={styles.calGrid}>
+          {CAL_DAY_LABELS.map((d, i) => (
+            <div key={d} className={[styles.calDayLabel, i === 0 ? styles.calSun : i === 6 ? styles.calSat : ''].join(' ')}>{d}</div>
+          ))}
+          {days.map((d, i) => {
+            if (!d) return <div key={`pad-${i}`} className={styles.calEmpty} />
+            const entry = dayMap[d]
+            const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+            const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+            const worked = !!inTime
+            const dow = new Date(year, month, d).getDay()
+            return (
+              <div key={d} className={[styles.calCell, worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}>
+                <div className={styles.calDayNum}>{d}</div>
+                {worked && <div className={styles.calIn}>{inTime}</div>}
+                {outTime && <div className={styles.calOut}>{outTime}</div>}
+                {worked && outTime && <div className={styles.calDur}>{timeDiffStr(inTime, outTime)}</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {showCreate && selectedUser && (
+        <CreateLogModal
+          users={users}
+          today={today}
+          defaultUserId={selectedUser.id}
+          onClose={() => setShowCreate(false)}
+          onSaved={() => {
+            setShowCreate(false)
+            const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
+            const lastDay = new Date(year, month + 1, 0).getDate()
+            const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+            getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }).then(setLogs)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 // ─── CreateLogModal ───────────────────────────────────────────────────────────
 
-function CreateLogModal({ users, today, onClose, onSaved }) {
+function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   const nowTime = () => {
     const n = new Date()
     return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`
   }
 
   const [step, setStep] = useState('form') // 'form' | 'confirm'
-  const [userId, setUserId] = useState(users[0]?.id || '')
+  const [userId, setUserId] = useState(defaultUserId || users[0]?.id || '')
   const [logType, setLogType] = useState('出勤')
   const [date, setDate] = useState(today)
   const [time, setTime] = useState(nowTime)
