@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  seedSampleData
+  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -306,8 +305,6 @@ function CalendarTab({ users, today }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [seeding, setSeeding] = useState(false)
-  const [seedDone, setSeedDone] = useState(null)
 
   useEffect(() => {
     if (users.length > 0 && !selectedUser) setSelectedUser(users[0])
@@ -352,27 +349,6 @@ function CalendarTab({ users, today }) {
         <span className={styles.navDate}>{year}年{month + 1}月</span>
         <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
         <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
-        <button
-          className={styles.seedBtn}
-          disabled={seeding}
-          onClick={async () => {
-            if (!window.confirm('3ヶ月分のサンプルデータを作成しますか？\n（既存のデータはそのまま残ります）')) return
-            setSeeding(true)
-            setSeedDone(null)
-            const count = await seedSampleData()
-            setSeeding(false)
-            setSeedDone(count)
-            if (selectedUser) {
-              const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
-              const lastDay = new Date(year, month + 1, 0).getDate()
-              const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-              getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }).then(setLogs)
-            }
-          }}
-        >
-          {seeding ? '作成中...' : 'サンプルデータ'}
-        </button>
-        {seedDone !== null && <span className={styles.seedResult}>{seedDone}件作成</span>}
       </div>
 
       {loading ? (
