@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { getTodayStatuses, getUsers } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
-function ScanIcon({ size = 48, color = '#333' }) {
+function ScanIcon({ className, color = '#333' }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M6 19V6h13" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M6 29v13h13" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M42 19V6H29" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -57,14 +57,14 @@ export default function ModeSelectScreen({ onSelect }) {
       <div className={styles.mainBtns}>
         <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
           <div className={styles.iconCircle}>
-            <ScanIcon size={56} color="#2e7d32" />
+            <ScanIcon className={styles.mainIcon} color="#2e7d32" />
           </div>
           <span className={styles.modeLabel}>出勤</span>
         </button>
 
         <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
           <div className={styles.iconCircle}>
-            <ScanIcon size={56} color="#c62828" />
+            <ScanIcon className={styles.mainIcon} color="#c62828" />
           </div>
           <span className={styles.modeLabel}>退勤</span>
         </button>
@@ -72,7 +72,7 @@ export default function ModeSelectScreen({ onSelect }) {
 
       <div className={styles.bottomBar}>
         <div className={styles.scanHint}>
-          <ScanIcon size={30} color="#666" />
+          <ScanIcon className={styles.smallIcon} color="#666" />
           <span className={styles.scanHintText}>QRを読み取ります</span>
         </div>
         <div className={styles.statusPanel}>
