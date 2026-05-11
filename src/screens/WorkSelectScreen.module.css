@@ -121,8 +121,8 @@
   border: 2px solid #d2eadf;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
   overflow: hidden;
-  display: grid;
-  grid-template-rows: 1fr 20px;
+  display: flex;
+  flex-direction: column;
   cursor: pointer;
   position: relative;
   -webkit-tap-highlight-color: transparent;
@@ -131,37 +131,39 @@
 
 .workCard:active { transform: scale(0.97); }
 
-.workCardSelected {
+.workCardActive {
   border-color: #41b883;
   box-shadow: 0 6px 20px rgba(65, 184, 131, 0.3);
 }
 
 .workCardInner {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 8px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  padding: 12px 8px 8px;
-  position: relative;
+  box-sizing: border-box;
 }
 
 .workCardBar {
   height: 20px;
+  flex-shrink: 0;
 }
 
 /* ×ボタン */
-.deselectBtn {
+.clearBtn {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 10px;
   width: 36px;
   height: 36px;
   border-radius: 50%;
   border: none;
   background: #e8f5f0;
   color: #34a36f;
-  font-size: 1.4rem;
+  font-size: 1.3rem;
   font-weight: bold;
   cursor: pointer;
   display: flex;
@@ -169,12 +171,13 @@
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
   line-height: 1;
+  z-index: 2;
 }
 
 /* アイコン丸 */
 .workIconCircle {
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   border-radius: 9999px;
   display: flex;
   align-items: center;
@@ -183,25 +186,33 @@
 }
 
 .workIcon {
-  font-size: 58px;
+  font-size: 52px;
   line-height: 1;
 }
 
 /* 作業名 */
 .workLabel {
-  margin-top: 14px;
-  font-size: 34px;
+  margin-top: 12px;
+  margin-bottom: 8px;
+  font-size: 30px;
   font-weight: 900;
   color: #2f2f35;
   letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.2;
 }
 
-/* 入力済み時間 */
-.workTimeLabel {
-  margin-top: 6px;
+/* 時間表示（空でも高さを確保） */
+.workTime {
+  min-height: 28px;
   font-size: 20px;
   font-weight: 700;
   color: #41b883;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
 }
 
 /* ── 合計時間パネル ── */

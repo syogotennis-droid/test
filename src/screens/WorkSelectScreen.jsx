@@ -34,7 +34,7 @@ function ClockIcon({ size = 34, color = '#34a36f' }) {
   )
 }
 
-function ExitIcon({ size = 58, color = '#fff' }) {
+function ExitIcon({ size = 54, color = '#fff' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -91,7 +91,6 @@ function NumberPicker({ value, options, onChange, label }) {
 }
 
 export default function WorkSelectScreen({ user, onComplete, onCancel }) {
-  const [selected, setSelected] = useState([])
   const [workTimes, setWorkTimes] = useState({})
   const [saving, setSaving] = useState(false)
   const [workingMinutes, setWorkingMinutes] = useState(null)
@@ -108,20 +107,19 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
     })
   }, [user.id])
 
-  function handleCardTap(id) {
-    setTimeError('')
-    if (selected.includes(id)) {
-      setEditingType(id)
-    } else {
-      setSelected(prev => [...prev, id])
-      setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0 } }))
-      setEditingType(id)
-    }
+  function isActive(id) {
+    const t = workTimes[id]
+    return t && (t.h > 0 || t.m > 0)
   }
 
-  function handleDeselect(id, e) {
+  function handleCardTap(id) {
+    setTimeError('')
+    if (!workTimes[id]) setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0 } }))
+    setEditingType(id)
+  }
+
+  function handleClear(id, e) {
     e.stopPropagation()
-    setSelected(prev => prev.filter(t => t !== id))
     setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
     setTimeError('')
   }
@@ -130,8 +128,10 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
     setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
   }
 
-  const totalInputMinutes = selected.reduce((sum, id) => {
-    const t = workTimes[id] || { h: 0, m: 0 }
+  const activeTypes = WORK_TYPES.filter(t => isActive(t.id))
+
+  const totalInputMinutes = activeTypes.reduce((sum, type) => {
+    const t = workTimes[type.id] || { h: 0, m: 0 }
     return sum + t.h * 60 + t.m
   }, 0)
 
@@ -139,28 +139,20 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const displayM = workingMinutes != null ? workingMinutes % 60 : 0
 
   async function handleConfirm() {
-    if (selected.length === 0 || saving) return
-    const zeroTypes = selected.filter(id => {
-      const t = workTimes[id] || { h: 0, m: 0 }
-      return t.h === 0 && t.m === 0
-    })
-    if (zeroTypes.length > 0) {
-      setTimeError(`時間が0の作業があります：${zeroTypes.join('、')}`)
-      return
-    }
+    if (activeTypes.length === 0 || saving) return
     if (workingMinutes !== null && totalInputMinutes !== workingMinutes) {
       setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
       return
     }
     setSaving(true)
     try {
-      const workTypeStr = selected
-        .map(id => {
-          const t = workTimes[id] || { h: 0, m: 0 }
-          return `${id}:${t.h * 60 + t.m}`
+      const workTypeStr = activeTypes
+        .map(type => {
+          const t = workTimes[type.id] || { h: 0, m: 0 }
+          return `${type.id}:${t.h * 60 + t.m}`
         })
         .join(',')
-      await onComplete(selected, workTypeStr)
+      await onComplete(activeTypes.map(t => t.id), workTypeStr)
     } catch (e) {
       console.error(e)
       setSaving(false)
@@ -190,10 +182,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
       {/* メイン */}
       <div className={styles.main}>
 
-        {/* おつかれさまです */}
         <div className={styles.greeting}>おつかれさまです</div>
 
-        {/* 作業内容を選択 */}
         <div className={styles.sectionTitle}>
           <span>作業内容を選択</span>
         </div>
@@ -201,28 +191,25 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
         {/* 作業カード */}
         <div className={styles.workGrid}>
           {WORK_TYPES.map(type => {
-            const isSelected = selected.includes(type.id)
+            const active = isActive(type.id)
             const t = workTimes[type.id] || { h: 0, m: 0 }
-            const hasTime = t.h > 0 || t.m > 0
             return (
               <div
                 key={type.id}
-                className={[styles.workCard, isSelected ? styles.workCardSelected : ''].join(' ')}
+                className={[styles.workCard, active ? styles.workCardActive : ''].join(' ')}
                 onClick={() => handleCardTap(type.id)}
               >
+                {active && (
+                  <button className={styles.clearBtn} onClick={e => handleClear(type.id, e)}>×</button>
+                )}
                 <div className={styles.workCardInner}>
-                  {isSelected && (
-                    <button className={styles.deselectBtn} onClick={e => handleDeselect(type.id, e)}>×</button>
-                  )}
                   <div className={styles.workIconCircle} style={{ background: type.circleColor }}>
                     <span className={styles.workIcon}>{type.icon}</span>
                   </div>
                   <div className={styles.workLabel}>{type.label}</div>
-                  {isSelected && hasTime && (
-                    <div className={styles.workTimeLabel}>
-                      {t.h > 0 ? `${t.h}時間` : ''}{t.m > 0 ? `${t.m}分` : ''}
-                    </div>
-                  )}
+                  <div className={styles.workTime}>
+                    {active ? (t.h > 0 ? `${t.h}時間` : '') + (t.m > 0 ? `${t.m}分` : '') : ''}
+                  </div>
                 </div>
                 <div className={styles.workCardBar} style={{ background: type.barColor }} />
               </div>
@@ -242,11 +229,10 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
         {timeError && <div className={styles.timeError}>{timeError}</div>}
 
-        {/* 退勤を登録ボタン */}
         <button
-          className={[styles.submitButton, (selected.length === 0 || saving) ? styles.submitDisabled : ''].join(' ')}
+          className={[styles.submitButton, (activeTypes.length === 0 || saving) ? styles.submitDisabled : ''].join(' ')}
           onClick={handleConfirm}
-          disabled={selected.length === 0 || saving}
+          disabled={activeTypes.length === 0 || saving}
         >
           <ExitIcon size={54} color="#fff" />
           <span>{saving ? '記録中...' : '退勤を登録'}</span>
@@ -262,9 +248,9 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
             {workingMinutes !== null && (
               <div className={styles.timeModalHint}>
                 勤務時間合計: {fmtMinutes(workingMinutes)}
-                {selected.length > 1 && (
-                  <> / 他の合計: {fmtMinutes(selected.filter(id => id !== editingType).reduce((sum, id) => {
-                    const t = workTimes[id] || { h: 0, m: 0 }
+                {activeTypes.filter(t => t.id !== editingType).length > 0 && (
+                  <> / 他の合計: {fmtMinutes(activeTypes.filter(t => t.id !== editingType).reduce((sum, type) => {
+                    const t = workTimes[type.id] || { h: 0, m: 0 }
                     return sum + t.h * 60 + t.m
                   }, 0))}</>
                 )}
@@ -286,10 +272,10 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
               />
               <span className={styles.timeUnit}>分</span>
               {workingMinutes !== null && (() => {
-                const otherMins = selected
-                  .filter(id => id !== editingType)
-                  .reduce((sum, id) => {
-                    const t = workTimes[id] || { h: 0, m: 0 }
+                const otherMins = activeTypes
+                  .filter(t => t.id !== editingType)
+                  .reduce((sum, type) => {
+                    const t = workTimes[type.id] || { h: 0, m: 0 }
                     return sum + t.h * 60 + t.m
                   }, 0)
                 const remaining = workingMinutes - otherMins
