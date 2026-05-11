@@ -1,42 +1,25 @@
-/* ── ビューポート（カードを中央寄せ） ── */
+/* ── ビューポート全体 ── */
 .screen {
   width: 100vw;
   height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #d1d5db;
-}
-
-/* ── メインカード ── */
-.card {
-  width: 1260px;
-  height: 845px;
-  max-width: 100vw;
-  max-height: 100dvh;
-  border-radius: 10px;
+  display: grid;
+  grid-template-rows: 120px 1fr;
   background: #f7f8fa;
   overflow: hidden;
-  border: 1px solid #d9dde2;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
 }
 
 /* ── ヘッダー ── */
 .header {
-  height: 135px;
-  padding: 35px 50px 0;
+  padding: 28px 42px 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   border-bottom: 1px solid #d9dde2;
-  flex-shrink: 0;
   background: #fff;
 }
 
 .headerTitle {
-  font-size: 44px;
+  font-size: 38px;
   font-weight: 800;
   color: #111827;
   line-height: 1;
@@ -45,14 +28,14 @@
 .clock { text-align: right; }
 
 .clockTime {
-  font-size: 52px;
+  font-size: 48px;
   font-weight: 800;
   color: #111827;
   line-height: 1;
 }
 
 .clockDate {
-  font-size: 25px;
+  font-size: 24px;
   font-weight: 600;
   color: #6b7280;
   margin-top: 4px;
@@ -60,11 +43,10 @@
 
 /* ── メインエリア ── */
 .main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  padding: 30px 50px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 135px;
+  gap: 24px;
+  padding: 28px 42px 24px;
   overflow: hidden;
 }
 
@@ -73,22 +55,22 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 28px;
-  flex-shrink: 0;
+  min-height: 0;
 }
 
 .modeBtn {
-  height: 435px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 30px;
+  gap: 36px;
   border: none;
   border-radius: 10px;
   cursor: pointer;
   color: #fff;
   transition: transform 0.08s;
   -webkit-tap-highlight-color: transparent;
+  min-height: 0;
 }
 
 .modeBtn:active { transform: scale(0.98); }
@@ -98,8 +80,8 @@
 
 /* ── ボタン内・白丸アイコン ── */
 .iconCircle {
-  width: 220px;
-  height: 220px;
+  width: 170px;
+  height: 170px;
   border-radius: 9999px;
   background: #fff;
   display: flex;
@@ -110,7 +92,7 @@
 
 /* ── 出勤・退勤テキスト ── */
 .modeLabel {
-  font-size: 96px;
+  font-size: 76px;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.04em;
@@ -118,13 +100,12 @@
 
 /* ── 下部ステータスパネル ── */
 .bottomPanel {
-  height: 170px;
+  height: 135px;
   background: #fff;
   border-radius: 10px;
   border: 1px solid #d6d9de;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  flex-shrink: 0;
   overflow: hidden;
 }
 
@@ -133,13 +114,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 26px;
   border-right: 1px solid #d6d9de;
 }
 
 .iconCircleSmall {
-  width: 120px;
-  height: 120px;
+  width: 86px;
+  height: 86px;
   border-radius: 9999px;
   background: #eef0f3;
   display: flex;
@@ -149,7 +130,7 @@
 }
 
 .scanHintText {
-  font-size: 34px;
+  font-size: 28px;
   font-weight: 700;
   color: #374151;
 }
@@ -163,18 +144,18 @@
 }
 
 .statusIconLarge {
-  font-size: 90px;
+  font-size: 70px;
   line-height: 1;
 }
 
 .statusLabel {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 700;
   color: #6b7280;
 }
 
 .statusValue {
-  font-size: 56px;
+  font-size: 44px;
   font-weight: 900;
   color: #111827;
   line-height: 1;
