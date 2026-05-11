@@ -125,6 +125,19 @@
   line-height: 1;
 }
 
+.inTime {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #2e7d32;
+  line-height: 1;
+}
+
+.arrow {
+  font-size: 0.8rem;
+  color: var(--color-subtext);
+  line-height: 1;
+}
+
 .outTime {
   font-size: 1.1rem;
   font-weight: bold;
