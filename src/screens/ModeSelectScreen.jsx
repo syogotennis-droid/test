@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getTodayStatuses, getUsers } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
 function ScanIcon({ size = 48, color = '#333' }) {
@@ -34,33 +35,53 @@ function Clock() {
 }
 
 export default function ModeSelectScreen({ onSelect }) {
+  const [checkedInCount, setCheckedInCount] = useState(0)
+
+  useEffect(() => {
+    async function fetchCount() {
+      const [statuses, users] = await Promise.all([getTodayStatuses(), getUsers()])
+      setCheckedInCount(users.filter(u => statuses[u.id]).length)
+    }
+    fetchCount()
+    const t = setInterval(fetchCount, 30000)
+    return () => clearInterval(t)
+  }, [])
+
   return (
     <div className={styles.screen}>
-      <div className={styles.topBar}>
+      <div className={styles.header}>
+        <div className={styles.headerTitle}>QR勤怠システム</div>
         <Clock />
       </div>
 
       <div className={styles.mainBtns}>
         <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
           <div className={styles.iconCircle}>
-            <ScanIcon size={54} color="#2e7d32" />
+            <ScanIcon size={56} color="#2e7d32" />
           </div>
           <span className={styles.modeLabel}>出勤</span>
         </button>
 
         <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
           <div className={styles.iconCircle}>
-            <ScanIcon size={54} color="#c62828" />
+            <ScanIcon size={56} color="#c62828" />
           </div>
           <span className={styles.modeLabel}>退勤</span>
         </button>
       </div>
 
       <div className={styles.bottomBar}>
-        <button className={styles.checkBtn} onClick={() => onSelect('確認')}>
-          <ScanIcon size={30} color="#555" />
-          <span className={styles.checkLabel}>確認</span>
-        </button>
+        <div className={styles.scanHint}>
+          <ScanIcon size={30} color="#666" />
+          <span className={styles.scanHintText}>QRを読み取ります</span>
+        </div>
+        <div className={styles.statusPanel}>
+          <span className={styles.statusIcon}>👥</span>
+          <div>
+            <div className={styles.statusLabel}>本日の状況</div>
+            <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
+          </div>
+        </div>
       </div>
     </div>
   )

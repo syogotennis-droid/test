@@ -2,63 +2,63 @@
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  background: #e5e5ea;
-  padding: 10px;
-  gap: 8px;
-  box-sizing: border-box;
+  background: #fff;
+  overflow: hidden;
 }
 
-/* ── Top bar ── */
-.topBar {
-  background: #fff;
-  border-radius: 16px;
-  padding: 14px 20px;
+/* ── Header ── */
+.header {
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e0e0e0;
   flex-shrink: 0;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.headerTitle {
+  font-size: 1.15rem;
+  font-weight: bold;
+  color: #1a1a1a;
 }
 
 .clock {
-  text-align: center;
+  text-align: right;
 }
 
 .clockTime {
-  font-size: 2.6rem;
+  font-size: 1.9rem;
   font-weight: bold;
   color: #1a1a1a;
   line-height: 1;
 }
 
 .clockDate {
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   color: #888;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 /* ── Main buttons ── */
 .mainBtns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  display: flex;
   flex: 1;
   min-height: 0;
+  gap: 6px;
+  padding: 6px;
 }
 
 .modeBtn {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 20px;
-  width: 100%;
-  height: 100%;
   border: none;
-  border-radius: 18px;
+  border-radius: 12px;
   cursor: pointer;
   color: #fff;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
   transition: transform 0.1s;
   -webkit-tap-highlight-color: transparent;
 }
@@ -77,9 +77,9 @@
 }
 
 .modeLabel {
-  font-size: 2.8rem;
+  font-size: 2.6rem;
   font-weight: bold;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 .clockIn  { background: #2e7d32; }
@@ -87,29 +87,46 @@
 
 /* ── Bottom bar ── */
 .bottomBar {
+  display: flex;
   flex-shrink: 0;
+  border-top: 1px solid #e0e0e0;
 }
 
-.checkBtn {
-  width: 100%;
+.scanHint {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  height: 72px;
-  background: #fff;
-  border: none;
-  border-radius: 16px;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  transition: transform 0.1s;
-  -webkit-tap-highlight-color: transparent;
+  gap: 10px;
+  padding: 14px 16px;
+  border-right: 1px solid #e0e0e0;
 }
 
-.checkBtn:active { transform: scale(0.97); }
+.scanHintText {
+  font-size: 0.9rem;
+  color: #555;
+}
 
-.checkLabel {
-  font-size: 1.4rem;
+.statusPanel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.statusIcon {
+  font-size: 2rem;
+}
+
+.statusLabel {
+  font-size: 0.72rem;
+  color: #888;
+}
+
+.statusValue {
+  font-size: 1.1rem;
   font-weight: bold;
-  color: #333;
+  color: #1a1a1a;
 }
