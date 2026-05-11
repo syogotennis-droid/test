@@ -159,6 +159,66 @@ export async function deleteLog(id) {
   await deleteDoc(doc(db, 'logs', id))
 }
 
+export async function seedSampleData() {
+  const users = await getUsers()
+  if (users.length === 0) return 0
+
+  const today = new Date()
+  today.setHours(23, 59, 59, 999)
+  const start = new Date()
+  start.setMonth(start.getMonth() - 3)
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+
+  const SEED_TYPES = ['現場', '清掃', '事務']
+
+  function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min }
+  function pad(n) { return String(n).padStart(2, '0') }
+  function fmtDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+
+  const allDocs = []
+
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay()
+    const workRate = (dow === 0 || dow === 6) ? 0.15 : 0.72
+
+    for (const user of users) {
+      if (Math.random() > workRate) continue
+
+      const dateStr = fmtDate(d)
+      const inH = rnd(8, 9)
+      const inM = inH === 9 ? rnd(0, 30) : rnd(0, 59)
+      const outH = rnd(17, 19)
+      const outM = outH === 19 ? rnd(0, 30) : rnd(0, 59)
+      const totalMins = (outH * 60 + outM) - (inH * 60 + inM)
+
+      const typeCount = Math.random() < 0.4 ? 2 : 1
+      const shuffled = [...SEED_TYPES].sort(() => Math.random() - 0.5)
+      const chosen = shuffled.slice(0, typeCount)
+      const workTypeStr = typeCount === 1
+        ? `${chosen[0]}:${totalMins}`
+        : (() => {
+            const split = rnd(Math.floor(totalMins * 0.3), Math.floor(totalMins * 0.7))
+            return `${chosen[0]}:${split},${chosen[1]}:${totalMins - split}`
+          })()
+
+      const inDt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), inH, inM, 0)
+      const outDt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), outH, outM, 0)
+
+      allDocs.push({ user_id: user.id, work_type: '', log_type: '出勤', timestamp: inDt.toISOString(), date: dateStr, time: `${pad(inH)}:${pad(inM)}:00`, synced: 0 })
+      allDocs.push({ user_id: user.id, work_type: workTypeStr, log_type: '退勤', timestamp: outDt.toISOString(), date: dateStr, time: `${pad(outH)}:${pad(outM)}:00`, synced: 0 })
+    }
+  }
+
+  for (let i = 0; i < allDocs.length; i += 400) {
+    const batch = writeBatch(db)
+    allDocs.slice(i, i + 400).forEach(data => batch.set(doc(logsCol), data))
+    await batch.commit()
+  }
+
+  return allDocs.length
+}
+
 export async function getTodayStatuses() {
   const today = getTodayDate()
   const q = query(logsCol, where('date', '==', today))
