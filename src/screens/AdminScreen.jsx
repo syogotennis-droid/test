@@ -304,7 +304,7 @@ function CalendarTab({ users, today }) {
   const [selectedUser, setSelectedUser] = useState(null)
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
+  const [selectedDay, setSelectedDay] = useState(null)
 
   useEffect(() => {
     if (users.length > 0 && !selectedUser) setSelectedUser(users[0])
@@ -320,6 +320,14 @@ function CalendarTab({ users, today }) {
       .then(data => { setLogs(data); setLoading(false) })
   }, [selectedUser, year, month])
 
+  function refreshLogs() {
+    if (!selectedUser) return
+    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
+    const lastDay = new Date(year, month + 1, 0).getDate()
+    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }).then(setLogs)
+  }
+
   const days = getCalendarDays(year, month)
   const dayMap = buildDayMap(logs, year, month)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
@@ -333,6 +341,8 @@ function CalendarTab({ users, today }) {
     if (month === 11) { setYear(y => y + 1); setMonth(0) }
     else setMonth(m => m + 1)
   }
+
+  const pad = n => String(n).padStart(2, '0')
 
   return (
     <div className={styles.content}>
@@ -348,7 +358,6 @@ function CalendarTab({ users, today }) {
         <button className={styles.navBtn} onClick={prevMonth}>◀</button>
         <span className={styles.navDate}>{year}年{month + 1}月</span>
         <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
-        <button className={styles.createBtn} onClick={() => setShowCreate(true)}>＋ 手動作成</button>
       </div>
 
       {loading ? (
@@ -366,7 +375,11 @@ function CalendarTab({ users, today }) {
             const worked = !!inTime
             const dow = new Date(year, month, d).getDay()
             return (
-              <div key={d} className={[styles.calCell, worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}>
+              <div
+                key={d}
+                className={[styles.calCell, worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}
+                onClick={() => setSelectedDay(d)}
+              >
                 <div className={styles.calDayNum}>{d}</div>
                 {worked && <div className={styles.calIn}>{inTime}</div>}
                 {outTime && <div className={styles.calOut}>{outTime}</div>}
@@ -377,19 +390,15 @@ function CalendarTab({ users, today }) {
         </div>
       )}
 
-      {showCreate && selectedUser && (
-        <CreateLogModal
-          users={users}
-          today={today}
-          defaultUserId={selectedUser.id}
-          onClose={() => setShowCreate(false)}
-          onSaved={() => {
-            setShowCreate(false)
-            const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
-            const lastDay = new Date(year, month + 1, 0).getDate()
-            const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-            getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }).then(setLogs)
-          }}
+      {selectedDay !== null && selectedUser && (
+        <DayEditModal
+          user={selectedUser}
+          year={year}
+          month={month}
+          day={selectedDay}
+          dayLogs={logs.filter(l => l.date === `${year}-${pad(month + 1)}-${pad(selectedDay)}`)}
+          onClose={() => setSelectedDay(null)}
+          onSaved={() => { setSelectedDay(null); refreshLogs() }}
         />
       )}
     </div>
@@ -619,6 +628,201 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
             <p className={styles.confirmWarn}>この内容で記録を作成します</p>
             <div className={styles.modalActions}>
               <button className={styles.saveBtn} onClick={handleConfirm}>作成する</button>
+              <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── DayEditModal ─────────────────────────────────────────────────────────────
+
+const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+function parseWorkType(wt) {
+  const init = Object.fromEntries(WORK_TYPES.map(t => [t, { on: false, h: '', m: '' }]))
+  if (!wt) return init
+  wt.split(',').forEach(entry => {
+    const [type, minsStr] = entry.split(':')
+    if (type && type in init) {
+      const mins = parseInt(minsStr) || 0
+      init[type] = { on: true, h: String(Math.floor(mins / 60)), m: String(mins % 60) }
+    }
+  })
+  return init
+}
+
+function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
+  const pad = n => String(n).padStart(2, '0')
+  const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
+  const dow = new Date(year, month, day).getDay()
+  const dateLabel = `${year}年${month + 1}月${day}日（${DOW_LABELS[dow]}）`
+
+  const inLog = dayLogs.find(l => l.log_type === '出勤')
+  const outLog = dayLogs.find(l => l.log_type === '退勤')
+  const hasExisting = dayLogs.length > 0
+
+  const [inTime, setInTime] = useState(inLog?.time?.substring(0, 5) || '')
+  const [outTime, setOutTime] = useState(outLog?.time?.substring(0, 5) || '')
+  const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
+  const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
+
+  const workingMinutes = useMemo(() => {
+    if (!inTime || !outTime) return null
+    const [h1, m1] = inTime.split(':').map(Number)
+    const [h2, m2] = outTime.split(':').map(Number)
+    const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+    return diff > 0 ? diff : null
+  }, [inTime, outTime])
+
+  const totalInputMinutes = WORK_TYPES.reduce((sum, t) => {
+    if (!workTimes[t].on) return sum
+    return sum + (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+  }, 0)
+
+  function toggleWork(t) { setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], on: !prev[t].on } })) }
+  function setWorkH(t, v) { setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], h: v } })) }
+  function setWorkM(t, v) { setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], m: v } })) }
+
+  function fillRemaining(t) {
+    if (workingMinutes === null) return
+    const otherMins = WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) =>
+      sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0), 0)
+    const remaining = workingMinutes - otherMins
+    if (remaining <= 0) return
+    setWorkH(t, String(Math.floor(remaining / 60)))
+    setWorkM(t, String(remaining % 60))
+  }
+
+  function buildWorkTypeStr() {
+    return WORK_TYPES.filter(t => workTimes[t].on).map(t => {
+      const mins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+      return mins > 0 ? `${t}:${mins}` : t
+    }).join(',')
+  }
+
+  async function handleConfirm() {
+    for (const log of dayLogs) await deleteLog(log.id)
+    if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
+    if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: buildWorkTypeStr() })
+    onSaved()
+  }
+
+  async function handleDelete() {
+    for (const log of dayLogs) await deleteLog(log.id)
+    onSaved()
+  }
+
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        {step === 'form' && (
+          <>
+            <h3>{dateLabel}</h3>
+            <p className={styles.modalLabel}>{user.name}</p>
+
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>出勤時刻</label>
+              <input type="time" value={inTime} onChange={e => setInTime(e.target.value)} className={styles.timeInput} />
+            </div>
+
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>退勤時刻</label>
+              <input type="time" value={outTime} onChange={e => setOutTime(e.target.value)} className={styles.timeInput} />
+            </div>
+
+            {outTime && (
+              <>
+                {workingMinutes !== null && (
+                  <div className={styles.workTimeBanner}>
+                    <span>勤務 <strong>{fmtMinutes(workingMinutes)}</strong></span>
+                    {totalInputMinutes > 0 && (
+                      <>
+                        <span className={styles.workTimeBannerSep}>|</span>
+                        <span className={totalInputMinutes === workingMinutes ? styles.totalMatch : styles.totalMismatch}>
+                          残り {fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>作業内容</label>
+                  <div className={styles.workTypeList}>
+                    {WORK_TYPES.map(t => {
+                      const otherMins = workingMinutes !== null
+                        ? WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) =>
+                            sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0), 0)
+                        : 0
+                      const remaining = workingMinutes !== null ? workingMinutes - otherMins : null
+                      const currentMins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+                      const showRemainingBtn = remaining !== null && remaining > 0 && currentMins !== remaining
+                      return (
+                        <div key={t} className={styles.workTypeEntry}>
+                          <button
+                            className={[styles.workTypeBtn, workTimes[t].on ? styles.workTypeBtnActive : ''].join(' ')}
+                            onClick={() => toggleWork(t)}
+                          >{t}</button>
+                          {workTimes[t].on && (
+                            <div className={styles.workTimeInputs}>
+                              <input type="number" min="0" max="23" placeholder="0" value={workTimes[t].h} onChange={e => setWorkH(t, e.target.value)} className={styles.workTimeNum} />
+                              <span className={styles.workTimeUnit}>時間</span>
+                              <input type="number" min="0" max="59" placeholder="0" value={workTimes[t].m} onChange={e => setWorkM(t, e.target.value)} className={styles.workTimeNum} />
+                              <span className={styles.workTimeUnit}>分</span>
+                              {showRemainingBtn && (
+                                <button className={styles.remainingBtn} onClick={() => fillRemaining(t)}>残り{fmtMinutes(remaining)}</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!inTime && !outTime}>保存する</button>
+              <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+            </div>
+
+            {hasExisting && (
+              <>
+                <hr className={styles.modalDivider} />
+                <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>この日の記録を削除する</button>
+              </>
+            )}
+          </>
+        )}
+
+        {step === 'confirm' && (
+          <>
+            <h3>保存内容の確認</h3>
+            <div className={styles.confirmTable}>
+              <div className={styles.confirmRow}><span>担当者</span><strong>{user.name}</strong></div>
+              <div className={styles.confirmRow}><span>日付</span><strong>{dateLabel}</strong></div>
+              {inTime && <div className={styles.confirmRow}><span>出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
+              {outTime && <div className={styles.confirmRow}><span>退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
+              {buildWorkTypeStr() && <div className={styles.confirmRow}><span>作業</span><strong>{buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return m ? `${t} ${fmtMinutes(Number(m))}` : t }).join(' / ')}</strong></div>}
+            </div>
+            {hasExisting && <p className={styles.confirmWarn}>既存の記録を上書きします</p>}
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleConfirm}>確定する</button>
+              <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
+            </div>
+          </>
+        )}
+
+        {step === 'confirmDelete' && (
+          <>
+            <h3>削除の確認</h3>
+            <p className={styles.modalLabel}>{dateLabel} の記録をすべて削除します</p>
+            <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+            <div className={styles.modalActions}>
+              <button className={styles.realDeleteBtn} onClick={handleDelete}>削除する</button>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
             </div>
           </>
