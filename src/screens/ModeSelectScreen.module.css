@@ -50,14 +50,15 @@
 }
 
 .modeBtn {
-  width: clamp(130px, 38vw, 200px);
+  width: clamp(140px, 40vw, 220px);
   flex-shrink: 0;
   aspect-ratio: 1;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 8px;
   border: none;
   border-radius: 16px;
   cursor: pointer;
@@ -69,8 +70,8 @@
 .modeBtn:active { transform: scale(0.97); }
 
 .iconCircle {
-  width: clamp(100px, 26vw, 180px);
-  height: clamp(100px, 26vw, 180px);
+  width: 56cqi;
+  height: 56cqi;
   background: #fff;
   border-radius: 50%;
   display: flex;
@@ -85,7 +86,7 @@
 }
 
 .modeLabel {
-  font-size: clamp(3.5rem, 9vw, 6rem);
+  font-size: 25cqi;
   font-weight: bold;
   letter-spacing: 0.05em;
 }
