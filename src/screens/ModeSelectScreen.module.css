@@ -1,144 +1,181 @@
+/* ── ビューポート（カードを中央寄せ） ── */
 .screen {
-  display: flex;
-  flex-direction: column;
+  width: 100vw;
   height: 100dvh;
-  background: #fff;
-  overflow: hidden;
-}
-
-/* ── Header ── */
-.header {
   display: flex;
   align-items: center;
+  justify-content: center;
+  background: #d1d5db;
+}
+
+/* ── メインカード ── */
+.card {
+  width: 1260px;
+  height: 845px;
+  max-width: 100vw;
+  max-height: 100dvh;
+  border-radius: 10px;
+  background: #f7f8fa;
+  overflow: hidden;
+  border: 1px solid #d9dde2;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+}
+
+/* ── ヘッダー ── */
+.header {
+  height: 135px;
+  padding: 35px 50px 0;
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid #d9dde2;
   flex-shrink: 0;
+  background: #fff;
 }
 
 .headerTitle {
-  font-size: 1.4rem;
-  font-weight: bold;
-  color: #1a1a1a;
+  font-size: 44px;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1;
 }
 
 .clock { text-align: right; }
 
 .clockTime {
-  font-size: 2.8rem;
-  font-weight: bold;
-  color: #1a1a1a;
+  font-size: 52px;
+  font-weight: 800;
+  color: #111827;
   line-height: 1;
 }
 
 .clockDate {
-  font-size: 0.9rem;
-  color: #888;
-  margin-top: 3px;
+  font-size: 25px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-top: 4px;
 }
 
-/* ── Main buttons ── */
-.mainBtns {
-  height: 58dvh;
-  flex-shrink: 0;
+/* ── メインエリア ── */
+.main {
+  flex: 1;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  flex-direction: column;
+  gap: 28px;
+  padding: 30px 50px;
+  overflow: hidden;
+}
+
+/* ── 出勤・退勤ボタングリッド ── */
+.mainBtns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  flex-shrink: 0;
 }
 
 .modeBtn {
-  flex: 1;
-  aspect-ratio: 1;
-  container-type: inline-size;
+  height: 435px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 30px;
   border: none;
-  border-radius: 14px;
+  border-radius: 10px;
   cursor: pointer;
   color: #fff;
-  transition: transform 0.1s;
+  transition: transform 0.08s;
   -webkit-tap-highlight-color: transparent;
 }
 
-.modeBtn:active { transform: scale(0.97); }
+.modeBtn:active { transform: scale(0.98); }
 
-/* アイコン・文字はボタン幅(cqi)基準でスケール → 常に正方形に収まる */
+.clockIn  { background: #16a34a; }
+.clockOut { background: #dc2626; }
+
+/* ── ボタン内・白丸アイコン ── */
 .iconCircle {
-  width: 52cqi;
-  height: 52cqi;
+  width: 220px;
+  height: 220px;
+  border-radius: 9999px;
   background: #fff;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 
-.mainIcon {
-  width: 56%;
-  height: 56%;
-}
-
+/* ── 出勤・退勤テキスト ── */
 .modeLabel {
-  font-size: 24cqi;
-  font-weight: bold;
-  letter-spacing: 0.05em;
+  font-size: 96px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.04em;
 }
 
-.clockIn  { background: #2e7d32; }
-.clockOut { background: #c62828; }
-
-/* ── Bottom bar ── */
-.bottomBar {
-  flex: 1;
-  display: flex;
-  border-top: 1px solid #e0e0e0;
-  min-height: 0;
+/* ── 下部ステータスパネル ── */
+.bottomPanel {
+  height: 170px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #d6d9de;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
+/* 下部左：QR読み取り */
 .scanHint {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 0 16px;
-  border-right: 1px solid #e0e0e0;
+  gap: 24px;
+  border-right: 1px solid #d6d9de;
 }
 
-.smallIcon {
-  width: 32px;
-  height: 32px;
+.iconCircleSmall {
+  width: 120px;
+  height: 120px;
+  border-radius: 9999px;
+  background: #eef0f3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 
 .scanHintText {
-  font-size: 1.1rem;
-  color: #555;
+  font-size: 34px;
+  font-weight: 700;
+  color: #374151;
 }
 
+/* 下部右：本日の状況 */
 .statusPanel {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 0 16px;
+  gap: 24px;
 }
 
-.statusIcon { font-size: 2.2rem; }
+.statusIconLarge {
+  font-size: 90px;
+  line-height: 1;
+}
 
 .statusLabel {
-  font-size: 0.85rem;
-  color: #888;
+  font-size: 26px;
+  font-weight: 700;
+  color: #6b7280;
 }
 
 .statusValue {
-  font-size: 1.3rem;
-  font-weight: bold;
-  color: #1a1a1a;
+  font-size: 56px;
+  font-weight: 900;
+  color: #111827;
+  line-height: 1;
 }

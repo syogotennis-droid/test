@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { getTodayStatuses, getUsers } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
-function ScanIcon({ className, color = '#333' }) {
+function ScanIcon({ size = 48, color = '#333' }) {
   return (
-    <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M6 19V6h13" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M6 29v13h13" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M42 19V6H29" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -49,38 +49,50 @@ export default function ModeSelectScreen({ onSelect }) {
 
   return (
     <div className={styles.screen}>
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>QR勤怠システム</div>
-        <Clock />
-      </div>
+      <div className={styles.card}>
 
-      <div className={styles.mainBtns}>
-        <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
-          <div className={styles.iconCircle}>
-            <ScanIcon className={styles.mainIcon} color="#2e7d32" />
-          </div>
-          <span className={styles.modeLabel}>出勤</span>
-        </button>
-
-        <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
-          <div className={styles.iconCircle}>
-            <ScanIcon className={styles.mainIcon} color="#c62828" />
-          </div>
-          <span className={styles.modeLabel}>退勤</span>
-        </button>
-      </div>
-
-      <div className={styles.bottomBar}>
-        <div className={styles.scanHint}>
-          <ScanIcon className={styles.smallIcon} color="#666" />
-          <span className={styles.scanHintText}>QRを読み取ります</span>
+        {/* ヘッダー */}
+        <div className={styles.header}>
+          <div className={styles.headerTitle}>QR勤怠システム</div>
+          <Clock />
         </div>
-        <div className={styles.statusPanel}>
-          <span className={styles.statusIcon}>👥</span>
-          <div>
-            <div className={styles.statusLabel}>本日の状況</div>
-            <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
+
+        {/* メインエリア */}
+        <div className={styles.main}>
+
+          {/* 出勤・退勤ボタン */}
+          <div className={styles.mainBtns}>
+            <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
+              <div className={styles.iconCircle}>
+                <ScanIcon size={100} color="#16a34a" />
+              </div>
+              <span className={styles.modeLabel}>出勤</span>
+            </button>
+            <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
+              <div className={styles.iconCircle}>
+                <ScanIcon size={100} color="#dc2626" />
+              </div>
+              <span className={styles.modeLabel}>退勤</span>
+            </button>
           </div>
+
+          {/* 下部ステータスパネル */}
+          <div className={styles.bottomPanel}>
+            <div className={styles.scanHint}>
+              <div className={styles.iconCircleSmall}>
+                <ScanIcon size={58} color="#555" />
+              </div>
+              <span className={styles.scanHintText}>QRを読み取ります</span>
+            </div>
+            <div className={styles.statusPanel}>
+              <span className={styles.statusIconLarge}>👥</span>
+              <div>
+                <div className={styles.statusLabel}>本日の状況</div>
+                <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
