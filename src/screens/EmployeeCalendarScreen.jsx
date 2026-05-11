@@ -165,7 +165,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                 onClick={() => worked && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
-                {duration && <div className={styles.duration}>{duration}</div>}
+                {outTime && <div className={styles.outTime}>{outTime}</div>}
               </div>
             )
           })}
