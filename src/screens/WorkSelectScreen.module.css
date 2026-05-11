@@ -1,195 +1,368 @@
+/* ── 画面全体 ── */
 .screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  padding: 20px 24px 32px;
-  gap: 14px;
-  background: var(--color-bg);
-  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #f6fbf8;
+  display: grid;
+  grid-template-rows: 90px 1fr;
 }
 
-.screen h1 {
-  font-size: 2rem;
-  margin: 0;
-}
-
-.screen p {
-  font-size: 1.2rem;
-  color: var(--color-subtext);
-  margin: 0;
-}
-
-.userBadge {
+/* ── ヘッダー ── */
+.header {
+  height: 90px;
+  padding: 0 32px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: var(--color-white);
-  border-radius: 50px;
-  padding: 10px 20px;
-  box-shadow: var(--shadow);
+  justify-content: space-between;
+  background: linear-gradient(90deg, #41b883, #55c494);
+  flex-shrink: 0;
 }
 
-.userIcon {
-  font-size: 1.8rem;
-}
-
-.userName {
-  font-size: 1.4rem;
-  font-weight: bold;
-  color: var(--color-text);
-}
-
-.userId {
-  font-size: 1rem;
-  color: var(--color-subtext);
-}
-
-/* 勤務時間サマリー */
-.workingTimeSummary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-white);
-  border-radius: var(--radius);
-  padding: 10px 18px;
-  box-shadow: var(--shadow);
-  font-size: 0.95rem;
-  width: 100%;
-}
-
-.wtLabel {
-  color: var(--color-subtext);
-  font-size: 1.1rem;
-}
-
-.wtValue {
-  font-weight: bold;
-  color: var(--color-text);
-  font-size: 1.1rem;
-}
-
-.wtSep {
-  color: var(--color-border);
-  margin: 0 4px;
-}
-
-.totalMatch {
-  color: var(--color-success);
-}
-
-.totalMismatch {
-  color: #e53935;
-}
-
-/* ボタン群 */
-.buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.workTypeGroup {
-  width: 100%;
-}
-
-.workBtn {
+.headerLeft {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 0 16px 0 28px;
-  height: 80px;
-  width: 100%;
-  border-radius: var(--radius);
-  color: var(--color-white);
-  box-shadow: var(--shadow);
-  position: relative;
-  box-sizing: border-box;
 }
 
-.workBtn.selected {
-  border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.8), 0 4px 16px rgba(0,0,0,0.2);
-}
-
-.checkboxBtn {
+.headerIconBox {
   width: 52px;
   height: 52px;
   border-radius: 10px;
-  border: 3px solid rgba(255, 255, 255, 0.7);
-  background: white;
-  color: transparent;
-  font-size: 2rem;
-  font-weight: bold;
-  cursor: pointer;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.1s, transform 0.1s;
 }
 
-.checkboxBtn:active {
-  transform: scale(0.9);
+.headerTitle {
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff;
 }
 
-.checkboxChecked {
-  background: white;
-  border-color: white;
-  color: #222;
-}
-
-.office { background: #7B1FA2; }   /* 紫 — 事務 */
-.cleaning { background: #388E3C; } /* 緑 — 清掃 */
-.field { background: #1976D2; }    /* 青 — 現場（プール） */
-.break { background: #E64A19; }    /* 深オレンジ — 休憩 */
-
-.workIcon {
-  font-size: 2rem;
-}
-
-.workLabel {
-  font-size: 2rem;
-  font-weight: bold;
-  letter-spacing: 0.05em;
-  flex: 1;
-  text-align: left;
-}
-
-.check {
-  font-size: 2rem;
-  font-weight: bold;
-}
-
-/* 時間入力行 */
-.timeInputRow {
+.clockBox {
+  width: 190px;
+  height: 60px;
+  border-radius: 12px;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 14px 16px;
-  background: var(--color-white);
-  border-radius: 0 0 var(--radius) var(--radius);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  gap: 10px;
+  flex-shrink: 0;
 }
 
-/* カスタムピッカーボタン（現在値表示） */
+.clockText {
+  font-size: 30px;
+  font-weight: 800;
+  color: #2f2f35;
+}
+
+/* ── メインエリア ── */
+.main {
+  min-height: 0;
+  padding: 18px 60px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+/* ── おつかれさまです ── */
+.greeting {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  font-weight: 900;
+  color: #2f2f35;
+  letter-spacing: 0.06em;
+}
+
+/* ── 作業内容を選択 ── */
+.sectionTitle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+}
+
+.sectionTitle::before,
+.sectionTitle::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: #79c9a6;
+}
+
+.sectionTitle span {
+  font-size: 30px;
+  font-weight: 800;
+  color: #34a36f;
+  white-space: nowrap;
+}
+
+/* ── 作業カードグリッド ── */
+.workGrid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+.workCard {
+  border-radius: 20px;
+  background: #fff;
+  border: 2px solid #d2eadf;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 1fr 20px;
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.workCard:active { transform: scale(0.97); }
+
+.workCardSelected {
+  border-color: #41b883;
+  box-shadow: 0 6px 20px rgba(65, 184, 131, 0.3);
+}
+
+.workCardInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 12px 8px 8px;
+  position: relative;
+}
+
+.workCardBar {
+  height: 20px;
+}
+
+/* ×ボタン */
+.deselectBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: #e8f5f0;
+  color: #34a36f;
+  font-size: 1.4rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  line-height: 1;
+}
+
+/* アイコン丸 */
+.workIconCircle {
+  width: 120px;
+  height: 120px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.workIcon {
+  font-size: 58px;
+  line-height: 1;
+}
+
+/* 作業名 */
+.workLabel {
+  margin-top: 14px;
+  font-size: 34px;
+  font-weight: 900;
+  color: #2f2f35;
+  letter-spacing: 0.04em;
+}
+
+/* 入力済み時間 */
+.workTimeLabel {
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #41b883;
+}
+
+/* ── 合計時間パネル ── */
+.totalPanel {
+  flex-shrink: 0;
+  height: 82px;
+  border-radius: 14px;
+  border: 1.5px solid #d5eadf;
+  background: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.totalLabel {
+  font-size: 32px;
+  font-weight: 800;
+  color: #34a36f;
+}
+
+.totalNumber {
+  font-size: 64px;
+  font-weight: 900;
+  color: #34a36f;
+  line-height: 1;
+}
+
+.totalUnit {
+  font-size: 30px;
+  font-weight: 800;
+  color: #34a36f;
+}
+
+/* ── エラー ── */
+.timeError {
+  flex-shrink: 0;
+  color: #e53935;
+  font-size: 1rem;
+  font-weight: bold;
+  text-align: center;
+  background: #ffebee;
+  border-radius: 10px;
+  padding: 10px 16px;
+}
+
+/* ── 退勤を登録ボタン ── */
+.submitButton {
+  flex-shrink: 0;
+  height: 110px;
+  border-radius: 20px;
+  border: none;
+  background: linear-gradient(180deg, #ff9f2e, #ff7a1a);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  font-size: 48px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  box-shadow: 0 8px 16px rgba(255, 122, 26, 0.25);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s;
+}
+
+.submitButton:active:not(:disabled) { transform: scale(0.98); }
+
+.submitDisabled {
+  background: linear-gradient(180deg, #c8ccc8, #b0b4b0);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* ── 時間入力モーダル ── */
+.timeModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.timeModal {
+  background: #fff;
+  border-radius: 20px;
+  padding: 28px 32px 24px;
+  width: min(460px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.timeModalTitle {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #2f2f35;
+  text-align: center;
+}
+
+.timeModalHint {
+  font-size: 0.95rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.timeModalRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.timeModalOk {
+  background: #41b883;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  width: 100%;
+}
+
+/* ── 数値ピッカー ── */
 .pickerBtn {
-  min-width: 80px;
-  padding: 10px 8px;
+  min-width: 90px;
+  padding: 12px 8px;
   text-align: center;
   font-size: 2rem;
   font-weight: bold;
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-  color: var(--color-text);
-  background: var(--color-bg);
+  border: 2px solid #d5eadf;
+  border-radius: 10px;
+  color: #2f2f35;
+  background: #f6fbf8;
   cursor: pointer;
 }
 
-/* オーバーレイ */
+.timeUnit {
+  font-size: 1.2rem;
+  color: #6b7280;
+  font-weight: bold;
+}
+
+.remainingBtn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 20px;
+  background: #41b883;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .pickerOverlay {
   position: fixed;
   inset: 0;
@@ -200,11 +373,10 @@
   justify-content: center;
 }
 
-/* ボトムシート */
 .pickerSheet {
   width: 100%;
   max-width: 480px;
-  background: var(--color-white);
+  background: #fff;
   border-radius: 20px 20px 0 0;
   padding: 0 0 24px;
   max-height: 70vh;
@@ -216,12 +388,11 @@
   padding: 16px 20px;
   font-size: 1.1rem;
   font-weight: bold;
-  color: var(--color-subtext);
-  border-bottom: 1px solid var(--color-border);
+  color: #6b7280;
+  border-bottom: 1px solid #dadce0;
   flex-shrink: 0;
 }
 
-/* 数字グリッド */
 .pickerGrid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -234,98 +405,16 @@
   height: 64px;
   border: none;
   border-radius: 10px;
-  background: var(--color-bg);
+  background: #f8f9fa;
   font-size: 1.6rem;
   font-weight: bold;
-  color: var(--color-text);
+  color: #202124;
   cursor: pointer;
 }
 
-.pickerItem:active {
-  transform: scale(0.93);
-}
+.pickerItem:active { transform: scale(0.93); }
 
 .pickerActive {
-  background: var(--color-text);
-  color: var(--color-white);
-}
-
-.timeUnit {
-  font-size: 1rem;
-  color: var(--color-subtext);
-  font-weight: bold;
-  margin-right: 6px;
-}
-
-.timeUnit:last-child {
-  margin-right: 0;
-}
-
-.remainingBtn {
-  margin-left: 8px;
-  padding: 8px 14px;
-  border: none;
-  border-radius: 20px;
-  background: var(--color-success);
-  color: white;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* エラー */
-.timeError {
-  color: #e53935;
-  font-size: 0.9rem;
-  font-weight: bold;
-  text-align: center;
-  background: #ffebee;
-  border-radius: 8px;
-  padding: 10px 16px;
-  width: 100%;
-  margin: 0;
-}
-
-/* 確定ボタン */
-.confirmBtn {
-  width: 100%;
-  height: 72px;
-  border: none;
-  border-radius: var(--radius);
-  background: var(--color-text);
-  color: var(--color-white);
-  font-size: 1.6rem;
-  font-weight: bold;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-  transition: transform 0.1s, opacity 0.1s;
-  letter-spacing: 0.08em;
-  flex-shrink: 0;
-}
-
-.confirmBtn:active {
-  transform: scale(0.97);
-}
-
-.confirmBtn.disabled {
-  background: var(--color-border);
-  color: var(--color-subtext);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-.cancelBtn {
-  width: 100%;
-  height: 60px;
-  background: var(--color-white);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius);
-  color: var(--color-text);
-  font-size: 1.4rem;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-  flex-shrink: 0;
+  background: #202124;
+  color: #fff;
 }
