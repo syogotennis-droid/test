@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
 import { KINMUBO_TEMPLATE_B64 } from './kinmuboTemplate'
-import XLSXStyle from 'xlsx-js-style'
+import { unzipSync, zipSync } from 'fflate'
 
 // Firebase configuration
 const firebaseConfig = {
@@ -310,7 +310,7 @@ function parseWorkMins(workType) {
 }
 
 // Export monthly attendance register (出勤簿) as XLSX
-// Uses xlsx-js-style (SheetJS fork) to properly preserve template styles/borders
+// Uses direct ZIP/XML manipulation to preserve all template styles exactly
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
@@ -320,38 +320,64 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const ym_m = Number(ym_m_str)
   const yearMonthLabel = ym_y && ym_m ? `${ym_y}年${ym_m}月` : ''
   const lastDay = new Date(ym_y, ym_m, 0).getDate()
-  const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
-  // ひな型を cellStyles:true で読み込む（セルに s オブジェクトが付く）
-  const wb_tmpl = XLSXStyle.read(KINMUBO_TEMPLATE_B64, { type: 'base64', cellStyles: true })
-  const ws_tmpl = wb_tmpl.Sheets[wb_tmpl.SheetNames[0]]
-
-  // Excel date serial (days since Dec 30, 1899)
+  // Excel date serial: days since Dec 30, 1899
   function excelDate(y, m, d) {
-    return (new Date(y, m - 1, d) - new Date(1899, 11, 30)) / 86400000
+    return Math.round((new Date(y, m - 1, d) - new Date(1899, 11, 30)) / 86400000)
   }
+  // Excel time fraction: fraction of 24 hours
   function excelTime(h, mi) { return (h * 60 + mi) / 1440 }
-
-  // セルの値を更新しつつスタイル(s)は維持するヘルパー
-  function setVal(ws, addr, type, value, numFmt) {
-    const s = ws[addr]?.s
-    ws[addr] = { t: type, v: value, ...(numFmt ? { z: numFmt } : {}), ...(s ? { s } : {}) }
-  }
-  // セルを空にしつつスタイル(s)は維持するヘルパー
-  function clearVal(ws, addr) {
-    const s = ws[addr]?.s
-    ws[addr] = { t: 'z', ...(s ? { s } : {}) }
+  // XML escape
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
 
-  // ワークブックはひな型のものをそのまま使う（スタイルテーブルを保持）
-  wb_tmpl.SheetNames = []
-  wb_tmpl.Sheets = {}
+  // Shared string indices for weekday names (in template sharedStrings.xml):
+  // 16=金, 17=土, 18=日, 19=月, 20=火, 21=水, 22=木
+  // JS getDay(): 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  const DOW_SST = [18, 19, 20, 21, 22, 16, 17]
+
+  // Style IDs per row type (observed from template + styles.xml analysis)
+  // "first" = row 5 (first data row, has top border from header row)
+  // sat/sun = Saturday/Sunday coloring, wd = regular weekday
+  const ST = {
+    first: { A:'10', B:'4',  C:'14', D:'14', E:'16', F:'17', G:'17', H:'21', I:'17', J:'21', K:'17', L:'21', M:'16', N:'24' },
+    sat:   { A:'11', B:'6',  C:'15', D:'15', E:'18', F:'19', G:'19', H:'22', I:'19', J:'22', K:'19', L:'22', M:'18', N:'25' },
+    sun:   { A:'12', B:'7',  C:'15', D:'15', E:'18', F:'19', G:'19', H:'22', I:'19', J:'22', K:'19', L:'22', M:'18', N:'25' },
+    wd:    { A:'13', B:'5',  C:'15', D:'15', E:'18', F:'19', G:'19', H:'22', I:'19', J:'22', K:'19', L:'22', M:'18', N:'25' },
+  }
+
+  // Decode base64 template to binary
+  const b64 = KINMUBO_TEMPLATE_B64
+  const raw = atob(b64)
+  const tmplBin = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) tmplBin[i] = raw.charCodeAt(i)
+
+  // Unzip template
+  const zipFiles = unzipSync(tmplBin)
+  const dec = new TextDecoder()
+  const enc = new TextEncoder()
+
+  // Parse sheet1.xml to extract structural parts
+  const sheet1Xml = dec.decode(zipFiles['xl/worksheets/sheet1.xml'])
+  const sdStart = sheet1Xml.indexOf('<sheetData>')
+  const sdEnd = sheet1Xml.indexOf('</sheetData>') + '</sheetData>'.length
+  const beforeData = sheet1Xml.substring(0, sdStart)
+  const afterData = sheet1Xml.substring(sdEnd)
+
+  // Extract row 4 (header row) and row 36 (totals row) from template
+  const row4xml = sheet1Xml.match(/<row r="4"[^>]*>[\s\S]*?<\/row>/)?.[0] || ''
+  let row36xml = sheet1Xml.match(/<row r="36"[^>]*>[\s\S]*?<\/row>/)?.[0] || ''
+  // Adjust SUM range in row 36 for months shorter than 31 days
+  if (lastDay < 31) {
+    row36xml = row36xml.replace(
+      /(<f t="shared" ref="E36:N36" si="3">)SUM\(E5:E35\)(<\/f>)/,
+      `$1SUM(E5:E${4 + lastDay})$2`
+    )
+  }
 
   const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
-  if (userEntries.length === 0) {
-    XLSXStyle.utils.book_append_sheet(wb_tmpl, JSON.parse(JSON.stringify(ws_tmpl)), 'データなし')
-    return XLSXStyle.write(wb_tmpl, { type: 'array', bookType: 'xlsx' })
-  }
+  const sheetXmls = []
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -367,91 +393,178 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    // ひな型シートをディープコピー（s オブジェクトも含めて）
-    const ws = JSON.parse(JSON.stringify(ws_tmpl))
+    // Row 1: title as inline string (avoids shared-string index conflicts across sheets)
+    const row1 = `<row r="1" spans="1:14" ht="25.65" customHeight="1" x14ac:dyDescent="0.2">` +
+      `<c r="A1" s="27" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿')}</t></is></c>` +
+      `<c r="B1" s="27"/><c r="C1" s="27"/><c r="D1" s="27"/><c r="E1" s="27"/>` +
+      `<c r="F1" s="27"/><c r="G1" s="27"/><c r="H1" s="27"/><c r="I1" s="27"/>` +
+      `<c r="J1" s="27"/><c r="K1" s="27"/><c r="L1" s="27"/><c r="M1" s="27"/><c r="N1" s="27"/>` +
+      `</row>`
 
-    // タイトル・担当者名（スタイル維持）
-    setVal(ws, 'A1', 's', `${yearMonthLabel} 出勤簿`)
-    setVal(ws, 'A2', 's', `担当者：${user.name}`)
+    // Row 2: user name as inline string
+    const row2 = `<row r="2" spans="1:14" ht="19.2" customHeight="1" x14ac:dyDescent="0.2">` +
+      `<c r="A2" s="28" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
+      `<c r="B2" s="28"/><c r="C2" s="28"/><c r="D2" s="28"/><c r="E2" s="28"/>` +
+      `<c r="F2" s="28"/><c r="G2" s="28"/><c r="H2" s="28"/><c r="I2" s="28"/><c r="J2" s="28"/>` +
+      `<c r="K2" s="29"/><c r="L2" s="29"/><c r="M2" s="29"/><c r="N2" s="29"/>` +
+      `</row>`
 
-    const DATA_COLS = ['C', 'D', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
-
+    // Build data rows 5-35 (days 1-31)
+    const dataRows = []
     for (let d = 1; d <= 31; d++) {
-      const r = 4 + d
+      const r = d + 4
+      const isFirst = d === 1
+      const isValid = d <= lastDay
+      const dow = isValid ? new Date(ym_y, ym_m - 1, d).getDay() : 1
+      const st = isFirst ? ST.first : (dow === 6 ? ST.sat : dow === 0 ? ST.sun : ST.wd)
 
-      if (d > lastDay) {
-        // 月の日数を超えた行はクリア（スタイルは維持）
-        clearVal(ws, `A${r}`)
-        clearVal(ws, `B${r}`)
-        DATA_COLS.forEach(c => clearVal(ws, `${c}${r}`))
-        continue
-      }
+      // Shared formulas (row 5 carries the definition, others reference it)
+      const eF = isFirst
+        ? `<f t="shared" ref="E5:E35" si="0">IF(OR(C5=&quot;&quot;,D5=&quot;&quot;),&quot;&quot;,MAX(0,MOD(D5-C5,1)*24-F5))</f><v/>`
+        : `<f t="shared" si="0"/><v/>`
+      const mF = isFirst
+        ? `<f t="shared" ref="M5:M35" si="1">IF(SUM(G5,I5,K5)=0,&quot;&quot;,SUM(G5,I5,K5))</f><v/>`
+        : `<f t="shared" si="1"/><v/>`
+      const nF = isFirst
+        ? `<f t="shared" ref="N5:N35" si="2">IF(SUM(H5,J5,L5)=0,&quot;&quot;,SUM(H5,J5,L5))</f><v/>`
+        : `<f t="shared" si="2"/><v/>`
 
-      const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
-      const dow = new Date(ym_y, ym_m - 1, d).getDay()
+      // Date and weekday cells
+      const aC = isValid ? `<c r="A${r}" s="${st.A}"><v>${excelDate(ym_y, ym_m, d)}</v></c>` : `<c r="A${r}" s="${st.A}"/>`
+      const bC = isValid ? `<c r="B${r}" s="${st.B}" t="s"><v>${DOW_SST[dow]}</v></c>` : `<c r="B${r}" s="${st.B}"/>`
 
-      // 日付・曜日（ひな型の書式を引き継ぐ）
-      setVal(ws, `A${r}`, 'n', excelDate(ym_y, ym_m, d))
-      setVal(ws, `B${r}`, 's', DAY_NAMES[dow])
+      let cC = `<c r="C${r}" s="${st.C}"/>`, dC = `<c r="D${r}" s="${st.D}"/>`
+      let fC = `<c r="F${r}" s="${st.F}"/>`
+      let gC = `<c r="G${r}" s="${st.G}"/>`, hC = `<c r="H${r}" s="${st.H}"/>`
+      let iC = `<c r="I${r}" s="${st.I}"/>`, jC = `<c r="J${r}" s="${st.J}"/>`
+      let kC = `<c r="K${r}" s="${st.K}"/>`, lC = `<c r="L${r}" s="${st.L}"/>`
 
-      // データセルをいったんクリア（スタイル維持）
-      DATA_COLS.forEach(c => clearVal(ws, `${c}${r}`))
+      if (isValid) {
+        const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
+        const entry = byDate[dateStr]
+        const inStr = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+        const outStr = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
 
-      const entry = byDate[dateStr]
-      const inStr  = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-      const outStr = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+        if (inStr) {
+          const [h, mi] = inStr.split(':').map(Number)
+          cC = `<c r="C${r}" s="${st.C}"><v>${excelTime(h, mi)}</v></c>`
+        }
+        if (outStr) {
+          const [h, mi] = outStr.split(':').map(Number)
+          dC = `<c r="D${r}" s="${st.D}"><v>${excelTime(h, mi)}</v></c>`
+        }
 
-      if (inStr) {
-        const [h, mi] = inStr.split(':').map(Number)
-        setVal(ws, `C${r}`, 'n', excelTime(h, mi), 'hh:mm')
-      }
-      if (outStr) {
-        const [h, mi] = outStr.split(':').map(Number)
-        setVal(ws, `D${r}`, 'n', excelTime(h, mi), 'hh:mm')
-      }
+        const workMins = parseWorkMins(entry?.workType || '')
+        const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
+        const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
 
-      const workMins = parseWorkMins(entry?.workType || '')
-      const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
-      const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
+        if (kyukeiMins > 0) {
+          fC = `<c r="F${r}" s="${st.F}"><v>${kyukeiMins / 60}</v></c>`
+        }
 
-      if (kyukeiMins > 0) setVal(ws, `F${r}`, 'n', Math.round(kyukeiMins) / 60)
-
-      const PAID = [
-        { type: '現場', tCol: 'G', wCol: 'H' },
-        { type: '清掃', tCol: 'I', wCol: 'J' },
-        { type: '事務', tCol: 'K', wCol: 'L' },
-      ]
-      const zeroTypes = PAID.map(p => p.type).filter(t => workMins[t] === 0)
-      const getTypeMins = t => {
-        if (workMins[t] === null) return 0
-        if (workMins[t] > 0) return workMins[t]
-        return zeroTypes.length === 1 ? totalMins : 0
-      }
-      for (const { type, tCol, wCol } of PAID) {
-        if (workMins[type] === null) continue
-        const tMins = getTypeMins(type)
-        if (tMins > 0) {
-          setVal(ws, `${tCol}${r}`, 'n', Math.round(tMins) / 60)
-          const rate = Number(userRates[type]) || 0
-          if (rate > 0) setVal(ws, `${wCol}${r}`, 'n', Math.round(tMins / 60 * rate))
+        const PAID = [
+          { type: '現場', tC: 'G', wC: 'H' },
+          { type: '清掃', tC: 'I', wC: 'J' },
+          { type: '事務', tC: 'K', wC: 'L' },
+        ]
+        const zeroTypes = PAID.map(p => p.type).filter(t => workMins[t] === 0)
+        const typeMins = t => {
+          if (workMins[t] === null) return 0
+          if (workMins[t] > 0) return workMins[t]
+          return zeroTypes.length === 1 ? totalMins : 0
+        }
+        for (const { type, tC, wC } of PAID) {
+          if (workMins[type] === null) continue
+          const tm = typeMins(type)
+          if (tm > 0) {
+            const rate = Number(userRates[type]) || 0
+            if (tC === 'G') {
+              gC = `<c r="G${r}" s="${st.G}"><v>${tm / 60}</v></c>`
+              if (rate > 0) hC = `<c r="H${r}" s="${st.H}"><v>${Math.round(tm / 60 * rate)}</v></c>`
+            } else if (tC === 'I') {
+              iC = `<c r="I${r}" s="${st.I}"><v>${tm / 60}</v></c>`
+              if (rate > 0) jC = `<c r="J${r}" s="${st.J}"><v>${Math.round(tm / 60 * rate)}</v></c>`
+            } else if (tC === 'K') {
+              kC = `<c r="K${r}" s="${st.K}"><v>${tm / 60}</v></c>`
+              if (rate > 0) lC = `<c r="L${r}" s="${st.L}"><v>${Math.round(tm / 60 * rate)}</v></c>`
+            }
+          }
         }
       }
+
+      dataRows.push(
+        `<row r="${r}" spans="1:14" ht="17.55" customHeight="1" x14ac:dyDescent="0.2">` +
+        `${aC}${bC}${cC}${dC}` +
+        `<c r="E${r}" s="${st.E}" t="str">${eF}</c>` +
+        `${fC}${gC}${hC}${iC}${jC}${kC}${lC}` +
+        `<c r="M${r}" s="${st.M}" t="str">${mF}</c>` +
+        `<c r="N${r}" s="${st.N}" t="str">${nF}</c>` +
+        `</row>`
+      )
     }
 
-    // 月が31日未満の場合、合計行のSUM範囲を調整
-    if (lastDay < 31) {
-      const lastDataRow = 4 + lastDay
-      for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
-        if (ws[`${col}36`]) {
-          ws[`${col}36`] = { ...ws[`${col}36`], f: `SUM(${col}5:${col}${lastDataRow})` }
-        }
-      }
-    }
-
-    XLSXStyle.utils.book_append_sheet(wb_tmpl, ws, user.name.substring(0, 31))
+    const sheetData = `<sheetData>${row1}${row2}${row4xml}${dataRows.join('')}${row36xml}</sheetData>`
+    sheetXmls.push(beforeData + sheetData + afterData)
   }
 
-  return XLSXStyle.write(wb_tmpl, { type: 'array', bookType: 'xlsx' })
+  // Fall back to template if no users with logs
+  if (sheetXmls.length === 0) return tmplBin
+
+  // Build output ZIP (copy all template files, then override changed ones)
+  const out = { ...zipFiles }
+
+  // Remove cached calculation chain to force Excel to recalculate
+  delete out['xl/calcChain.xml']
+
+  // Write sheet XMLs (sheet1.xml, sheet2.xml, ...)
+  for (let i = 0; i < sheetXmls.length; i++) {
+    out[`xl/worksheets/sheet${i + 1}.xml`] = enc.encode(sheetXmls[i])
+  }
+
+  // Update workbook.xml: replace <sheets> list
+  let wbXml = dec.decode(zipFiles['xl/workbook.xml'])
+  const sheetsEl = userEntries
+    .map((u, i) => `<sheet name="${esc(u.name.substring(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
+    .join('')
+  wbXml = wbXml.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sheetsEl}</sheets>`)
+  out['xl/workbook.xml'] = enc.encode(wbXml)
+
+  // Update workbook.xml.rels: list sheets + non-sheet relationships
+  const N = userEntries.length
+  const WB_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+  const PKG_REL = 'http://schemas.openxmlformats.org/package/2006/relationships'
+  const sheetRels = userEntries
+    .map((_, i) => `<Relationship Id="rId${i + 1}" Type="${WB_REL}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)
+    .join('')
+  const otherRels = [
+    `<Relationship Id="rId${N + 1}" Type="${WB_REL}/styles" Target="styles.xml"/>`,
+    `<Relationship Id="rId${N + 2}" Type="${WB_REL}/theme" Target="theme/theme1.xml"/>`,
+    `<Relationship Id="rId${N + 3}" Type="${WB_REL}/sharedStrings" Target="sharedStrings.xml"/>`,
+  ].join('')
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="${PKG_REL}">${sheetRels}${otherRels}</Relationships>`
+  out['xl/_rels/workbook.xml.rels'] = enc.encode(wbRels)
+
+  // Update [Content_Types].xml: list all sheets
+  const WS_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
+  const sheetCTs = userEntries
+    .map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="${WS_CT}"/>`)
+    .join('')
+  const ctXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+    `<Default Extension="xml" ContentType="application/xml"/>` +
+    `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+    sheetCTs +
+    `<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>` +
+    `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+    `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` +
+    `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>` +
+    `<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>` +
+    `</Types>`
+  out['[Content_Types].xml'] = enc.encode(ctXml)
+
+  return zipSync(out, { level: 6 })
 }
 
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
