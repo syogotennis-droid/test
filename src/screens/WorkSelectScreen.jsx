@@ -3,9 +3,9 @@ import { getClockInTime } from '../lib/db'
 import styles from './WorkSelectScreen.module.css'
 
 const WORK_TYPES = [
+  { id: '現場', label: '現場', icon: '⚽', circleColor: '#fff0dc', barColor: '#f0952a' },
   { id: '事務', label: '事務', icon: '📋', circleColor: '#eef1f5', barColor: '#9baab8' },
   { id: '清掃', label: '清掃', icon: '🧹', circleColor: '#dbeeff', barColor: '#5aadea' },
-  { id: '現場', label: '現場', icon: '⛑️', circleColor: '#fff0dc', barColor: '#f0952a' },
   { id: '休憩', label: '休憩', icon: '☕', circleColor: '#f0e8f8', barColor: '#c090d8' },
 ]
 
