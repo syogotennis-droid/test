@@ -948,12 +948,12 @@
 .calCell {
   background: var(--color-white);
   border-radius: 4px;
-  padding: 4px 2px;
+  padding: 4px 2px 4px 6px;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 2px;
   cursor: pointer;
   overflow: hidden;
