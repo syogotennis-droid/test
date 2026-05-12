@@ -323,7 +323,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
   // ひな型ワークブックをそのまま使う（スタイルテーブルを保持するため）
-  const wb = XLSX.read(KINMUBO_TEMPLATE_B64, { type: 'base64' })
+  // cellStyles: true でセルの書式・罫線・フォント情報を読み込む
+  const wb = XLSX.read(KINMUBO_TEMPLATE_B64, { type: 'base64', cellStyles: true })
   const ws_tmpl = wb.Sheets[wb.SheetNames[0]]
   // シートをいったん全削除（後でユーザー分を追加）
   wb.SheetNames = []
@@ -446,7 +447,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
   }
 
-  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true })
 }
 
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
