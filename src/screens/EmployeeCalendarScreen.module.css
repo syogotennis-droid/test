@@ -99,13 +99,14 @@
 .cell {
   background: var(--color-white);
   border-radius: 6px;
-  padding: 6px 4px 4px 6px;
+  padding: 6px 3px;
   min-height: 100px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
+  position: relative;
 }
 
 .cell.worked {
@@ -119,6 +120,9 @@
 .cell.sat .dayNum { color: #1976d2; }
 
 .dayNum {
+  position: absolute;
+  top: 4px;
+  left: 6px;
   font-size: 1.4rem;
   font-weight: bold;
   color: var(--color-text);
