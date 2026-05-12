@@ -322,9 +322,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
-  // ひな型を読み込む
-  const wb_tmpl = XLSX.read(KINMUBO_TEMPLATE_B64, { type: 'base64' })
-  const ws_tmpl = wb_tmpl.Sheets[wb_tmpl.SheetNames[0]]
+  // ひな型ワークブックをそのまま使う（スタイルテーブルを保持するため）
+  const wb = XLSX.read(KINMUBO_TEMPLATE_B64, { type: 'base64' })
+  const ws_tmpl = wb.Sheets[wb.SheetNames[0]]
+  // シートをいったん全削除（後でユーザー分を追加）
+  wb.SheetNames = []
+  wb.Sheets = {}
 
   // Excel date serial (days since Dec 30, 1899)
   function excelDate(y, m, d) {
@@ -333,7 +336,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   // Excel time fraction (09:30 → 9.5/24)
   function excelTime(h, mi) { return (h * 60 + mi) / 1440 }
 
-  const wb = XLSX.utils.book_new()
+  const userSheets = []
 
   for (const user of users) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -424,7 +427,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // 月が31日未満の場合、合計行のSUM範囲を調整
     if (lastDay < 31) {
       const lastDataRow = 4 + lastDay
-      const totalR = 36  // ひな型の合計行は固定36行目
+      const totalR = 36
       for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
         if (ws[`${col}${totalR}`]) {
           ws[`${col}${totalR}`] = { ...ws[`${col}${totalR}`], f: `SUM(${col}5:${col}${lastDataRow})` }
@@ -432,11 +435,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     }
 
-    XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
+    userSheets.push({ ws, name: user.name.substring(0, 31) })
   }
 
-  if (wb.SheetNames.length === 0) {
+  if (userSheets.length === 0) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['データなし']]), 'データなし')
+  } else {
+    for (const { ws, name } of userSheets) {
+      XLSX.utils.book_append_sheet(wb, ws, name)
+    }
   }
 
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
