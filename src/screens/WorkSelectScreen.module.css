@@ -26,23 +26,21 @@
 }
 
 .backBtn {
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
   border: none;
-  background: rgba(255, 255, 255, 0.25);
+  background: transparent;
   color: #fff;
-  font-size: 1.6rem;
+  font-size: 2.6rem;
   font-weight: bold;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  padding: 0 8px 0 0;
   -webkit-tap-highlight-color: transparent;
 }
 
-.backBtn:active { background: rgba(255, 255, 255, 0.4); }
+.backBtn:active { opacity: 0.6; }
 
 .headerIconBox {
   width: 52px;
