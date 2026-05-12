@@ -62,21 +62,26 @@
 }
 
 .clockBox {
-  width: 190px;
-  height: 60px;
-  border-radius: 12px;
   background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  border-radius: 12px;
+  padding: 10px 20px;
+  text-align: center;
   flex-shrink: 0;
 }
 
-.clockText {
-  font-size: 30px;
+.clockTime {
+  font-size: 36px;
   font-weight: 800;
   color: #2f2f35;
+  line-height: 1;
+}
+
+.clockDate {
+  font-size: 20px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-top: 5px;
+  white-space: nowrap;
 }
 
 /* ── メインエリア ── */

@@ -51,7 +51,13 @@ function Clock() {
     return () => clearInterval(t)
   }, [])
   const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-  return <span className={styles.clockText}>{time}</span>
+  const date = now.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+  return (
+    <>
+      <div className={styles.clockTime}>{time}</div>
+      <div className={styles.clockDate}>{date}</div>
+    </>
+  )
 }
 
 function fmtMinutes(mins) {
@@ -175,7 +181,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           <span className={styles.headerTitle}>QR勤怠システム</span>
         </div>
         <div className={styles.clockBox}>
-          <ClockIcon size={32} color="#34a36f" />
           <Clock />
         </div>
       </div>
