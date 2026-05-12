@@ -25,16 +25,14 @@
 .backBtn {
   background: none;
   border: none;
-  font-size: 1.7rem;
+  font-size: 2.6rem;
   cursor: pointer;
   color: var(--color-text);
-  padding: 8px;
-  border-radius: 50%;
-  width: 52px;
-  height: 52px;
+  padding: 4px 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .backBtn:hover { background: var(--color-bg); }

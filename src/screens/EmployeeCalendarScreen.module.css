@@ -20,12 +20,13 @@
 }
 
 .backBtn {
-  font-size: 1.4rem;
+  font-size: 2.6rem;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--color-text);
   padding: 4px 8px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .userName {
