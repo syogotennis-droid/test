@@ -37,40 +37,6 @@
 
 .backBtn:hover { background: var(--color-bg); }
 
-/* ─── 日またぎ警告バナー ─── */
-.overdueWarning {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: #fff3cd;
-  border-bottom: 2px solid #f5a623;
-  padding: 12px 20px;
-  flex-shrink: 0;
-}
-
-.overdueIcon {
-  font-size: 1.4rem;
-  flex-shrink: 0;
-  line-height: 1.4;
-}
-
-.overdueText {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.overdueTitle {
-  font-size: 1rem;
-  font-weight: bold;
-  color: #7d4e00;
-}
-
-.overdueItem {
-  font-size: 0.9rem;
-  color: #7d4e00;
-}
-
 .tabs {
   display: flex;
   background: var(--color-white);

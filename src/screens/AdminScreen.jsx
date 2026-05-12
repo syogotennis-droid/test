@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  getOverdueCheckIns
+  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -36,14 +35,10 @@ function toDateStr(d) {
 export default function AdminScreen({ onBack }) {
   const [tab, setTab] = useState('calendar')
   const [users, setUsers] = useState([])
-  const [overdueUsers, setOverdueUsers] = useState([])
   const today = toDateStr(new Date())
 
   useEffect(() => {
-    getUsers().then(u => {
-      setUsers(u)
-      getOverdueCheckIns(u).then(setOverdueUsers)
-    })
+    getUsers().then(setUsers)
   }, [])
 
   return (
@@ -53,20 +48,6 @@ export default function AdminScreen({ onBack }) {
         <h2>管理画面</h2>
         <div />
       </div>
-
-      {overdueUsers.length > 0 && (
-        <div className={styles.overdueWarning}>
-          <span className={styles.overdueIcon}>⚠️</span>
-          <div className={styles.overdueText}>
-            <div className={styles.overdueTitle}>日またぎ出勤中の従業員がいます</div>
-            {overdueUsers.map(({ user, date, time }) => (
-              <div key={user.id} className={styles.overdueItem}>
-                {user.name}（{date} {time} 出勤のまま）
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className={styles.tabs}>
         <button className={[styles.tab, tab === 'calendar' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('calendar')}>記録一覧</button>
