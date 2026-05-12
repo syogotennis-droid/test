@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
 import { KINMUBO_TEMPLATE_B64 } from './kinmuboTemplate'
-import ExcelJS from 'exceljs'
+import XLSXStyle from 'xlsx-js-style'
 
 // Firebase configuration
 const firebaseConfig = {
@@ -310,7 +310,7 @@ function parseWorkMins(workType) {
 }
 
 // Export monthly attendance register (出勤簿) as XLSX
-// Uses exceljs to fully preserve template styles/borders
+// Uses xlsx-js-style (SheetJS fork) to properly preserve template styles/borders
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
@@ -322,24 +322,35 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const lastDay = new Date(ym_y, ym_m, 0).getDate()
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
-  // base64 → ArrayBuffer
-  const b64 = KINMUBO_TEMPLATE_B64
-  const binary = atob(b64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  const templateBuffer = bytes.buffer
+  // ひな型を cellStyles:true で読み込む（セルに s オブジェクトが付く）
+  const wb_tmpl = XLSXStyle.read(KINMUBO_TEMPLATE_B64, { type: 'base64', cellStyles: true })
+  const ws_tmpl = wb_tmpl.Sheets[wb_tmpl.SheetNames[0]]
 
-  // ひな型を読み込んでワークブックを作成
-  const wb = new ExcelJS.Workbook()
-  await wb.xlsx.load(templateBuffer)
-  const tmplSheet = wb.worksheets[0]
+  // Excel date serial (days since Dec 30, 1899)
+  function excelDate(y, m, d) {
+    return (new Date(y, m - 1, d) - new Date(1899, 11, 30)) / 86400000
+  }
+  function excelTime(h, mi) { return (h * 60 + mi) / 1440 }
 
-  // ユーザーごとにひな型シートをコピーして作成
+  // セルの値を更新しつつスタイル(s)は維持するヘルパー
+  function setVal(ws, addr, type, value, numFmt) {
+    const s = ws[addr]?.s
+    ws[addr] = { t: type, v: value, ...(numFmt ? { z: numFmt } : {}), ...(s ? { s } : {}) }
+  }
+  // セルを空にしつつスタイル(s)は維持するヘルパー
+  function clearVal(ws, addr) {
+    const s = ws[addr]?.s
+    ws[addr] = { t: 'z', ...(s ? { s } : {}) }
+  }
+
+  // ワークブックはひな型のものをそのまま使う（スタイルテーブルを保持）
+  wb_tmpl.SheetNames = []
+  wb_tmpl.Sheets = {}
+
   const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
-
   if (userEntries.length === 0) {
-    // データなし: ひな型をそのまま返す
-    return wb.xlsx.writeBuffer()
+    XLSXStyle.utils.book_append_sheet(wb_tmpl, JSON.parse(JSON.stringify(ws_tmpl)), 'データなし')
+    return XLSXStyle.write(wb_tmpl, { type: 'array', bookType: 'xlsx' })
   }
 
   for (const user of userEntries) {
@@ -356,43 +367,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    // 新しいシートを追加してひな型の内容をコピー
-    const ws = wb.addWorksheet(user.name.substring(0, 31))
+    // ひな型シートをディープコピー（s オブジェクトも含めて）
+    const ws = JSON.parse(JSON.stringify(ws_tmpl))
 
-    // 列幅をコピー
-    tmplSheet.columns.forEach((col, i) => {
-      const newCol = ws.getColumn(i + 1)
-      if (col.width) newCol.width = col.width
-    })
-
-    // 全セルをコピー（値・スタイル・数式）
-    tmplSheet.eachRow({ includeEmpty: true }, (row, rowNum) => {
-      const newRow = ws.getRow(rowNum)
-      if (row.height) newRow.height = row.height
-      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-        const newCell = newRow.getCell(colNum)
-        // 数式はそのままコピー（キャッシュ結果は除く）
-        if (cell.type === ExcelJS.ValueType.Formula) {
-          newCell.value = { formula: cell.value.formula }
-        } else {
-          newCell.value = cell.value
-        }
-        // スタイルをディープコピー
-        if (cell.style) newCell.style = JSON.parse(JSON.stringify(cell.style))
-      })
-      newRow.commit()
-    })
-
-    // マージセルをコピー
-    tmplSheet.model.merges && tmplSheet.model.merges.forEach(merge => {
-      ws.mergeCells(merge)
-    })
-
-    // ── データを書き込む ──
-
-    // タイトル・担当者名
-    ws.getCell('A1').value = `${yearMonthLabel} 出勤簿`
-    ws.getCell('A2').value = `担当者：${user.name}`
+    // タイトル・担当者名（スタイル維持）
+    setVal(ws, 'A1', 's', `${yearMonthLabel} 出勤簿`)
+    setVal(ws, 'A2', 's', `担当者：${user.name}`)
 
     const DATA_COLS = ['C', 'D', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
 
@@ -400,46 +380,41 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const r = 4 + d
 
       if (d > lastDay) {
-        // 月の日数を超えた行は日付・曜日をクリア
-        ws.getCell(`A${r}`).value = null
-        ws.getCell(`B${r}`).value = null
-        DATA_COLS.forEach(c => { ws.getCell(`${c}${r}`).value = null })
+        // 月の日数を超えた行はクリア（スタイルは維持）
+        clearVal(ws, `A${r}`)
+        clearVal(ws, `B${r}`)
+        DATA_COLS.forEach(c => clearVal(ws, `${c}${r}`))
         continue
       }
 
       const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
       const dow = new Date(ym_y, ym_m - 1, d).getDay()
 
-      // 日付（Date型で渡すとexceljsが正しくシリアル変換）
-      ws.getCell(`A${r}`).value = new Date(ym_y, ym_m - 1, d)
-      ws.getCell(`B${r}`).value = DAY_NAMES[dow]
+      // 日付・曜日（ひな型の書式を引き継ぐ）
+      setVal(ws, `A${r}`, 'n', excelDate(ym_y, ym_m, d))
+      setVal(ws, `B${r}`, 's', DAY_NAMES[dow])
 
-      // データセルを一旦クリア
-      DATA_COLS.forEach(c => { ws.getCell(`${c}${r}`).value = null })
+      // データセルをいったんクリア（スタイル維持）
+      DATA_COLS.forEach(c => clearVal(ws, `${c}${r}`))
 
       const entry = byDate[dateStr]
       const inStr  = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
       const outStr = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
 
-      // 出退勤時刻（Excelの時刻シリアル値）
       if (inStr) {
         const [h, mi] = inStr.split(':').map(Number)
-        const cell = ws.getCell(`C${r}`)
-        cell.value = (h * 60 + mi) / 1440
-        cell.numFmt = 'hh:mm'
+        setVal(ws, `C${r}`, 'n', excelTime(h, mi), 'hh:mm')
       }
       if (outStr) {
         const [h, mi] = outStr.split(':').map(Number)
-        const cell = ws.getCell(`D${r}`)
-        cell.value = (h * 60 + mi) / 1440
-        cell.numFmt = 'hh:mm'
+        setVal(ws, `D${r}`, 'n', excelTime(h, mi), 'hh:mm')
       }
 
       const workMins = parseWorkMins(entry?.workType || '')
       const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
       const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
 
-      if (kyukeiMins > 0) ws.getCell(`F${r}`).value = Math.round(kyukeiMins) / 60
+      if (kyukeiMins > 0) setVal(ws, `F${r}`, 'n', Math.round(kyukeiMins) / 60)
 
       const PAID = [
         { type: '現場', tCol: 'G', wCol: 'H' },
@@ -456,26 +431,27 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         if (workMins[type] === null) continue
         const tMins = getTypeMins(type)
         if (tMins > 0) {
-          ws.getCell(`${tCol}${r}`).value = Math.round(tMins) / 60
+          setVal(ws, `${tCol}${r}`, 'n', Math.round(tMins) / 60)
           const rate = Number(userRates[type]) || 0
-          if (rate > 0) ws.getCell(`${wCol}${r}`).value = Math.round(tMins / 60 * rate)
-        }
-      }
-
-      // 月が31日未満の場合、合計行のSUM範囲を調整
-      if (lastDay < 31) {
-        const lastDataRow = 4 + lastDay
-        for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
-          ws.getCell(`${col}36`).value = { formula: `SUM(${col}5:${col}${lastDataRow})` }
+          if (rate > 0) setVal(ws, `${wCol}${r}`, 'n', Math.round(tMins / 60 * rate))
         }
       }
     }
+
+    // 月が31日未満の場合、合計行のSUM範囲を調整
+    if (lastDay < 31) {
+      const lastDataRow = 4 + lastDay
+      for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
+        if (ws[`${col}36`]) {
+          ws[`${col}36`] = { ...ws[`${col}36`], f: `SUM(${col}5:${col}${lastDataRow})` }
+        }
+      }
+    }
+
+    XLSXStyle.utils.book_append_sheet(wb_tmpl, ws, user.name.substring(0, 31))
   }
 
-  // ひな型の元シート（最初のシート）を削除
-  wb.removeWorksheet(tmplSheet.id)
-
-  return wb.xlsx.writeBuffer()
+  return XLSXStyle.write(wb_tmpl, { type: 'array', bookType: 'xlsx' })
 }
 
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
