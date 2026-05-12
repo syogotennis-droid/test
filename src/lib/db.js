@@ -308,24 +308,28 @@ function parseWorkMins(workType) {
 }
 
 // Export monthly attendance register (出勤簿) as XLSX (one sheet per user)
+// Format matches the template: 14 columns, time as Excel fractions, formulas for 勤務時間/合計
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
 
-  const days = []
-  const start = new Date(dateFrom)
-  const end = new Date(dateTo)
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    days.push(
-      d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-    )
-  }
+  const [ym_y_str, ym_m_str] = (dateFrom || '').split('-')
+  const ym_y = Number(ym_y_str)
+  const ym_m = Number(ym_m_str)
+  const yearMonthLabel = ym_y && ym_m ? `${ym_y}年${ym_m}月` : ''
+  const lastDay = new Date(ym_y, ym_m, 0).getDate()
 
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
   const wb = XLSX.utils.book_new()
 
-  const [ym_y, ym_m] = (dateFrom || days[0] || '').split('-')
-  const yearMonthLabel = ym_y && ym_m ? `${ym_y}年${Number(ym_m)}月` : ''
+  // Excel date serial: days since Dec 30, 1899
+  function excelDate(y, m, d) {
+    return (new Date(y, m - 1, d) - new Date(1899, 11, 30)) / 86400000
+  }
+  // Excel time fraction: fraction of a day (e.g. 09:30 → 0.3958...)
+  function excelTime(h, mi) {
+    return (h * 60 + mi) / 1440
+  }
 
   for (const user of users) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -342,103 +346,94 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    const headerRow1 = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '休憩時間', '', '現場', '', '清掃', '', '事務', '', '合計日給']
-    const headerRow2 = ['',    '',    '',        '',        '',          '',          '', '作業時間', '日給', '作業時間', '日給', '作業時間', '日給', '']
+    const ws = {}
 
-    let totalWorkMins = 0
-    let totalKyukeiMins = 0
-    const typeTotalMins = { 現場: 0, 清掃: 0, 事務: 0 }
-    const typeTotalWage = { 現場: 0, 清掃: 0, 事務: 0 }
-    let grandTotalWage = 0
+    // Row 1: タイトル, Row 2: 担当者名
+    ws['A1'] = { t: 's', v: `${yearMonthLabel} 出勤簿` }
+    ws['A2'] = { t: 's', v: `担当者：${user.name}` }
 
-    const rows = days.map(dateStr => {
-      const [y, mo, dy] = dateStr.split('-').map(Number)
-      const dayName = DAY_NAMES[new Date(y, mo - 1, dy).getDay()]
+    // Row 4: ヘッダー
+    const COLS = 'ABCDEFGHIJKLMN'.split('')
+    const hdrs = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '休憩時間', '現場時間', '現場日給', '清掃時間', '清掃日給', '事務時間', '事務日給', '合計時間', '合計日給']
+    hdrs.forEach((h, i) => { ws[`${COLS[i]}4`] = { t: 's', v: h } })
+
+    // 日付データ行: row 5 〜 (4 + lastDay)
+    for (let d = 1; d <= lastDay; d++) {
+      const r = 4 + d
+      const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
+      const dow = new Date(ym_y, ym_m - 1, d).getDay()
+
+      ws[`A${r}`] = { t: 'n', v: excelDate(ym_y, ym_m, d), z: 'm/d' }
+      ws[`B${r}`] = { t: 's', v: DAY_NAMES[dow] }
 
       const entry = byDate[dateStr]
-      const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-      const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-      const totalMins = (inTime && outTime) ? Math.max(0, timeDiffMins(inTime, outTime)) : 0
-      totalWorkMins += totalMins
+      const inStr  = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+      const outStr = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+
+      if (inStr) {
+        const [h, mi] = inStr.split(':').map(Number)
+        ws[`C${r}`] = { t: 'n', v: excelTime(h, mi), z: 'hh:mm' }
+      }
+      if (outStr) {
+        const [h, mi] = outStr.split(':').map(Number)
+        ws[`D${r}`] = { t: 'n', v: excelTime(h, mi), z: 'hh:mm' }
+      }
+
+      // E: 勤務時間 = (退勤 - 出勤) × 24 - 休憩 (Excel数式、小数時間)
+      ws[`E${r}`] = { t: 'n', f: `IF(OR(C${r}="",D${r}=""),"",MAX(0,MOD(D${r}-C${r},1)*24-F${r}))` }
 
       const workMins = parseWorkMins(entry?.workType || '')
-      const zeroTypes = KINMUBO_PAID_TYPES.filter(t => workMins[t] === 0)
+      const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
+      const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
 
-      const kyukeiMins = workMins['休憩'] !== null && workMins['休憩'] > 0 ? workMins['休憩'] : 0
-      const kyukeiHM = kyukeiMins > 0 ? minsToHM(kyukeiMins) : ''
-      totalKyukeiMins += kyukeiMins
+      // F: 休憩時間 (小数時間)
+      if (kyukeiMins > 0) {
+        ws[`F${r}`] = { t: 'n', v: kyukeiMins / 60 }
+      }
 
+      // 現場(G,H) / 清掃(I,J) / 事務(K,L)
+      const PAID = [
+        { type: '現場', tCol: 'G', wCol: 'H' },
+        { type: '清掃', tCol: 'I', wCol: 'J' },
+        { type: '事務', tCol: 'K', wCol: 'L' },
+      ]
+      const zeroTypes = PAID.map(p => p.type).filter(t => workMins[t] === 0)
       const getTypeMins = t => {
         if (workMins[t] === null) return 0
         if (workMins[t] > 0) return workMins[t]
         return zeroTypes.length === 1 ? totalMins : 0
       }
 
-      let dayWage = 0
-      const typeCells = []
-      for (const t of KINMUBO_PAID_TYPES) {
-        if (workMins[t] === null) {
-          typeCells.push('', '')
-        } else {
-          const tMins = getTypeMins(t)
-          const tHM = tMins > 0 ? minsToHM(tMins) : (workMins[t] === 0 && zeroTypes.length > 1 ? '○' : '')
-          const rate = Number(userRates[t]) || 0
-          const wage = rate > 0 && tMins > 0 ? Math.round(tMins / 60 * rate) : ''
-          typeTotalMins[t] += tMins
-          if (typeof wage === 'number') { typeTotalWage[t] += wage; dayWage += wage }
-          typeCells.push(tHM, typeof wage === 'number' ? wage : '')
+      for (const { type, tCol, wCol } of PAID) {
+        if (workMins[type] === null) continue
+        const tMins = getTypeMins(type)
+        if (tMins > 0) {
+          ws[`${tCol}${r}`] = { t: 'n', v: tMins / 60 }
+          const rate = Number(userRates[type]) || 0
+          if (rate > 0) ws[`${wCol}${r}`] = { t: 'n', v: Math.round(tMins / 60 * rate) }
         }
       }
-      grandTotalWage += dayWage
 
-      return [
-        dateStr, dayName, inTime, outTime,
-        totalMins > 0 ? minsToHM(totalMins) : '',
-        kyukeiHM,
-        '',
-        ...typeCells,
-        dayWage > 0 ? dayWage : ''
-      ]
-    })
+      // M: 合計時間 / N: 合計日給 (Excel数式)
+      ws[`M${r}`] = { t: 'n', f: `IF(SUM(G${r},I${r},K${r})=0,"",SUM(G${r},I${r},K${r}))` }
+      ws[`N${r}`] = { t: 'n', f: `IF(SUM(H${r},J${r},L${r})=0,"",SUM(H${r},J${r},L${r}))` }
+    }
 
-    const totalRow = [
-      '月合計', '', '', '',
-      minsToHM(totalWorkMins) || '',
-      minsToHM(totalKyukeiMins) || '',
-      '',
-      minsToHM(typeTotalMins['現場']) || '', typeTotalWage['現場'] || '',
-      minsToHM(typeTotalMins['清掃']) || '', typeTotalWage['清掃'] || '',
-      minsToHM(typeTotalMins['事務']) || '', typeTotalWage['事務'] || '',
-      grandTotalWage || ''
-    ]
+    // 月合計行
+    const lastDataRow = 4 + lastDay
+    const totalR = lastDataRow + 1
+    ws[`A${totalR}`] = { t: 's', v: '月合計' }
+    for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
+      ws[`${col}${totalR}`] = { t: 'n', f: `SUM(${col}5:${col}${lastDataRow})` }
+    }
 
-    const titleRows = [
-      [`${yearMonthLabel} 出勤簿`],
-      [`担当者: ${user.name}`],
-      []
-    ]
-    const TITLE_ROWS = 3
-
-    const data = [...titleRows, headerRow1, headerRow2, ...rows, totalRow]
-    const ws = XLSX.utils.aoa_to_sheet(data)
+    ws['!ref'] = `A1:N${totalR}`
     ws['!cols'] = [
-      { wch: 12 }, { wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 2 },
-      { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }
+      { wch: 10 }, { wch: 4 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 8 },
+      { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 },
+      { wch: 8 }, { wch: 9 }
     ]
-    const hr = TITLE_ROWS
-    ws['!merges'] = [
-      { s: { r: hr, c: 0  }, e: { r: hr+1, c: 0  } },
-      { s: { r: hr, c: 1  }, e: { r: hr+1, c: 1  } },
-      { s: { r: hr, c: 2  }, e: { r: hr+1, c: 2  } },
-      { s: { r: hr, c: 3  }, e: { r: hr+1, c: 3  } },
-      { s: { r: hr, c: 4  }, e: { r: hr+1, c: 4  } },
-      { s: { r: hr, c: 5  }, e: { r: hr+1, c: 5  } },
-      { s: { r: hr, c: 6  }, e: { r: hr+1, c: 6  } },
-      { s: { r: hr, c: 7  }, e: { r: hr,   c: 8  } },
-      { s: { r: hr, c: 9  }, e: { r: hr,   c: 10 } },
-      { s: { r: hr, c: 11 }, e: { r: hr,   c: 12 } },
-      { s: { r: hr, c: 13 }, e: { r: hr+1, c: 13 } },
-    ]
+
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }
 
