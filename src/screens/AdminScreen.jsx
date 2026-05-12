@@ -838,6 +838,30 @@ function KinmuboTab({ today }) {
   const currentYM = today.substring(0, 7) // "YYYY-MM"
   const [selectedYM, setSelectedYM] = useState(currentYM)
   const [exporting, setExporting] = useState(false)
+  const [templateName, setTemplateName] = useState(() => localStorage.getItem('kinmubo_template_name') || '')
+
+  function handleTemplateUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      try {
+        localStorage.setItem('kinmubo_template', ev.target.result)
+        localStorage.setItem('kinmubo_template_name', file.name)
+        setTemplateName(file.name)
+      } catch {
+        alert('ファイルが大きすぎて保存できませんでした')
+      }
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  function handleTemplateRemove() {
+    localStorage.removeItem('kinmubo_template')
+    localStorage.removeItem('kinmubo_template_name')
+    setTemplateName('')
+  }
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -867,6 +891,21 @@ function KinmuboTab({ today }) {
   return (
     <div className={styles.content}>
       <div className={styles.kinmuboPanel}>
+        <div className={styles.templateSection}>
+          <div className={styles.templateSectionLabel}>ひな型ファイル</div>
+          {templateName ? (
+            <div className={styles.templateSet}>
+              <span className={styles.templateFileName}>📄 {templateName}</span>
+              <button className={styles.templateRemoveBtn} onClick={handleTemplateRemove}>削除</button>
+            </div>
+          ) : (
+            <label className={styles.templateUploadBtn}>
+              📂 ひな型を選択（.xlsx）
+              <input type="file" accept=".xlsx" onChange={handleTemplateUpload} style={{ display: 'none' }} />
+            </label>
+          )}
+        </div>
+
         <p className={styles.kinmuboDesc}>対象月を選択して出勤簿を作成します。<br />担当者ごとにシートが分かれたExcelファイルが出力されます。</p>
 
         <div className={styles.monthSelector}>
