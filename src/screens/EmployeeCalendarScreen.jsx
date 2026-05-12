@@ -165,8 +165,9 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                 onClick={() => worked && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
-                {inTime && <div className={styles.inTime}>{inTime}</div>}
-{outTime && <div className={styles.outTime}>{outTime}</div>}
+                {inTime && <div className={styles.inTime}>出 {inTime}</div>}
+                {inTime && outTime && <div className={styles.timeSpacer} />}
+                {outTime && <div className={styles.outTime}>退 {outTime}</div>}
               </div>
             )
           })}

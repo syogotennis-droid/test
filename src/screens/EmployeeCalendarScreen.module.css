@@ -136,6 +136,8 @@
   line-height: 1;
 }
 
+.timeSpacer { height: 1em; }
+
 .outTime {
   font-size: 1.3rem;
   font-weight: bold;

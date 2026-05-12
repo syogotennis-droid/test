@@ -381,8 +381,9 @@ function CalendarTab({ users, today }) {
                 onClick={() => setSelectedDay(d)}
               >
                 <div className={styles.calDayNum}>{d}</div>
-                {worked && <div className={styles.calIn}>{inTime}</div>}
-                {outTime && <div className={styles.calOut}>{outTime}</div>}
+                {worked && <div className={styles.calIn}>出 {inTime}</div>}
+                {worked && outTime && <div className={styles.calSpacer} />}
+                {outTime && <div className={styles.calOut}>退 {outTime}</div>}
               </div>
             )
           })}
