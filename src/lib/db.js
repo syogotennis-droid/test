@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
 import { KINMUBO_TEMPLATE_B64 } from './kinmuboTemplate'
+import ExcelJS from 'exceljs'
 
 // Firebase configuration
 const firebaseConfig = {
@@ -309,7 +310,7 @@ function parseWorkMins(workType) {
 }
 
 // Export monthly attendance register (出勤簿) as XLSX
-// Uses the bundled template: clones the sheet per user and fills in data cells
+// Uses exceljs to fully preserve template styles/borders
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
@@ -319,29 +320,30 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const ym_m = Number(ym_m_str)
   const yearMonthLabel = ym_y && ym_m ? `${ym_y}年${ym_m}月` : ''
   const lastDay = new Date(ym_y, ym_m, 0).getDate()
-
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
-  // ひな型ワークブックをそのまま使う（スタイルテーブルを保持するため）
-  // cellStyles: true でセルの書式・罫線・フォント情報を読み込む
-  const wb = XLSX.read(KINMUBO_TEMPLATE_B64, { type: 'base64', cellStyles: true })
-  const ws_tmpl = wb.Sheets[wb.SheetNames[0]]
-  // シートをいったん全削除（後でユーザー分を追加）
-  wb.SheetNames = []
-  wb.Sheets = {}
+  // base64 → ArrayBuffer
+  const b64 = KINMUBO_TEMPLATE_B64
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const templateBuffer = bytes.buffer
 
-  // Excel date serial (days since Dec 30, 1899)
-  function excelDate(y, m, d) {
-    return (new Date(y, m - 1, d) - new Date(1899, 11, 30)) / 86400000
+  // ひな型を読み込んでワークブックを作成
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(templateBuffer)
+  const tmplSheet = wb.worksheets[0]
+
+  // ユーザーごとにひな型シートをコピーして作成
+  const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
+
+  if (userEntries.length === 0) {
+    // データなし: ひな型をそのまま返す
+    return wb.xlsx.writeBuffer()
   }
-  // Excel time fraction (09:30 → 9.5/24)
-  function excelTime(h, mi) { return (h * 60 + mi) / 1440 }
 
-  const userSheets = []
-
-  for (const user of users) {
+  for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
-    if (userLogs.length === 0) continue
     const userRates = user.rates || {}
 
     const byDate = {}
@@ -354,54 +356,90 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    // ひな型シートを深くコピー
-    const ws = JSON.parse(JSON.stringify(ws_tmpl))
+    // 新しいシートを追加してひな型の内容をコピー
+    const ws = wb.addWorksheet(user.name.substring(0, 31))
 
-    // タイトル・担当者名を書き換え（スタイルは維持）
-    ws['A1'] = { ...(ws['A1'] || {}), t: 's', v: `${yearMonthLabel} 出勤簿` }
-    ws['A2'] = { ...(ws['A2'] || {}), t: 's', v: `担当者：${user.name}` }
+    // 列幅をコピー
+    tmplSheet.columns.forEach((col, i) => {
+      const newCol = ws.getColumn(i + 1)
+      if (col.width) newCol.width = col.width
+    })
 
-    // 日付行（ひな型は31行固定: row 5〜35）
+    // 全セルをコピー（値・スタイル・数式）
+    tmplSheet.eachRow({ includeEmpty: true }, (row, rowNum) => {
+      const newRow = ws.getRow(rowNum)
+      if (row.height) newRow.height = row.height
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        const newCell = newRow.getCell(colNum)
+        // 数式はそのままコピー（キャッシュ結果は除く）
+        if (cell.type === ExcelJS.ValueType.Formula) {
+          newCell.value = { formula: cell.value.formula }
+        } else {
+          newCell.value = cell.value
+        }
+        // スタイルをディープコピー
+        if (cell.style) newCell.style = JSON.parse(JSON.stringify(cell.style))
+      })
+      newRow.commit()
+    })
+
+    // マージセルをコピー
+    tmplSheet.model.merges && tmplSheet.model.merges.forEach(merge => {
+      ws.mergeCells(merge)
+    })
+
+    // ── データを書き込む ──
+
+    // タイトル・担当者名
+    ws.getCell('A1').value = `${yearMonthLabel} 出勤簿`
+    ws.getCell('A2').value = `担当者：${user.name}`
+
+    const DATA_COLS = ['C', 'D', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+
     for (let d = 1; d <= 31; d++) {
-      const r = 4 + d  // Excel行番号 (row5 = d1)
-      const DATA_COLS = ['C', 'D', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+      const r = 4 + d
 
       if (d > lastDay) {
-        // 月の日数を超えた行は日付・曜日をクリア（数式セルはそのまま→""を返す）
-        delete ws[`A${r}`]
-        delete ws[`B${r}`]
-        DATA_COLS.forEach(c => delete ws[`${c}${r}`])
+        // 月の日数を超えた行は日付・曜日をクリア
+        ws.getCell(`A${r}`).value = null
+        ws.getCell(`B${r}`).value = null
+        DATA_COLS.forEach(c => { ws.getCell(`${c}${r}`).value = null })
         continue
       }
 
       const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
       const dow = new Date(ym_y, ym_m - 1, d).getDay()
 
-      // 日付・曜日を更新（ひな型のセル書式を引き継ぐ）
-      ws[`A${r}`] = { ...(ws[`A${r}`] || {}), t: 'n', v: excelDate(ym_y, ym_m, d) }
-      ws[`B${r}`] = { ...(ws[`B${r}`] || {}), t: 's', v: DAY_NAMES[dow] }
+      // 日付（Date型で渡すとexceljsが正しくシリアル変換）
+      ws.getCell(`A${r}`).value = new Date(ym_y, ym_m - 1, d)
+      ws.getCell(`B${r}`).value = DAY_NAMES[dow]
 
-      // 入力データセルをいったんクリア
-      DATA_COLS.forEach(c => delete ws[`${c}${r}`])
+      // データセルを一旦クリア
+      DATA_COLS.forEach(c => { ws.getCell(`${c}${r}`).value = null })
 
       const entry = byDate[dateStr]
       const inStr  = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
       const outStr = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
 
+      // 出退勤時刻（Excelの時刻シリアル値）
       if (inStr) {
         const [h, mi] = inStr.split(':').map(Number)
-        ws[`C${r}`] = { t: 'n', v: excelTime(h, mi), z: 'hh:mm' }
+        const cell = ws.getCell(`C${r}`)
+        cell.value = (h * 60 + mi) / 1440
+        cell.numFmt = 'hh:mm'
       }
       if (outStr) {
         const [h, mi] = outStr.split(':').map(Number)
-        ws[`D${r}`] = { t: 'n', v: excelTime(h, mi), z: 'hh:mm' }
+        const cell = ws.getCell(`D${r}`)
+        cell.value = (h * 60 + mi) / 1440
+        cell.numFmt = 'hh:mm'
       }
 
       const workMins = parseWorkMins(entry?.workType || '')
       const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
       const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
 
-      if (kyukeiMins > 0) ws[`F${r}`] = { t: 'n', v: kyukeiMins / 60 }
+      if (kyukeiMins > 0) ws.getCell(`F${r}`).value = Math.round(kyukeiMins) / 60
 
       const PAID = [
         { type: '現場', tCol: 'G', wCol: 'H' },
@@ -418,36 +456,26 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         if (workMins[type] === null) continue
         const tMins = getTypeMins(type)
         if (tMins > 0) {
-          ws[`${tCol}${r}`] = { t: 'n', v: tMins / 60 }
+          ws.getCell(`${tCol}${r}`).value = Math.round(tMins) / 60
           const rate = Number(userRates[type]) || 0
-          if (rate > 0) ws[`${wCol}${r}`] = { t: 'n', v: Math.round(tMins / 60 * rate) }
+          if (rate > 0) ws.getCell(`${wCol}${r}`).value = Math.round(tMins / 60 * rate)
+        }
+      }
+
+      // 月が31日未満の場合、合計行のSUM範囲を調整
+      if (lastDay < 31) {
+        const lastDataRow = 4 + lastDay
+        for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
+          ws.getCell(`${col}36`).value = { formula: `SUM(${col}5:${col}${lastDataRow})` }
         }
       }
     }
-
-    // 月が31日未満の場合、合計行のSUM範囲を調整
-    if (lastDay < 31) {
-      const lastDataRow = 4 + lastDay
-      const totalR = 36
-      for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
-        if (ws[`${col}${totalR}`]) {
-          ws[`${col}${totalR}`] = { ...ws[`${col}${totalR}`], f: `SUM(${col}5:${col}${lastDataRow})` }
-        }
-      }
-    }
-
-    userSheets.push({ ws, name: user.name.substring(0, 31) })
   }
 
-  if (userSheets.length === 0) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['データなし']]), 'データなし')
-  } else {
-    for (const { ws, name } of userSheets) {
-      XLSX.utils.book_append_sheet(wb, ws, name)
-    }
-  }
+  // ひな型の元シート（最初のシート）を削除
+  wb.removeWorksheet(tmplSheet.id)
 
-  return XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true })
+  return wb.xlsx.writeBuffer()
 }
 
 export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {

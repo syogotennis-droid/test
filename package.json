@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "dexie": "^4.0.8",
+    "exceljs": "^4.4.0",
     "firebase": "^12.12.0",
     "html5-qrcode": "^2.3.8",
     "react": "^18.3.1",
