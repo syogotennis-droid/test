@@ -521,12 +521,16 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     out[`xl/worksheets/sheet${i + 1}.xml`] = enc.encode(sheetXmls[i])
   }
 
-  // Update workbook.xml: replace <sheets> list
+  // Update workbook.xml: replace <sheets> list and force full recalc on open
   let wbXml = dec.decode(zipFiles['xl/workbook.xml'])
   const sheetsEl = userEntries
     .map((u, i) => `<sheet name="${esc(u.name.substring(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
     .join('')
   wbXml = wbXml.replace(/<sheets>[\s\S]*?<\/sheets>/, `<sheets>${sheetsEl}</sheets>`)
+  // fullCalcOnLoad forces Excel to recalculate all formulas when opening
+  if (!wbXml.includes('fullCalcOnLoad')) {
+    wbXml = wbXml.replace(/<calcPr/, '<calcPr fullCalcOnLoad="1"')
+  }
   out['xl/workbook.xml'] = enc.encode(wbXml)
 
   // Update workbook.xml.rels: list sheets + non-sheet relationships
