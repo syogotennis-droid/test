@@ -237,6 +237,35 @@ export async function getTodayStatuses() {
   return result
 }
 
+export async function getOverdueCheckIns(users) {
+  const today = getTodayDate()
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const fromDate = sevenDaysAgo.toLocaleDateString('ja-JP', {
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).replace(/\//g, '-')
+
+  const q = query(logsCol, where('date', '>=', fromDate))
+  const snap = await getDocs(q)
+  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+  const overdue = []
+  for (const user of users) {
+    const userLogs = logs.filter(l => l.user_id === user.id)
+    const ins = userLogs.filter(l => l.log_type === '出勤')
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    const outs = userLogs.filter(l => l.log_type === '退勤')
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    if (ins.length > outs.length) {
+      const latestIn = ins[0]
+      if (latestIn && latestIn.date < today) {
+        overdue.push({ user, date: latestIn.date, time: (latestIn.time || '').substring(0, 5) })
+      }
+    }
+  }
+  return overdue
+}
+
 export async function saveLogManual({ userId, workType, logType, date, time }) {
   const [y, mo, d] = date.split('-').map(Number)
   const [h, m] = time.split(':').map(Number)
