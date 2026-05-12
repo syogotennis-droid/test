@@ -14,6 +14,7 @@ import {
   writeBatch
 } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
+import { KINMUBO_TEMPLATE_B64 } from './kinmuboTemplate'
 
 // Firebase configuration
 const firebaseConfig = {
@@ -307,8 +308,8 @@ function parseWorkMins(workType) {
   return result
 }
 
-// Export monthly attendance register (出勤簿) as XLSX (one sheet per user)
-// Format matches the template: 14 columns, time as Excel fractions, formulas for 勤務時間/合計
+// Export monthly attendance register (出勤簿) as XLSX
+// Uses the bundled template: clones the sheet per user and fills in data cells
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
@@ -320,16 +321,19 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const lastDay = new Date(ym_y, ym_m, 0).getDate()
 
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
-  const wb = XLSX.utils.book_new()
 
-  // Excel date serial: days since Dec 30, 1899
+  // ひな型を読み込む
+  const wb_tmpl = XLSX.read(KINMUBO_TEMPLATE_B64, { type: 'base64' })
+  const ws_tmpl = wb_tmpl.Sheets[wb_tmpl.SheetNames[0]]
+
+  // Excel date serial (days since Dec 30, 1899)
   function excelDate(y, m, d) {
     return (new Date(y, m - 1, d) - new Date(1899, 11, 30)) / 86400000
   }
-  // Excel time fraction: fraction of a day (e.g. 09:30 → 0.3958...)
-  function excelTime(h, mi) {
-    return (h * 60 + mi) / 1440
-  }
+  // Excel time fraction (09:30 → 9.5/24)
+  function excelTime(h, mi) { return (h * 60 + mi) / 1440 }
+
+  const wb = XLSX.utils.book_new()
 
   for (const user of users) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -346,25 +350,35 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    const ws = {}
+    // ひな型シートを深くコピー
+    const ws = JSON.parse(JSON.stringify(ws_tmpl))
 
-    // Row 1: タイトル, Row 2: 担当者名
-    ws['A1'] = { t: 's', v: `${yearMonthLabel} 出勤簿` }
-    ws['A2'] = { t: 's', v: `担当者：${user.name}` }
+    // タイトル・担当者名を書き換え（スタイルは維持）
+    ws['A1'] = { ...(ws['A1'] || {}), t: 's', v: `${yearMonthLabel} 出勤簿` }
+    ws['A2'] = { ...(ws['A2'] || {}), t: 's', v: `担当者：${user.name}` }
 
-    // Row 4: ヘッダー
-    const COLS = 'ABCDEFGHIJKLMN'.split('')
-    const hdrs = ['日付', '曜日', '出勤時刻', '退勤時刻', '勤務時間', '休憩時間', '現場時間', '現場日給', '清掃時間', '清掃日給', '事務時間', '事務日給', '合計時間', '合計日給']
-    hdrs.forEach((h, i) => { ws[`${COLS[i]}4`] = { t: 's', v: h } })
+    // 日付行（ひな型は31行固定: row 5〜35）
+    for (let d = 1; d <= 31; d++) {
+      const r = 4 + d  // Excel行番号 (row5 = d1)
+      const DATA_COLS = ['C', 'D', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
 
-    // 日付データ行: row 5 〜 (4 + lastDay)
-    for (let d = 1; d <= lastDay; d++) {
-      const r = 4 + d
+      if (d > lastDay) {
+        // 月の日数を超えた行は日付・曜日をクリア（数式セルはそのまま→""を返す）
+        delete ws[`A${r}`]
+        delete ws[`B${r}`]
+        DATA_COLS.forEach(c => delete ws[`${c}${r}`])
+        continue
+      }
+
       const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
       const dow = new Date(ym_y, ym_m - 1, d).getDay()
 
-      ws[`A${r}`] = { t: 'n', v: excelDate(ym_y, ym_m, d), z: 'm/d' }
-      ws[`B${r}`] = { t: 's', v: DAY_NAMES[dow] }
+      // 日付・曜日を更新（ひな型のセル書式を引き継ぐ）
+      ws[`A${r}`] = { ...(ws[`A${r}`] || {}), t: 'n', v: excelDate(ym_y, ym_m, d) }
+      ws[`B${r}`] = { ...(ws[`B${r}`] || {}), t: 's', v: DAY_NAMES[dow] }
+
+      // 入力データセルをいったんクリア
+      DATA_COLS.forEach(c => delete ws[`${c}${r}`])
 
       const entry = byDate[dateStr]
       const inStr  = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
@@ -379,19 +393,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         ws[`D${r}`] = { t: 'n', v: excelTime(h, mi), z: 'hh:mm' }
       }
 
-      // E: 勤務時間 = (退勤 - 出勤) × 24 - 休憩 (Excel数式、小数時間)
-      ws[`E${r}`] = { t: 'n', f: `IF(OR(C${r}="",D${r}=""),"",MAX(0,MOD(D${r}-C${r},1)*24-F${r}))` }
-
       const workMins = parseWorkMins(entry?.workType || '')
       const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
       const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
 
-      // F: 休憩時間 (小数時間)
-      if (kyukeiMins > 0) {
-        ws[`F${r}`] = { t: 'n', v: kyukeiMins / 60 }
-      }
+      if (kyukeiMins > 0) ws[`F${r}`] = { t: 'n', v: kyukeiMins / 60 }
 
-      // 現場(G,H) / 清掃(I,J) / 事務(K,L)
       const PAID = [
         { type: '現場', tCol: 'G', wCol: 'H' },
         { type: '清掃', tCol: 'I', wCol: 'J' },
@@ -403,7 +410,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         if (workMins[t] > 0) return workMins[t]
         return zeroTypes.length === 1 ? totalMins : 0
       }
-
       for (const { type, tCol, wCol } of PAID) {
         if (workMins[type] === null) continue
         const tMins = getTypeMins(type)
@@ -413,26 +419,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           if (rate > 0) ws[`${wCol}${r}`] = { t: 'n', v: Math.round(tMins / 60 * rate) }
         }
       }
-
-      // M: 合計時間 / N: 合計日給 (Excel数式)
-      ws[`M${r}`] = { t: 'n', f: `IF(SUM(G${r},I${r},K${r})=0,"",SUM(G${r},I${r},K${r}))` }
-      ws[`N${r}`] = { t: 'n', f: `IF(SUM(H${r},J${r},L${r})=0,"",SUM(H${r},J${r},L${r}))` }
     }
 
-    // 月合計行
-    const lastDataRow = 4 + lastDay
-    const totalR = lastDataRow + 1
-    ws[`A${totalR}`] = { t: 's', v: '月合計' }
-    for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
-      ws[`${col}${totalR}`] = { t: 'n', f: `SUM(${col}5:${col}${lastDataRow})` }
+    // 月が31日未満の場合、合計行のSUM範囲を調整
+    if (lastDay < 31) {
+      const lastDataRow = 4 + lastDay
+      const totalR = 36  // ひな型の合計行は固定36行目
+      for (const col of ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']) {
+        if (ws[`${col}${totalR}`]) {
+          ws[`${col}${totalR}`] = { ...ws[`${col}${totalR}`], f: `SUM(${col}5:${col}${lastDataRow})` }
+        }
+      }
     }
-
-    ws['!ref'] = `A1:N${totalR}`
-    ws['!cols'] = [
-      { wch: 10 }, { wch: 4 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 8 },
-      { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 9 },
-      { wch: 8 }, { wch: 9 }
-    ]
 
     XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
   }
