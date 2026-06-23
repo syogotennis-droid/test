@@ -994,35 +994,61 @@ function UsersTab({ users, today, onRefresh }) {
 
 // ─── UserEditModal ────────────────────────────────────────────────────────────
 
-const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['準備', '有給', '固定手当'].includes(p))
+const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当'].includes(p))
 
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
-  const [step, setStep] = useState('main') // 'main' | 'confirmStatus' | 'confirmDelete'
+  const [step, setStep] = useState('main')
   const [name, setName] = useState(user.name)
-  const [rates, setRates] = useState({ 現場: '', 清掃: '', 事務: '', ...(user.rates || {}) })
   const [workItems, setWorkItems] = useState(user.workItems || [])
+  const [itemRates, setItemRates] = useState(() => {
+    const r = {}
+    ASSIGNABLE_ITEMS.forEach(item => {
+      const ur = user.itemRates?.[item] || {}
+      r[item] = {
+        normal: ur.normal != null ? String(ur.normal) : '',
+        sunday: ur.sunday != null ? String(ur.sunday) : '',
+        amount: ur.amount != null ? String(ur.amount) : '',
+      }
+    })
+    return r
+  })
   const [dangerOpen, setDangerOpen] = useState(false)
-
-  async function handleSaveName() {
-    if (!name.trim()) return
-    await upsertUser({ id: user.id, name: name.trim(), rates, workItems })
-    onSaved()
-  }
-
-  async function handleSaveRates() {
-    await upsertUser({ id: user.id, name: name || user.name, rates, workItems })
-    onSaved()
-  }
-
-  async function handleSaveWorkItems() {
-    await upsertUser({ id: user.id, name: name || user.name, rates, workItems })
-    onSaved()
-  }
 
   function toggleWorkItem(item) {
     setWorkItems(prev =>
       prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
     )
+  }
+
+  function setRate(item, field, val) {
+    setItemRates(prev => ({ ...prev, [item]: { ...prev[item], [field]: val } }))
+  }
+
+  function buildItemRates() {
+    const result = {}
+    ASSIGNABLE_ITEMS.forEach(item => {
+      const r = itemRates[item] || {}
+      if (item === '交通費') {
+        if (r.amount !== '') result[item] = { amount: Number(r.amount) }
+      } else {
+        const entry = {}
+        if (r.normal !== '') entry.normal = Number(r.normal)
+        if (r.sunday !== '') entry.sunday = Number(r.sunday)
+        if (Object.keys(entry).length > 0) result[item] = entry
+      }
+    })
+    return result
+  }
+
+  async function handleSaveName() {
+    if (!name.trim()) return
+    await upsertUser({ id: user.id, name: name.trim(), workItems, itemRates: buildItemRates() })
+    onSaved()
+  }
+
+  async function handleSaveItems() {
+    await upsertUser({ id: user.id, name: name || user.name, workItems, itemRates: buildItemRates() })
+    onSaved()
   }
 
   async function handleConfirmStatus() {
@@ -1050,7 +1076,6 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSaveName()}
                 className={styles.filterInput}
-
               />
             </div>
             <div className={styles.modalActions}>
@@ -1065,48 +1090,66 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
 
             <hr className={styles.modalDivider} />
 
-            {/* Rates */}
+            {/* Work items + rates */}
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>時給設定</label>
-              <div className={styles.ratesGrid}>
-                {['現場', '清掃', '事務'].map(t => (
-                  <div key={t} className={styles.rateRow}>
-                    <label className={styles.rateLabel}>{t}</label>
-                    <input
-                      type="number" min="0" placeholder="0"
-                      value={rates[t]}
-                      onChange={e => setRates(r => ({ ...r, [t]: e.target.value }))}
-                      className={styles.rateInput}
-                    />
-                    <span className={styles.rateUnit}>円/時</span>
-                  </div>
-                ))}
+              <label className={styles.formLabel}>作業項目・時給</label>
+              <div className={styles.itemRatesList}>
+                {ASSIGNABLE_ITEMS.map(item => {
+                  const checked = workItems.includes(item)
+                  const r = itemRates[item] || {}
+                  const isTransport = item === '交通費'
+                  const isAutoItem = item === '準備'
+                  return (
+                    <div key={item} className={[styles.itemRateRow, checked ? styles.itemRateRowActive : ''].join(' ')}>
+                      <label className={styles.itemRateCheck}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleWorkItem(item)}
+                        />
+                        <span className={styles.itemRateName}>
+                          {item}{isAutoItem ? <span className={styles.itemRateTag}>自動</span> : ''}
+                        </span>
+                      </label>
+                      {checked && (
+                        <div className={styles.itemRateInputs}>
+                          {isTransport ? (
+                            <>
+                              <input
+                                type="number" min="0" placeholder="0"
+                                value={r.amount}
+                                onChange={e => setRate(item, 'amount', e.target.value)}
+                                className={styles.rateInputSm}
+                              />
+                              <span className={styles.rateUnit}>円/回</span>
+                            </>
+                          ) : (
+                            <>
+                              <input
+                                type="number" min="0" placeholder="通常"
+                                value={r.normal}
+                                onChange={e => setRate(item, 'normal', e.target.value)}
+                                className={styles.rateInputSm}
+                              />
+                              <span className={styles.rateUnit}>円</span>
+                              <input
+                                type="number" min="0" placeholder="日曜"
+                                value={r.sunday}
+                                onChange={e => setRate(item, 'sunday', e.target.value)}
+                                className={styles.rateInputSm}
+                              />
+                              <span className={styles.rateUnit}>円(日)</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
             <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleSaveRates}>時給を保存</button>
-            </div>
-
-            <hr className={styles.modalDivider} />
-
-            {/* Work items checklist */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>作業項目</label>
-              <div className={styles.workItemsGrid}>
-                {ASSIGNABLE_ITEMS.map(item => (
-                  <label key={item} className={styles.workItemCheck}>
-                    <input
-                      type="checkbox"
-                      checked={workItems.includes(item)}
-                      onChange={() => toggleWorkItem(item)}
-                    />
-                    <span>{item}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleSaveWorkItems}>作業項目を保存</button>
+              <button className={styles.saveBtn} onClick={handleSaveItems}>作業項目・時給を保存</button>
             </div>
 
             <hr className={styles.modalDivider} />

@@ -338,36 +338,80 @@
   white-space: nowrap;
 }
 
-.workItemsGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+.itemRatesList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 10px;
-  padding: 14px;
+  padding: 10px;
   background: var(--color-white);
   border-radius: 10px;
   border: 1px solid var(--color-border);
+  max-height: 340px;
+  overflow-y: auto;
 }
 
-.workItemCheck {
+.itemRateRow {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  padding: 4px 6px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
   border-radius: 6px;
 }
 
-.workItemCheck:hover {
-  background: var(--color-bg);
+.itemRateRowActive {
+  background: #f0faf5;
+  border: 1px solid #c8e6d4;
 }
 
-.workItemCheck input {
+.itemRateCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.itemRateCheck input {
   cursor: pointer;
   width: 16px;
   height: 16px;
   accent-color: #41b883;
+  flex-shrink: 0;
+}
+
+.itemRateName {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.itemRateTag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #888;
+  background: #eee;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.itemRateInputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 24px;
+  flex-wrap: wrap;
+}
+
+.rateInputSm {
+  width: 80px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  text-align: right;
 }
 
 .customRange {
