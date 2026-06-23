@@ -80,13 +80,24 @@ const DEFAULT_USERS = [
 
 export async function initDB() {
   const snap = await getDocs(usersCol)
-  if (snap.empty) {
-    const batch = writeBatch(db)
-    DEFAULT_USERS.forEach(u => {
+  const existing = Object.fromEntries(snap.docs.map(d => [d.id, d.data()]))
+  const batch = writeBatch(db)
+  let hasChanges = false
+
+  DEFAULT_USERS.forEach(u => {
+    const cur = existing[u.id]
+    if (!cur) {
+      // 新規ユーザーを追加
       batch.set(doc(db, 'users', u.id), { name: u.name, workItems: u.workItems || [] })
-    })
-    await batch.commit()
-  }
+      hasChanges = true
+    } else if (!cur.workItems || cur.workItems.length === 0) {
+      // workItemsが未設定の既存ユーザーに設定を追加
+      batch.update(doc(db, 'users', u.id), { workItems: u.workItems || [] })
+      hasChanges = true
+    }
+  })
+
+  if (hasChanges) await batch.commit()
 }
 
 export async function resolveUser(qrValue) {
