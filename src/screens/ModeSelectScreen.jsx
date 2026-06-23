@@ -68,13 +68,13 @@ export default function ModeSelectScreen({ onSelect }) {
         <div className={styles.mainBtns}>
           <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
             <div className={styles.iconCircle}>
-              <ScanIcon size={72} color="#16a34a" />
+              <ScanIcon size={52} color="#16a34a" />
             </div>
             <span className={styles.modeLabel}>出勤</span>
           </button>
           <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
             <div className={styles.iconCircle}>
-              <ScanIcon size={72} color="#dc2626" />
+              <ScanIcon size={52} color="#dc2626" />
             </div>
             <span className={styles.modeLabel}>退勤</span>
           </button>

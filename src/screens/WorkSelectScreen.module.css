@@ -4,8 +4,6 @@
   height: 100dvh;
   overflow: hidden;
   background: #f6fbf8;
-  display: grid;
-  grid-template-rows: 90px 1fr;
 }
 
 /* ── ヘッダー ── */
@@ -84,11 +82,11 @@
 
 /* ── メインエリア ── */
 .main {
-  min-height: 0;
-  padding: 18px 60px 22px;
+  height: 100dvh;
+  padding: 14px 60px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   overflow: hidden;
 }
 

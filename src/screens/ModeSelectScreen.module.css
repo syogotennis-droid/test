@@ -86,7 +86,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 36px;
+  gap: 20px;
   border: none;
   border-radius: 10px;
   cursor: pointer;
@@ -103,8 +103,8 @@
 
 /* ── ボタン内・白丸アイコン ── */
 .iconCircle {
-  width: 170px;
-  height: 170px;
+  width: 120px;
+  height: 120px;
   border-radius: 9999px;
   background: #fff;
   display: flex;
@@ -115,7 +115,7 @@
 
 /* ── 出勤・退勤テキスト ── */
 .modeLabel {
-  font-size: 76px;
+  font-size: 56px;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.04em;

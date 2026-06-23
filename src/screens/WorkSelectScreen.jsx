@@ -197,28 +197,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   return (
     <div className={styles.screen}>
 
-      {/* ヘッダー */}
-      <div className={styles.header}>
-        <div className={styles.headerLeft}>
-          <button className={styles.backBtn} onClick={onCancel}>←</button>
-          <div className={styles.headerIconBox}>
-            <ScanIcon size={30} color="#41b883" />
-          </div>
-          <span className={styles.headerTitle}>QR勤怠システム</span>
-        </div>
-        <div className={styles.clockBox}>
-          <Clock />
-        </div>
-      </div>
-
       {/* メイン */}
       <div className={styles.main}>
-
-        <div className={styles.greeting}>おつかれさまです</div>
-
-        <div className={styles.sectionTitle}>
-          <span>作業内容を選択</span>
-        </div>
 
         {/* 作業カード */}
         <div className={styles.workGrid}>
