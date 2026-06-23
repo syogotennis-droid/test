@@ -52,30 +52,54 @@ export const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '�
 
 // Default users seeded on first run
 const DEFAULT_USERS = [
-  { id: 'USER001', name: '永谷 仁美',      workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'] },
-  { id: 'USER002', name: '夫馬 紀子',      workItems: ['スイム','スイム短期','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'] },
-  { id: 'USER003', name: '木村 千明',      workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'] },
-  { id: 'USER004', name: '杉山 健太郎',    workItems: ['ドライバー','研修会'] },
-  { id: 'USER005', name: '上出 哲哉',      workItems: ['ドライバー'] },
-  { id: 'USER006', name: '加藤 英民',      workItems: ['ドライバー'] },
-  { id: 'USER007', name: '福田 伊左男',    workItems: ['ドライバー'] },
-  { id: 'USER008', name: '鈴木 和美',      workItems: ['ドライバー'] },
-  { id: 'USER009', name: '桐山 健一',      workItems: ['ドライバー'] },
-  { id: 'USER010', name: '中山 文香',      workItems: ['フロント','フロント短期','研修会','清掃','事務処理'] },
-  { id: 'USER011', name: '東條 曉美',      workItems: ['スイム','スイム短期','スイムベビー','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
-  { id: 'USER012', name: '大澤 京子',      workItems: ['スイム','スイム短期','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
-  { id: 'USER013', name: '田中 真粧美',    workItems: ['フロント','フロント短期','研修会','清掃','事務処理'] },
-  { id: 'USER014', name: '野田 陽子',      workItems: ['フロント','フロント短期','研修会','清掃','事務処理'] },
-  { id: 'USER015', name: '和田 那美',      workItems: ['アスレ','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
-  { id: 'USER016', name: '鈴木 清隆',      workItems: ['スイム','スイム短期','スイム成人','監視','研修会','清掃','事務処理'] },
-  { id: 'USER017', name: '滋野 峰子',      workItems: ['スイム','スイム短期','スイムベビー','研修会','清掃','事務処理'] },
-  { id: 'USER018', name: '岡田 利奈',      workItems: ['スイム','スイム短期','スイムベビー','スイム成人','監視','研修会','清掃','事務処理','選手引率'] },
-  { id: 'USER019', name: '緒方 幸代',      workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'] },
-  { id: 'USER020', name: 'アルベス・エゴン', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'] },
-  { id: 'USER021', name: '池戸 柊生',      workItems: ['監視','監視短期','清掃','事務処理'] },
-  { id: 'USER022', name: '矢野 快晟',      workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'] },
-  { id: 'USER023', name: '山田 亜美',      workItems: ['フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
-  { id: 'USER024', name: '市野 圭子',      workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'] },
+  { id: 'USER001', name: '永谷 仁美', workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'],
+    itemRates: { 'アスレ':{normal:1480,sunday:1628},'スイム':{normal:1480,sunday:1776},'スイム短期':{normal:1628},'スイムベビー':{normal:1480,sunday:1628},'スイム成人':{normal:1480,sunday:1628},'フロント':{normal:1480,sunday:1628},'フロント短期':{normal:1628},'監視':{normal:1480,sunday:1628},'監視短期':{normal:1628},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'エアロ':{normal:1480,sunday:1628},'準備':{normal:1140},'交通費':{amount:1140} } },
+  { id: 'USER002', name: '夫馬 紀子', workItems: ['スイム','スイム短期','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1420,sunday:1704},'スイム短期':{normal:1562},'スイム成人':{normal:1420,sunday:1562},'フロント':{normal:1420,sunday:1562},'監視':{normal:1420,sunday:1562},'監視短期':{normal:1562},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:1140} } },
+  { id: 'USER003', name: '木村 千明', workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'],
+    itemRates: { 'アスレ':{normal:1420,sunday:1562},'スイム':{normal:1420,sunday:1704},'スイム短期':{normal:1562},'スイムベビー':{normal:1420,sunday:1562},'スイム成人':{normal:1420,sunday:1562},'フロント':{normal:1420,sunday:1562},'フロント短期':{normal:1540},'監視':{normal:1420,sunday:1562},'監視短期':{normal:1562},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'エアロ':{normal:1420,sunday:1562},'準備':{normal:1140},'交通費':{amount:135.3} } },
+  { id: 'USER004', name: '杉山 健太郎', workItems: ['ドライバー','研修会'],
+    itemRates: { 'ドライバー':{normal:1500},'研修会':{normal:1000},'準備':{normal:1140} } },
+  { id: 'USER005', name: '上出 哲哉', workItems: ['ドライバー'],
+    itemRates: { 'ドライバー':{normal:1300},'準備':{normal:1140},'交通費':{amount:86.1} } },
+  { id: 'USER006', name: '加藤 英民', workItems: ['ドライバー'],
+    itemRates: { 'ドライバー':{normal:1500},'準備':{normal:1140},'交通費':{amount:492} } },
+  { id: 'USER007', name: '福田 伊左男', workItems: ['ドライバー'],
+    itemRates: { 'ドライバー':{normal:1300},'準備':{normal:1140},'交通費':{amount:360.8} } },
+  { id: 'USER008', name: '鈴木 和美', workItems: ['ドライバー'],
+    itemRates: { 'ドライバー':{normal:1500},'準備':{normal:1140},'交通費':{amount:106.6} } },
+  { id: 'USER009', name: '桐山 健一', workItems: ['ドライバー'],
+    itemRates: { 'ドライバー':{normal:1300},'準備':{normal:1140},'交通費':{amount:492} } },
+  { id: 'USER010', name: '中山 文香', workItems: ['フロント','フロント短期','研修会','清掃','事務処理'],
+    itemRates: { 'フロント':{normal:1390,sunday:1529},'フロント短期':{normal:1529},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER011', name: '東條 曉美', workItems: ['スイム','スイム短期','スイムベビー','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1154,sunday:1384.8},'スイム短期':{normal:1269.4},'スイムベビー':{normal:1040,sunday:1144},'フロント':{normal:1230,sunday:1353},'フロント短期':{normal:1353},'監視':{normal:1230,sunday:1353},'監視短期':{normal:1353},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER012', name: '大澤 京子', workItems: ['スイム','スイム短期','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'フロント':{normal:1410,sunday:1551},'フロント短期':{normal:1551},'監視':{normal:1380,sunday:1518},'監視短期':{normal:1518},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER013', name: '田中 真粧美', workItems: ['フロント','フロント短期','研修会','清掃','事務処理'],
+    itemRates: { 'フロント':{normal:1280,sunday:1408},'フロント短期':{normal:1408},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:400} } },
+  { id: 'USER014', name: '野田 陽子', workItems: ['フロント','フロント短期','研修会','清掃','事務処理'],
+    itemRates: { 'フロント':{normal:1154,sunday:1269.4},'フロント短期':{normal:1269.4},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER015', name: '和田 那美', workItems: ['アスレ','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
+    itemRates: { 'アスレ':{normal:1154,sunday:1269.4},'フロント':{normal:1154,sunday:1269.4},'フロント短期':{normal:1269.4},'監視':{normal:1154,sunday:1269.4},'監視短期':{normal:1269.4},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER016', name: '鈴木 清隆', workItems: ['スイム','スイム短期','スイム成人','監視','研修会','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1420,sunday:1704},'スイム短期':{normal:1562},'スイム成人':{normal:1420,sunday:1562},'監視':{normal:1090,sunday:1199},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:200.9} } },
+  { id: 'USER017', name: '滋野 峰子', workItems: ['スイム','スイム短期','スイムベビー','研修会','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'スイムベビー':{normal:1154,sunday:1269.4},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:1020} } },
+  { id: 'USER018', name: '岡田 利奈', workItems: ['スイム','スイム短期','スイムベビー','スイム成人','監視','研修会','清掃','事務処理','選手引率'],
+    itemRates: { 'スイム':{normal:1350,sunday:1620},'スイム短期':{normal:1485},'スイムベビー':{normal:1350,sunday:1485},'スイム成人':{normal:1350,sunday:1485},'監視':{normal:1350,sunday:1485},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'選手引率':{normal:1140},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER019', name: '緒方 幸代', workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'],
+    itemRates: { 'アスレ':{normal:1470,sunday:1617},'スイム':{normal:1470,sunday:1764},'スイム短期':{normal:1764},'スイムベビー':{normal:1470,sunday:1617},'スイム成人':{normal:1470,sunday:1617},'フロント':{normal:1470,sunday:1617},'監視':{normal:1470,sunday:1617},'監視短期':{normal:1617},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:840} } },
+  { id: 'USER020', name: 'アルベス・エゴン', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER021', name: '池戸 柊生', workItems: ['監視','監視短期','清掃','事務処理'],
+    itemRates: { '監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER022', name: '矢野 快晟', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:1210} } },
+  { id: 'USER023', name: '山田 亜美', workItems: ['フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
+    itemRates: { 'フロント':{normal:1140,sunday:1254},'フロント短期':{normal:1254},'監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
+  { id: 'USER024', name: '市野 圭子', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'],
+    itemRates: { 'スイム':{normal:1400,sunday:1680},'スイム短期':{normal:1540},'監視':{normal:1400,sunday:1540},'監視短期':{normal:1540},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:492} } },
 ]
 
 export async function initDB() {
@@ -87,12 +111,13 @@ export async function initDB() {
   DEFAULT_USERS.forEach(u => {
     const cur = existing[u.id]
     if (!cur) {
-      // 新規ユーザーを追加
-      batch.set(doc(db, 'users', u.id), { name: u.name, workItems: u.workItems || [] })
+      batch.set(doc(db, 'users', u.id), { name: u.name, workItems: u.workItems || [], itemRates: u.itemRates || {} })
       hasChanges = true
     } else if (!cur.workItems || cur.workItems.length === 0) {
-      // workItemsが未設定の既存ユーザーに設定を追加
-      batch.update(doc(db, 'users', u.id), { workItems: u.workItems || [] })
+      batch.update(doc(db, 'users', u.id), { workItems: u.workItems || [], itemRates: u.itemRates || {} })
+      hasChanges = true
+    } else if (!cur.itemRates) {
+      batch.update(doc(db, 'users', u.id), { itemRates: u.itemRates || {} })
       hasChanges = true
     }
   })
