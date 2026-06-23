@@ -281,9 +281,35 @@
   padding: 10px 16px;
 }
 
+/* ── 下部行（戻る + 退勤登録） ── */
+.bottomRow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.backButton {
+  flex-shrink: 0;
+  height: 110px;
+  padding: 0 28px;
+  border-radius: 20px;
+  border: 2px solid #d6d9de;
+  background: #fff;
+  color: #374151;
+  font-size: 28px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.08s;
+}
+
+.backButton:active { background: #f0f2f5; }
+
 /* ── 退勤を登録ボタン ── */
 .submitButton {
-  flex-shrink: 0;
+  flex: 1;
   height: 110px;
   border-radius: 20px;
   border: none;

@@ -220,9 +220,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                     <span className={styles.workIcon}>{meta.icon}</span>
                   </div>
                   <div className={styles.workLabel}>{id}</div>
-                  <div className={styles.workTime}>
-                    {active ? (t.h > 0 ? `${t.h}時間` : '') + (t.m > 0 ? `${t.m}分` : '') : ''}
-                  </div>
                 </div>
                 <div className={styles.workCardBar} style={{ background: meta.barColor }} />
               </div>
@@ -242,14 +239,17 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
         {timeError && <div className={styles.timeError}>{timeError}</div>}
 
-        <button
-          className={[styles.submitButton, (activeItems.length === 0 || saving) ? styles.submitDisabled : ''].join(' ')}
-          onClick={handleConfirm}
-          disabled={activeItems.length === 0 || saving}
-        >
-          <ExitIcon size={54} color="#fff" />
-          <span>{saving ? '記録中...' : '退勤を登録'}</span>
-        </button>
+        <div className={styles.bottomRow}>
+          <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
+          <button
+            className={[styles.submitButton, (activeItems.length === 0 || saving) ? styles.submitDisabled : ''].join(' ')}
+            onClick={handleConfirm}
+            disabled={activeItems.length === 0 || saving}
+          >
+            <ExitIcon size={54} color="#fff" />
+            <span>{saving ? '記録中...' : '退勤を登録'}</span>
+          </button>
+        </div>
 
       </div>
 

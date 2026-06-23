@@ -414,6 +414,12 @@
   text-align: right;
 }
 
+.rateInputReadOnly {
+  background: #f0f2f5;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
 .customRange {
   display: flex;
   align-items: center;
