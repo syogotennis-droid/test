@@ -1012,6 +1012,15 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     })
     return r
   })
+  // Items that have sunday premium (based on existing data)
+  const [hasSunday] = useState(() => {
+    const s = new Set()
+    ASSIGNABLE_ITEMS.forEach(item => {
+      const ur = user.itemRates?.[item]
+      if (ur?.sunday != null && String(ur.sunday) !== '') s.add(item)
+    })
+    return s
+  })
   const [dangerOpen, setDangerOpen] = useState(false)
 
   function toggleWorkItem(item) {
@@ -1021,7 +1030,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   }
 
   function setRate(item, field, val) {
-    setItemRates(prev => ({ ...prev, [item]: { ...prev[item], [field]: val } }))
+    setItemRates(prev => {
+      const updated = { ...prev, [item]: { ...prev[item], [field]: val } }
+      if (field === 'normal' && hasSunday.has(item)) {
+        updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * 1.1))
+      }
+      return updated
+    })
   }
 
   function buildItemRates() {
@@ -1132,13 +1147,17 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                                 className={styles.rateInputSm}
                               />
                               <span className={styles.rateUnit}>円</span>
-                              <input
-                                type="number" min="0" placeholder="日曜"
-                                value={r.sunday}
-                                onChange={e => setRate(item, 'sunday', e.target.value)}
-                                className={styles.rateInputSm}
-                              />
-                              <span className={styles.rateUnit}>円(日)</span>
+                              {hasSunday.has(item) && (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={r.sunday}
+                                    readOnly
+                                    className={[styles.rateInputSm, styles.rateInputReadOnly].join(' ')}
+                                  />
+                                  <span className={styles.rateUnit}>円(日)</span>
+                                </>
+                              )}
                             </>
                           )}
                         </div>
