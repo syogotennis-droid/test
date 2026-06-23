@@ -75,16 +75,16 @@ export default function App() {
     }
   }
 
-  async function handleWorkComplete(selectedTypes, workTypeStr) {
+  async function handleWorkComplete(workItems) {
     const clockIn = await getClockInTime(currentUser.id)
     await saveLog({
       userId: currentUser.id,
-      workType: workTypeStr || selectedTypes.join(','),
+      workItems,
       logType: '退勤'
     })
     setCompletedInfo({
       logType: '退勤',
-      workTypes: selectedTypes,
+      workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),
       user: currentUser,
       clockInTime: clockIn?.time,
       clockInTimestamp: clockIn?.timestamp

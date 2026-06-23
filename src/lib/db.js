@@ -39,18 +39,43 @@ function getTodayDate() {
   }).replace(/\//g, '-')
 }
 
+// Pay items for the new payroll system
+export const PAY_ITEMS = [
+  'アスレ', 'スイム', 'スイム短期', 'スイムベビー', 'スイム成人',
+  'フロント', 'フロント短期', '監視', '監視短期', '研修会',
+  '清掃', '事務処理', 'エアロ', 'ドライバー', '選手引率',
+  '休憩', '準備', '交通費', '有給', '固定手当'
+]
+
+// Items that are not shown on the clock-out work selection screen
+export const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
+
 // Default users seeded on first run
 const DEFAULT_USERS = [
-  { id: 'USER001', name: '田中 太郎' },
-  { id: 'USER002', name: '鈴木 花子' },
-  { id: 'USER003', name: '佐藤 次郎' },
-  { id: 'USER004', name: '山田 三郎' },
-  { id: 'USER005', name: '伊藤 四郎' },
-  { id: 'USER006', name: '渡辺 五郎' },
-  { id: 'USER007', name: '中村 六郎' },
-  { id: 'USER008', name: '小林 七郎' },
-  { id: 'USER009', name: '加藤 八郎' },
-  { id: 'USER010', name: '吉田 九郎' }
+  { id: 'USER001', name: '永谷 仁美',      workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'] },
+  { id: 'USER002', name: '夫馬 紀子',      workItems: ['スイム','スイム短期','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'] },
+  { id: 'USER003', name: '木村 千明',      workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'] },
+  { id: 'USER004', name: '杉山 健太郎',    workItems: ['ドライバー','研修会'] },
+  { id: 'USER005', name: '上出 哲哉',      workItems: ['ドライバー'] },
+  { id: 'USER006', name: '加藤 英民',      workItems: ['ドライバー'] },
+  { id: 'USER007', name: '福田 伊左男',    workItems: ['ドライバー'] },
+  { id: 'USER008', name: '鈴木 和美',      workItems: ['ドライバー'] },
+  { id: 'USER009', name: '桐山 健一',      workItems: ['ドライバー'] },
+  { id: 'USER010', name: '中山 文香',      workItems: ['フロント','フロント短期','研修会','清掃','事務処理'] },
+  { id: 'USER011', name: '東條 曉美',      workItems: ['スイム','スイム短期','スイムベビー','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
+  { id: 'USER012', name: '大澤 京子',      workItems: ['スイム','スイム短期','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
+  { id: 'USER013', name: '田中 真粧美',    workItems: ['フロント','フロント短期','研修会','清掃','事務処理'] },
+  { id: 'USER014', name: '野田 陽子',      workItems: ['フロント','フロント短期','研修会','清掃','事務処理'] },
+  { id: 'USER015', name: '和田 那美',      workItems: ['アスレ','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
+  { id: 'USER016', name: '鈴木 清隆',      workItems: ['スイム','スイム短期','スイム成人','監視','研修会','清掃','事務処理'] },
+  { id: 'USER017', name: '滋野 峰子',      workItems: ['スイム','スイム短期','スイムベビー','研修会','清掃','事務処理'] },
+  { id: 'USER018', name: '岡田 利奈',      workItems: ['スイム','スイム短期','スイムベビー','スイム成人','監視','研修会','清掃','事務処理','選手引率'] },
+  { id: 'USER019', name: '緒方 幸代',      workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'] },
+  { id: 'USER020', name: 'アルベス・エゴン', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'] },
+  { id: 'USER021', name: '池戸 柊生',      workItems: ['監視','監視短期','清掃','事務処理'] },
+  { id: 'USER022', name: '矢野 快晟',      workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'] },
+  { id: 'USER023', name: '山田 亜美',      workItems: ['フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'] },
+  { id: 'USER024', name: '市野 圭子',      workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'] },
 ]
 
 export async function initDB() {
@@ -58,7 +83,7 @@ export async function initDB() {
   if (snap.empty) {
     const batch = writeBatch(db)
     DEFAULT_USERS.forEach(u => {
-      batch.set(doc(db, 'users', u.id), { name: u.name })
+      batch.set(doc(db, 'users', u.id), { name: u.name, workItems: u.workItems || [] })
     })
     await batch.commit()
   }
@@ -70,7 +95,7 @@ export async function resolveUser(qrValue) {
   return { id: d.id, ...d.data() }
 }
 
-export async function saveLog({ userId, workType, logType }) {
+export async function saveLog({ userId, workType, workItems, logType, transportCount }) {
   const now = new Date()
   const timestamp = now.toISOString()
   const date = now.toLocaleDateString('ja-JP', {
@@ -79,16 +104,34 @@ export async function saveLog({ userId, workType, logType }) {
   const time = now.toLocaleTimeString('ja-JP', {
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   })
-  const ref = await addDoc(logsCol, {
+  const workTypeStr = workItems
+    ? Object.entries(workItems).filter(([, m]) => m > 0).map(([t, m]) => `${t}:${m}`).join(',')
+    : (workType || '')
+  const logData = {
     user_id: userId,
-    work_type: workType || '',
-    log_type: logType || workType || '',
+    work_type: workTypeStr,
+    log_type: logType || '',
     timestamp,
     date,
     time,
     synced: 0
-  })
+  }
+  if (workItems) logData.work_items = workItems
+  if (transportCount) logData.transport_count = transportCount
+  const ref = await addDoc(logsCol, logData)
   return ref.id
+}
+
+// Parse work_items from a log entry (handles both new object and legacy string format)
+export function getWorkItems(log) {
+  if (log?.work_items) return { ...log.work_items }
+  if (!log?.work_type) return {}
+  const result = {}
+  log.work_type.split(',').forEach(entry => {
+    const [t, m] = entry.split(':')
+    if (t?.trim()) result[t.trim()] = Number(m) || 0
+  })
+  return result
 }
 
 export async function getClockInTime(userId) {

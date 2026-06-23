@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate
+  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
+  PAY_ITEMS
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -993,21 +994,35 @@ function UsersTab({ users, today, onRefresh }) {
 
 // ─── UserEditModal ────────────────────────────────────────────────────────────
 
+const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['準備', '有給', '固定手当'].includes(p))
+
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [step, setStep] = useState('main') // 'main' | 'confirmStatus' | 'confirmDelete'
   const [name, setName] = useState(user.name)
   const [rates, setRates] = useState({ 現場: '', 清掃: '', 事務: '', ...(user.rates || {}) })
+  const [workItems, setWorkItems] = useState(user.workItems || [])
   const [dangerOpen, setDangerOpen] = useState(false)
 
   async function handleSaveName() {
     if (!name.trim()) return
-    await upsertUser({ id: user.id, name: name.trim(), rates })
+    await upsertUser({ id: user.id, name: name.trim(), rates, workItems })
     onSaved()
   }
 
   async function handleSaveRates() {
-    await upsertUser({ id: user.id, name: name || user.name, rates })
+    await upsertUser({ id: user.id, name: name || user.name, rates, workItems })
     onSaved()
+  }
+
+  async function handleSaveWorkItems() {
+    await upsertUser({ id: user.id, name: name || user.name, rates, workItems })
+    onSaved()
+  }
+
+  function toggleWorkItem(item) {
+    setWorkItems(prev =>
+      prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
+    )
   }
 
   async function handleConfirmStatus() {
@@ -1070,6 +1085,28 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
             </div>
             <div className={styles.modalActions}>
               <button className={styles.saveBtn} onClick={handleSaveRates}>時給を保存</button>
+            </div>
+
+            <hr className={styles.modalDivider} />
+
+            {/* Work items checklist */}
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>作業項目</label>
+              <div className={styles.workItemsGrid}>
+                {ASSIGNABLE_ITEMS.map(item => (
+                  <label key={item} className={styles.workItemCheck}>
+                    <input
+                      type="checkbox"
+                      checked={workItems.includes(item)}
+                      onChange={() => toggleWorkItem(item)}
+                    />
+                    <span>{item}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleSaveWorkItems}>作業項目を保存</button>
             </div>
 
             <hr className={styles.modalDivider} />
