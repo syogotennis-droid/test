@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { initDB, saveLog, isCheckedIn, getClockInTime } from '../lib/db'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
 import WorkSelectScreen from '../screens/WorkSelectScreen'
 import CompleteScreen from '../screens/CompleteScreen'
+import AdminScreen from '../screens/AdminScreen'
+import EmployeeCalendarScreen from '../screens/EmployeeCalendarScreen'
 import styles from './TabletApp.module.css'
 
 const STATE = {
@@ -12,7 +14,12 @@ const STATE = {
   QR: 'qr',
   WORK: 'work',
   COMPLETE: 'complete',
+  ADMIN: 'admin',
+  CHECK: 'check',
 }
+
+const ADMIN_TAP_COUNT = 5
+const ADMIN_TAP_TIMEOUT = 3000
 
 export default function TabletApp() {
   const [state, setState] = useState(STATE.LOADING)
@@ -22,6 +29,8 @@ export default function TabletApp() {
   const [flashError, setFlashError] = useState(null)
   const [networkError, setNetworkError] = useState(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [adminTaps, setAdminTaps] = useState(0)
+  const adminTapTimer = useRef(null)
 
   useEffect(() => {
     initDB()
@@ -47,6 +56,18 @@ export default function TabletApp() {
     setCurrentUser(null)
     setMode(null)
     setState(STATE.MODE)
+  }
+
+  function handleAdminTap() {
+    if (adminTapTimer.current) clearTimeout(adminTapTimer.current)
+    const newCount = adminTaps + 1
+    setAdminTaps(newCount)
+    if (newCount >= ADMIN_TAP_COUNT) {
+      setAdminTaps(0)
+      setState(STATE.ADMIN)
+      return
+    }
+    adminTapTimer.current = setTimeout(() => setAdminTaps(0), ADMIN_TAP_TIMEOUT)
   }
 
   function handleModeSelect(selectedMode) {
@@ -122,6 +143,14 @@ export default function TabletApp() {
     )
   }
 
+  if (state === STATE.ADMIN) {
+    return <AdminScreen onBack={handleDone} />
+  }
+
+  if (state === STATE.CHECK && currentUser) {
+    return <EmployeeCalendarScreen user={currentUser} onBack={handleDone} />
+  }
+
   return (
     <div className={styles.root}>
       {/* オフライン・通信エラーバナー */}
@@ -162,6 +191,17 @@ export default function TabletApp() {
           clockInTimestamp={completedInfo.clockInTimestamp}
           onDone={handleDone}
         />
+      )}
+
+      {/* 管理画面への隠しボタン（打刻画面のみ表示、5回タップで開く） */}
+      {state === STATE.MODE && (
+        <button
+          className={styles.adminTrigger}
+          onClick={handleAdminTap}
+          aria-label="管理"
+        >
+          {adminTaps > 0 ? `${ADMIN_TAP_COUNT - adminTaps}` : '⚙'}
+        </button>
       )}
 
       {/* 一時エラー（出勤済み・未出勤など） */}
