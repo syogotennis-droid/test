@@ -1012,14 +1012,22 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     })
     return r
   })
-  // Items that have sunday premium (based on existing data)
-  const [hasSunday] = useState(() => {
-    const s = new Set()
+  // Per-item sunday multipliers (only set for items with sunday premium)
+  const [multipliers, setMultipliers] = useState(() => {
+    const m = {}
     ASSIGNABLE_ITEMS.forEach(item => {
       const ur = user.itemRates?.[item]
-      if (ur?.sunday != null && String(ur.sunday) !== '') s.add(item)
+      if (ur?.sunday != null && String(ur.sunday) !== '') {
+        if (ur.multiplier != null) {
+          m[item] = String(ur.multiplier)
+        } else if (ur.normal && Number(ur.normal) > 0) {
+          m[item] = String(Math.round((Number(ur.sunday) / Number(ur.normal)) * 100) / 100)
+        } else {
+          m[item] = '1.1'
+        }
+      }
     })
-    return s
+    return m
   })
   const [dangerOpen, setDangerOpen] = useState(false)
 
@@ -1030,13 +1038,23 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   }
 
   function setRate(item, field, val) {
-    setItemRates(prev => {
-      const updated = { ...prev, [item]: { ...prev[item], [field]: val } }
-      if (field === 'normal' && hasSunday.has(item)) {
-        updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * 1.1))
-      }
-      return updated
-    })
+    if (field === 'multiplier') {
+      setMultipliers(prev => ({ ...prev, [item]: val }))
+      setItemRates(prev => {
+        const normalVal = prev[item]?.normal
+        const sunday = normalVal === '' || normalVal == null || val === ''
+          ? '' : String(Math.round(Number(normalVal) * Number(val)))
+        return { ...prev, [item]: { ...prev[item], sunday } }
+      })
+    } else {
+      setItemRates(prev => {
+        const updated = { ...prev, [item]: { ...prev[item], [field]: val } }
+        if (field === 'normal' && multipliers[item] != null) {
+          updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * Number(multipliers[item])))
+        }
+        return updated
+      })
+    }
   }
 
   function buildItemRates() {
@@ -1049,6 +1067,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
         const entry = {}
         if (r.normal !== '') entry.normal = Number(r.normal)
         if (r.sunday !== '') entry.sunday = Number(r.sunday)
+        if (multipliers[item] != null) entry.multiplier = Number(multipliers[item])
         if (Object.keys(entry).length > 0) result[item] = entry
       }
     })
@@ -1129,7 +1148,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                       {checked && (
                         <div className={styles.itemRateInputs}>
                           {isTransport ? (
-                            <>
+                            <div className={styles.rateRow}>
                               <input
                                 type="number" min="0" placeholder="0"
                                 value={r.amount}
@@ -1137,26 +1156,37 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                                 className={styles.rateInputSm}
                               />
                               <span className={styles.rateUnit}>円/回</span>
-                            </>
+                            </div>
                           ) : (
                             <>
-                              <input
-                                type="number" min="0" placeholder="通常"
-                                value={r.normal}
-                                onChange={e => setRate(item, 'normal', e.target.value)}
-                                className={styles.rateInputSm}
-                              />
-                              <span className={styles.rateUnit}>円</span>
-                              {hasSunday.has(item) && (
-                                <>
+                              <div className={styles.rateRow}>
+                                <span className={styles.rateRowLabel}>時給</span>
+                                <input
+                                  type="number" min="0" placeholder="0"
+                                  value={r.normal}
+                                  onChange={e => setRate(item, 'normal', e.target.value)}
+                                  className={styles.rateInputSm}
+                                />
+                                <span className={styles.rateUnit}>円</span>
+                              </div>
+                              {multipliers[item] != null && (
+                                <div className={styles.rateRow}>
+                                  <span className={styles.rateRowLabel}>日曜</span>
+                                  <span className={styles.rateMultSign}>×</span>
+                                  <input
+                                    type="number" min="0.01" step="0.01"
+                                    value={multipliers[item]}
+                                    onChange={e => setRate(item, 'multiplier', e.target.value)}
+                                    className={styles.rateInputXs}
+                                  />
                                   <input
                                     type="number"
                                     value={r.sunday}
                                     readOnly
                                     className={[styles.rateInputSm, styles.rateInputReadOnly].join(' ')}
                                   />
-                                  <span className={styles.rateUnit}>円(日)</span>
-                                </>
+                                  <span className={styles.rateUnit}>円</span>
+                                </div>
                               )}
                             </>
                           )}

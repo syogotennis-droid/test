@@ -205,7 +205,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           {displayItems.map(id => {
             const meta = ITEM_META[id] || { icon: '📝', circleColor: '#eef1f5', barColor: '#9baab8' }
             const active = isActive(id)
-            const t = workTimes[id] || { h: 0, m: 0 }
             return (
               <div
                 key={id}
@@ -216,9 +215,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                   <button className={styles.clearBtn} onClick={e => handleClear(id, e)}>×</button>
                 )}
                 <div className={styles.workCardInner}>
-                  <div className={styles.workIconCircle} style={{ background: meta.circleColor }}>
-                    <span className={styles.workIcon}>{meta.icon}</span>
-                  </div>
                   <div className={styles.workLabel}>{id}</div>
                 </div>
                 <div className={styles.workCardBar} style={{ background: meta.barColor }} />
