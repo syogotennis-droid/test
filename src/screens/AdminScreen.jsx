@@ -1087,7 +1087,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     if (pin) {
       const existing = await resolveUserByPin(pin)
       if (existing && existing.id !== user.id) {
-        setPinError(`このPINは${existing.name}が使用中です`)
+        setPinError('このPINは使用中です')
         return
       }
     }
@@ -1152,7 +1152,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                 onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
                 className={styles.filterInput}
               />
-              <div className={styles.formHint}>未入力の場合はPINで打刻できません</div>
+              <div className={styles.formHint}>数字のみ・最大8桁（未入力の場合はPINで打刻できません）</div>
               {pinError && <div className={styles.pinErrorMsg}>{pinError}</div>}
             </div>
             <div className={styles.modalActions}>
