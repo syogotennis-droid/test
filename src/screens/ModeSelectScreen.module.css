@@ -54,7 +54,6 @@
   grid-template-rows: minmax(0, 1fr) 120px;
   gap: 16px;
   padding: 20px 42px 56px;
-  overflow: hidden;
 }
 
 /* ── 出勤・退勤ボタングリッド ── */
