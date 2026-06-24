@@ -124,12 +124,10 @@
   border-right: 1px solid #d6d9de;
   background: #fff;
   cursor: pointer;
-  -webkit-tap-highlight-color: rgba(0,0,0,0.1);
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   transition: background 0.08s;
   border-radius: 10px 0 0 10px;
+  min-height: 0;
 }
 
 .confirmBtn:active {
