@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { getTodayStatuses, getUsers } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
@@ -43,6 +43,21 @@ function Clock() {
 
 export default function ModeSelectScreen({ onSelect }) {
   const [checkedInCount, setCheckedInCount] = useState(0)
+  const confirmBtnRef = useRef(null)
+  const onSelectRef = useRef(onSelect)
+  useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
+
+  // Android WebView では onClick が発火しない場合があるため native touchstart を使用
+  useEffect(() => {
+    const btn = confirmBtnRef.current
+    if (!btn) return
+    const handler = (e) => {
+      e.preventDefault()
+      onSelectRef.current('確認')
+    }
+    btn.addEventListener('touchstart', handler, { passive: false })
+    return () => btn.removeEventListener('touchstart', handler)
+  }, [])
 
   useEffect(() => {
     async function fetchCount() {
@@ -84,6 +99,7 @@ export default function ModeSelectScreen({ onSelect }) {
         {/* 下部ステータスパネル */}
         <div className={styles.bottomPanel}>
           <button
+            ref={confirmBtnRef}
             type="button"
             className={styles.confirmBtn}
             onClick={() => onSelect('確認')}
