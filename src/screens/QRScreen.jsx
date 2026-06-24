@@ -160,7 +160,6 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       <div className={styles.header}>
         <div className={styles.icon}>{mode === '出勤' ? '🟢' : '🔴'}</div>
         <h1>{mode} — QRをかざしてください</h1>
-        <p>個人QRコードを読み取ります</p>
       </div>
 
       <div className={styles.scannerWrap}>
@@ -184,10 +183,6 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
           </div>
         )}
       </div>
-
-      <p className={styles.hint}>
-        QRコードを枠内に合わせると自動で読み取ります
-      </p>
 
       <div className={styles.bottomBtns}>
         <button className={styles.backBtn} onClick={onCancel}>← 戻る</button>
