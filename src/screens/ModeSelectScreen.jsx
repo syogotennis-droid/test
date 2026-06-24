@@ -69,13 +69,13 @@ export default function ModeSelectScreen({ onSelect }) {
         <div className={styles.mainBtns}>
           <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
             <div className={styles.iconCircle}>
-              <ScanIcon size={96} color="#16a34a" />
+              <ScanIcon size={76} color="#16a34a" />
             </div>
             <span className={styles.modeLabel}>出勤</span>
           </button>
           <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
             <div className={styles.iconCircle}>
-              <ScanIcon size={96} color="#dc2626" />
+              <ScanIcon size={76} color="#dc2626" />
             </div>
             <span className={styles.modeLabel}>退勤</span>
           </button>
@@ -85,7 +85,7 @@ export default function ModeSelectScreen({ onSelect }) {
         <div className={styles.bottomPanel}>
           <button className={styles.confirmBtn} onClick={() => onSelect('確認')}>
             <div className={styles.iconCircleSmall}>
-              <ScanIcon size={28} color="#555" />
+              <ScanIcon size={36} color="#555" />
             </div>
             <span className={styles.scanHintText}>勤務確認</span>
           </button>
