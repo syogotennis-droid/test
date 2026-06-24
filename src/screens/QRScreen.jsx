@@ -158,8 +158,10 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
   return (
     <div className={styles.screen}>
       <div className={styles.header}>
-        <div className={styles.icon}>{mode === '出勤' ? '🟢' : '🔴'}</div>
-        <h1>{mode} — QRをかざしてください</h1>
+        <h1>
+          <span className={mode === '出勤' ? styles.modeIn : styles.modeOut}>{mode}</span>
+          <span className={styles.headerSub}> — QRコードを枠内に収めてください</span>
+        </h1>
       </div>
 
       <div className={styles.scannerWrap}>
