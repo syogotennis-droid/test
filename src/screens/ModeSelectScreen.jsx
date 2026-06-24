@@ -31,11 +31,11 @@ function Clock() {
 
   return (
     <>
-      <div className={styles.clockTime}>{time}</div>
       <div className={styles.dateBox}>
         <div className={styles.dateYear}>{year}</div>
         <div className={styles.dateMonthDay}>{monthDay}</div>
       </div>
+      <div className={styles.clockTime}>{time}</div>
     </>
   )
 }
@@ -84,7 +84,7 @@ export default function ModeSelectScreen({ onSelect }) {
         <div className={styles.bottomPanel}>
           <button className={styles.confirmBtn} onClick={() => onSelect('確認')}>
             <div className={styles.iconCircleSmall}>
-              <ScanIcon size={44} color="#555" />
+              <ScanIcon size={28} color="#555" />
             </div>
             <span className={styles.scanHintText}>勤務確認</span>
           </button>
