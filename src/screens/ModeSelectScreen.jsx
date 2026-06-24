@@ -58,16 +58,18 @@ function Clock({ weather }) {
 
   return (
     <>
-      <div className={styles.dateBox}>
-        <div className={styles.dateYear}>{year}</div>
-        <div className={styles.dateMonthDay}>{monthDay}</div>
-      </div>
-      {weather && (
-        <div className={styles.weatherBox}>
-          <span className={styles.weatherItem}><span className={styles.weatherLabel}>午前</span>{weather.am}</span>
-          <span className={styles.weatherItem}><span className={styles.weatherLabel}>午後</span>{weather.pm}</span>
+      <div className={styles.headerLeft}>
+        <div className={styles.dateBox}>
+          <div className={styles.dateYear}>{year}</div>
+          <div className={styles.dateMonthDay}>{monthDay}</div>
         </div>
-      )}
+        {weather && (
+          <div className={styles.weatherBox}>
+            <span className={styles.weatherItem}><span className={styles.weatherLabel}>午前</span>{weather.am}</span>
+            <span className={styles.weatherItem}><span className={styles.weatherLabel}>午後</span>{weather.pm}</span>
+          </div>
+        )}
+      </div>
       <div className={styles.clockTime}>{time}</div>
     </>
   )

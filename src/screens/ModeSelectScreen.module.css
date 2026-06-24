@@ -47,23 +47,30 @@
   white-space: nowrap;
 }
 
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .weatherBox {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
+  flex-direction: row;
+  gap: 20px;
+  align-items: center;
 }
 
 .weatherItem {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  font-size: 22px;
+  gap: 2px;
+  font-size: 36px;
   line-height: 1;
 }
 
 .weatherLabel {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: #9ca3af;
   white-space: nowrap;
