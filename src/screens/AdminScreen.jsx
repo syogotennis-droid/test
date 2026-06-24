@@ -82,6 +82,7 @@ function LogsTab({
   const [editTime, setEditTime] = useState('')
   const [modalStep, setModalStep] = useState('edit')
   const [showCreate, setShowCreate] = useState(false)
+  const [showEditTimeNumpad, setShowEditTimeNumpad] = useState(false)
 
   function applyMode(mode) {
     setDateMode(mode)
@@ -120,6 +121,7 @@ function LogsTab({
   function closeModal() {
     setEditingLog(null)
     setModalStep('edit')
+    setShowEditTimeNumpad(false)
   }
 
   async function handleConfirmSave() {
@@ -206,7 +208,17 @@ function LogsTab({
                 <h3>記録を編集</h3>
                 <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
                 <p className={styles.modalLabel}>{editingLog.date}</p>
-                <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className={styles.timeInput} />
+                <button className={styles.numpadTrigger} onClick={() => setShowEditTimeNumpad(true)}>
+                  {editTime || <span className={styles.numpadTriggerPlaceholder}>時刻を選択</span>}
+                </button>
+                {showEditTimeNumpad && (
+                  <TimeNumpadOverlay
+                    title="時刻"
+                    initialValue={editTime}
+                    onConfirm={v => setEditTime(v)}
+                    onClose={() => setShowEditTimeNumpad(false)}
+                  />
+                )}
                 <div className={styles.modalActions}>
                   <button className={styles.saveBtn} onClick={() => setModalStep('confirmSave')}>時間を変更</button>
                   <button className={styles.cancelBtn} onClick={closeModal}>キャンセル</button>
@@ -418,6 +430,7 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   }
 
   const [step, setStep] = useState('form') // 'form' | 'confirm'
+  const [showTimeNumpad, setShowTimeNumpad] = useState(false)
   const [userId, setUserId] = useState(defaultUserId || users[0]?.id || '')
   const [logType, setLogType] = useState('出勤')
   const [date, setDate] = useState(today)
@@ -540,7 +553,17 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>時刻</label>
-              <input type="time" value={time} onChange={e => setTime(e.target.value)} className={styles.timeInput} />
+              <button className={styles.numpadTrigger} onClick={() => setShowTimeNumpad(true)}>
+                {time || <span className={styles.numpadTriggerPlaceholder}>時刻を選択</span>}
+              </button>
+              {showTimeNumpad && (
+                <TimeNumpadOverlay
+                  title="時刻"
+                  initialValue={time}
+                  onConfirm={v => setTime(v)}
+                  onClose={() => setShowTimeNumpad(false)}
+                />
+              )}
             </div>
 
             {logType === '退勤' && (
@@ -672,6 +695,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const [outTime, setOutTime] = useState(outLog?.time?.substring(0, 5) || '')
   const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
+  const [activeTimeField, setActiveTimeField] = useState(null) // 'in' | 'out' | null
 
   const workingMinutes = useMemo(() => {
     if (!inTime || !outTime) return null
@@ -729,13 +753,34 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>出勤時刻</label>
-              <input type="time" value={inTime} onChange={e => setInTime(e.target.value)} className={styles.timeInput} />
+              <button className={styles.numpadTrigger} onClick={() => setActiveTimeField('in')}>
+                {inTime || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
+              </button>
             </div>
 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>退勤時刻</label>
-              <input type="time" value={outTime} onChange={e => setOutTime(e.target.value)} className={styles.timeInput} />
+              <button className={styles.numpadTrigger} onClick={() => setActiveTimeField('out')}>
+                {outTime || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
+              </button>
             </div>
+
+            {activeTimeField === 'in' && (
+              <TimeNumpadOverlay
+                title="出勤時刻"
+                initialValue={inTime}
+                onConfirm={v => setInTime(v)}
+                onClose={() => setActiveTimeField(null)}
+              />
+            )}
+            {activeTimeField === 'out' && (
+              <TimeNumpadOverlay
+                title="退勤時刻"
+                initialValue={outTime}
+                onConfirm={v => setOutTime(v)}
+                onClose={() => setActiveTimeField(null)}
+              />
+            )}
 
             {outTime && (
               <>
@@ -1051,6 +1096,62 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
         <div className={styles.numpadActions}>
           <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
           <button className={styles.numpadOk} onClick={() => { onConfirm(val); onClose() }}>OK</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── TimeNumpadOverlay ────────────────────────────────────────────────────────
+
+function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
+  const [digits, setDigits] = useState(() => {
+    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) return initialValue.replace(':', '')
+    return ''
+  })
+
+  function pressKey(k) {
+    if (k === '⌫') { setDigits(d => d.slice(0, -1)); return }
+    if (k === '' || digits.length >= 4) return
+    setDigits(d => d + k)
+  }
+
+  function formatDisplay() {
+    const d = digits.padEnd(4, '-')
+    return `${d[0]}${d[1]}:${d[2]}${d[3]}`
+  }
+
+  const timeValue = useMemo(() => {
+    if (digits.length < 4) return null
+    const h = parseInt(digits.substring(0, 2))
+    const m = parseInt(digits.substring(2, 4))
+    if (h > 23 || m > 59) return null
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  }, [digits])
+
+  const isInvalid = digits.length === 4 && !timeValue
+
+  return (
+    <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
+      <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
+        <div className={styles.numpadTitle}>{title}</div>
+        <div className={[styles.timeNumpadDisplay, isInvalid ? styles.timeNumpadInvalid : ''].join(' ')}>
+          {formatDisplay()}
+          {isInvalid && <div className={styles.timeNumpadError}>無効な時刻です</div>}
+        </div>
+        <div className={styles.numpadGrid}>
+          {NUMPAD_KEYS.map((k, i) => (
+            <button
+              key={i}
+              className={[styles.numpadKey, k === '⌫' ? styles.numpadDel : k === '' ? styles.numpadEmpty : ''].join(' ')}
+              onClick={() => pressKey(k)}
+              disabled={k === ''}
+            >{k}</button>
+          ))}
+        </div>
+        <div className={styles.numpadActions}>
+          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
+          <button className={styles.numpadOk} onClick={() => { if (timeValue) { onConfirm(timeValue); onClose() } }} disabled={!timeValue}>OK</button>
         </div>
       </div>
     </div>
