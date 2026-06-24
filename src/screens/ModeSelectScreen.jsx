@@ -83,7 +83,11 @@ export default function ModeSelectScreen({ onSelect }) {
 
         {/* 下部ステータスパネル */}
         <div className={styles.bottomPanel}>
-          <button className={styles.confirmBtn} onClick={() => onSelect('確認')}>
+          <button
+            className={styles.confirmBtn}
+            onClick={() => onSelect('確認')}
+            onTouchEnd={(e) => { e.preventDefault(); onSelect('確認') }}
+          >
             <div className={styles.iconCircleSmall}>
               <ScanIcon size={36} color="#555" />
             </div>

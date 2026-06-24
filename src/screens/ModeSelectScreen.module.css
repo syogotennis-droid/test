@@ -123,11 +123,13 @@
   gap: 26px;
   border: none;
   border-right: 1px solid #d6d9de;
-  background: transparent;
+  background: #fff;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.08s;
+  -webkit-tap-highlight-color: rgba(0,0,0,0.1);
   touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 0.08s;
   border-radius: 10px 0 0 10px;
 }
 
