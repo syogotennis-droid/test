@@ -61,22 +61,24 @@ function Clock({ weather }) {
 
   return (
     <>
-      <div className={styles.headerLeft}>
-        <div className={styles.dateBox}>
-          <div className={styles.dateYear}>{year}</div>
-          <div className={styles.dateMonthDay}>{monthDay}</div>
-        </div>
-        {weather && (
-          <div className={styles.weatherBox}>
+      <div className={styles.dateBox}>
+        <div className={styles.dateYear}>{year}</div>
+        <div className={styles.dateMonthDay}>{monthDay}</div>
+      </div>
+      <div className={styles.weatherBox}>
+        {weather ? (
+          <>
             <span className={styles.weatherItem}><span className={styles.weatherLabel}>午前</span>{weather.am}</span>
             <span className={styles.weatherItem}><span className={styles.weatherLabel}>午後</span>{weather.pm}</span>
-            <span className={styles.weatherTemp}>
-              <span className={styles.weatherTempHigh}>{weather.tMax}°</span>
-              <span className={styles.weatherTempSep}>/</span>
-              <span className={styles.weatherTempLow}>{weather.tMin}°</span>
-            </span>
-          </div>
-        )}
+            {weather.tMax != null && (
+              <span className={styles.weatherTemp}>
+                <span className={styles.weatherTempHigh}>{weather.tMax}°</span>
+                <span className={styles.weatherTempSep}>/</span>
+                <span className={styles.weatherTempLow}>{weather.tMin}°</span>
+              </span>
+            )}
+          </>
+        ) : null}
       </div>
       <div className={styles.clockTime}>{time}</div>
     </>
