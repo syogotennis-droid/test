@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
@@ -848,19 +851,39 @@ function KinmuboTab({ today }) {
 
   async function handleCreate() {
     setExporting(true)
-    const [y, m] = selectedYM.split('-').map(Number)
-    const dateFrom = `${selectedYM}-01`
-    const lastDay = new Date(y, m, 0).getDate()
-    const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    const buf = await exportKinmubo({ dateFrom, dateTo })
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `出勤簿_${selectedYM}.xlsx`
-    a.click()
-    URL.revokeObjectURL(url)
-    setExporting(false)
+    try {
+      const [y, m] = selectedYM.split('-').map(Number)
+      const dateFrom = `${selectedYM}-01`
+      const lastDay = new Date(y, m, 0).getDate()
+      const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
+      const buf = await exportKinmubo({ dateFrom, dateTo })
+      const fileName = `出勤簿_${selectedYM}.xlsx`
+
+      if (Capacitor.isNativePlatform()) {
+        const bytes = new Uint8Array(buf)
+        let binary = ''
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+        const base64 = btoa(binary)
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: base64,
+          directory: Directory.Cache,
+        })
+        await Share.share({ title: fileName, url: result.uri })
+      } else {
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch (e) {
+      alert('エクスポートに失敗しました: ' + (e?.message || e))
+    } finally {
+      setExporting(false)
+    }
   }
 
   const [displayY, displayM] = selectedYM.split('-').map(Number)

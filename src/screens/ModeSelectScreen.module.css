@@ -113,7 +113,6 @@
   border: 1px solid #d6d9de;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  overflow: hidden;
 }
 
 /* 下部左：勤務確認ボタン */
@@ -128,6 +127,8 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.08s;
+  touch-action: manipulation;
+  border-radius: 10px 0 0 10px;
 }
 
 .confirmBtn:active {
