@@ -9,26 +9,41 @@ function QRImage({ value, size = 200 }) {
   return <img src={QR_API(value, size)} alt={value} width={size} height={size} />
 }
 
-function printOne(user) {
-  const qrUrl = QR_API(user.id, 400)
-  const win = window.open('', '_blank', 'width=600,height=400')
-  win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>
+const CARD_STYLE = `
   @page { size: 91mm 55mm; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { width: 91mm; height: 55mm; font-family: sans-serif; background: #fff; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  body { font-family: sans-serif; background: #fff; }
+  .card {
+    width: 91mm; height: 55mm;
+    position: relative;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    page-break-after: always; break-after: page;
+  }
   .id { position: absolute; top: 4mm; left: 5mm; font-size: 7pt; font-weight: 700; color: #1a5fa8; letter-spacing: 0.04em; }
   .qr { width: 36mm; height: 36mm; }
   .name { margin-top: 2mm; font-size: 13pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
-</style>
-</head><body>
+`
+
+function cardHtml(user) {
+  return `<div class="card">
   <div class="id">${user.id}</div>
-  <img class="qr" src="${qrUrl}" />
+  <img class="qr" src="${QR_API(user.id, 400)}" />
   <div class="name">${user.name}</div>
-</body></html>`)
+</div>`
+}
+
+function openPrintWindow(users) {
+  const win = window.open('', '_blank', 'width=700,height=500')
+  win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>${CARD_STYLE}</style></head>
+<body>${users.map(cardHtml).join('')}</body></html>`)
   win.document.close()
   win.onload = () => { win.focus(); win.print(); win.close() }
+}
+
+function printOne(user) {
+  openPrintWindow([user])
 }
 
 export default function QRGeneratorScreen({ onBack }) {
@@ -43,7 +58,7 @@ export default function QRGeneratorScreen({ onBack }) {
       <div className={styles.header}>
         <button className={styles.backBtn} onClick={onBack}>←</button>
         <h2>QRコード一覧</h2>
-        <button className={styles.printBtn} onClick={() => window.print()}>🖨 一括印刷</button>
+        <button className={styles.printBtn} onClick={() => openPrintWindow(users)}>🖨 一括印刷</button>
       </div>
 
       <div className={styles.grid}>
