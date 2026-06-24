@@ -2,6 +2,33 @@ import React, { useState, useEffect } from 'react'
 import { getTodayStatuses, getUsers } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
+// 名東区上社 の座標
+const LAT = 35.174
+const LON = 137.018
+
+function wmoEmoji(code) {
+  if (code === 0)            return '☀️'
+  if (code <= 1)             return '🌤️'
+  if (code <= 3)             return '⛅'
+  if (code <= 48)            return '🌫️'
+  if (code <= 67)            return '🌧️'
+  if (code <= 77)            return '❄️'
+  if (code <= 82)            return '🌧️'
+  if (code <= 86)            return '❄️'
+  return '⛈️'
+}
+
+async function fetchWeather() {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=weathercode&timezone=Asia%2FTokyo&forecast_days=1`
+  const res = await fetch(url)
+  const data = await res.json()
+  const codes = data.hourly.weathercode
+  // AM: 6〜11時のうち最悪コード、PM: 12〜17時のうち最悪コード
+  const amCode = Math.max(...codes.slice(6, 12))
+  const pmCode = Math.max(...codes.slice(12, 18))
+  return { am: wmoEmoji(amCode), pm: wmoEmoji(pmCode) }
+}
+
 function ScanIcon({ size = 48, color = '#333' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -18,7 +45,7 @@ function ScanIcon({ size = 48, color = '#333' }) {
   )
 }
 
-function Clock() {
+function Clock({ weather }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000)
@@ -35,6 +62,12 @@ function Clock() {
         <div className={styles.dateYear}>{year}</div>
         <div className={styles.dateMonthDay}>{monthDay}</div>
       </div>
+      {weather && (
+        <div className={styles.weatherBox}>
+          <span className={styles.weatherItem}><span className={styles.weatherLabel}>午前</span>{weather.am}</span>
+          <span className={styles.weatherItem}><span className={styles.weatherLabel}>午後</span>{weather.pm}</span>
+        </div>
+      )}
       <div className={styles.clockTime}>{time}</div>
     </>
   )
@@ -42,6 +75,7 @@ function Clock() {
 
 export default function ModeSelectScreen({ onSelect }) {
   const [checkedInCount, setCheckedInCount] = useState(0)
+  const [weather, setWeather] = useState(null)
 
   useEffect(() => {
     async function fetchCount() {
@@ -53,12 +87,16 @@ export default function ModeSelectScreen({ onSelect }) {
     return () => clearInterval(t)
   }, [])
 
+  useEffect(() => {
+    fetchWeather().then(setWeather).catch(() => {})
+  }, [])
+
   return (
     <div className={styles.screen}>
 
       {/* ヘッダー */}
       <div className={styles.header}>
-        <Clock />
+        <Clock weather={weather} />
       </div>
 
       {/* メインエリア */}

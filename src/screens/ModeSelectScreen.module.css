@@ -47,6 +47,28 @@
   white-space: nowrap;
 }
 
+.weatherBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.weatherItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.weatherLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
 /* ── メインエリア ── */
 .main {
   display: grid;
