@@ -370,13 +370,6 @@
   text-align: center;
 }
 
-.timeModalRow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
 .timeModalOk {
   background: #41b883;
   color: #fff;
@@ -389,91 +382,94 @@
   width: 100%;
 }
 
-/* ── 数値ピッカー ── */
-.pickerBtn {
-  min-width: 90px;
-  padding: 12px 8px;
-  text-align: center;
-  font-size: 2rem;
-  font-weight: bold;
-  border: 2px solid #d5eadf;
-  border-radius: 10px;
-  color: #2f2f35;
-  background: #f6fbf8;
-  cursor: pointer;
+/* ── 時間表示行 ── */
+.timeDisplayRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.timeUnit {
-  font-size: 1.2rem;
-  color: #6b7280;
+.timeDisplayBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  padding: 10px 12px;
+  border: 2px solid #d5eadf;
+  border-radius: 12px;
+  background: #f6fbf8;
+  cursor: pointer;
+  gap: 2px;
+}
+
+.timeDisplayActive {
+  border-color: #41b883;
+  background: #e8f8f0;
+  box-shadow: 0 0 0 3px rgba(65,184,131,0.2);
+}
+
+.timeDisplayNum {
+  font-size: 2.2rem;
   font-weight: bold;
+  color: #1a3f2f;
+  line-height: 1;
+}
+
+.timeDisplayUnit {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.timeDisplaySep {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #9baab8;
 }
 
 .remainingBtn {
-  padding: 10px 16px;
+  padding: 8px 14px;
   border: none;
   border-radius: 20px;
   background: #41b883;
   color: #fff;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: bold;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-.pickerOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 100;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-
-.pickerSheet {
-  width: 100%;
-  max-width: 480px;
-  background: #fff;
-  border-radius: 20px 20px 0 0;
-  padding: 0 0 24px;
-  max-height: 70vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.pickerHeader {
-  padding: 16px 20px;
-  font-size: 1.1rem;
-  font-weight: bold;
-  color: #6b7280;
-  border-bottom: 1px solid #dadce0;
-  flex-shrink: 0;
-}
-
-.pickerGrid {
+/* ── テンキー ── */
+.timeNumGrid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-  padding: 12px;
-  overflow-y: auto;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
-.pickerItem {
+.timeNumKey {
   height: 64px;
-  border: none;
-  border-radius: 10px;
-  background: #f8f9fa;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
   font-size: 1.6rem;
-  font-weight: bold;
-  color: #202124;
+  font-weight: 700;
+  color: #1a3f6f;
   cursor: pointer;
+  transition: background 0.08s;
 }
 
-.pickerItem:active { transform: scale(0.93); }
+.timeNumKey:active { background: #dbeafe; }
 
-.pickerActive {
-  background: #202124;
-  color: #fff;
+.timeNumDel {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.timeNumEmpty {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
 }

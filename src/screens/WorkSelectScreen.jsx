@@ -92,32 +92,102 @@ function fmtMinutes(mins) {
   return h > 0 ? `${h}時間${m}分` : `${m}分`
 }
 
-function NumberPicker({ value, options, onChange, label }) {
-  const [open, setOpen] = useState(false)
+const TIME_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
+
+function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTime, onClose }) {
+  const initial = workTimes[item] || { h: 0, m: 0 }
+  const [hStr, setHStr] = useState(initial.h > 0 ? String(initial.h) : '')
+  const [mStr, setMStr] = useState(initial.m > 0 ? String(initial.m) : '')
+  const [focus, setFocus] = useState('h')
+
+  const h = parseInt(hStr) || 0
+  const m = parseInt(mStr) || 0
+
+  const otherMins = activeItems
+    .filter(id => id !== item)
+    .reduce((sum, id) => {
+      const t = workTimes[id] || { h: 0, m: 0 }
+      return sum + t.h * 60 + t.m
+    }, 0)
+  const remaining = workingMinutes != null ? workingMinutes - otherMins : null
+  const rh = remaining != null ? Math.floor(remaining / 60) : 0
+  const rm = remaining != null ? remaining % 60 : 0
+  const alreadySet = remaining != null && h * 60 + m === remaining
+
+  function pressKey(k) {
+    if (k === '⌫') {
+      if (focus === 'h') setHStr(s => s.slice(0, -1))
+      else setMStr(s => s.slice(0, -1))
+      return
+    }
+    if (k === '') return
+    if (focus === 'h') {
+      const next = hStr + k
+      if (parseInt(next) > 23) return
+      setHStr(next)
+    } else {
+      const next = mStr + k
+      if (parseInt(next) > 59) return
+      setMStr(next)
+    }
+  }
+
+  function handleOk() {
+    onSetTime(item, 'h', h)
+    onSetTime(item, 'm', m)
+    onClose()
+  }
+
   return (
-    <>
-      <button className={styles.pickerBtn} onClick={() => setOpen(true)}>
-        {String(value).padStart(2, '0')}
-      </button>
-      {open && (
-        <div className={styles.pickerOverlay} onClick={() => setOpen(false)}>
-          <div className={styles.pickerSheet} onClick={e => e.stopPropagation()}>
-            <div className={styles.pickerHeader}>{label}を選択</div>
-            <div className={styles.pickerGrid}>
-              {options.map(n => (
-                <button
-                  key={n}
-                  className={[styles.pickerItem, n === value ? styles.pickerActive : ''].join(' ')}
-                  onClick={() => { onChange(n); setOpen(false) }}
-                >
-                  {String(n).padStart(2, '0')}
-                </button>
-              ))}
-            </div>
+    <div className={styles.timeModalOverlay} onClick={onClose}>
+      <div className={styles.timeModal} onClick={e => e.stopPropagation()}>
+        <div className={styles.timeModalTitle}>{item}の時間を入力</div>
+        {workingMinutes !== null && (
+          <div className={styles.timeModalHint}>
+            勤務時間合計: {fmtMinutes(workingMinutes)}
+            {activeItems.filter(id => id !== item).length > 0 && (
+              <> / 他の合計: {fmtMinutes(otherMins)}</>
+            )}
           </div>
+        )}
+        <div className={styles.timeDisplayRow}>
+          <button
+            className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('h')}
+          >
+            <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
+            <span className={styles.timeDisplayUnit}>時間</span>
+          </button>
+          <span className={styles.timeDisplaySep}>:</span>
+          <button
+            className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('m')}
+          >
+            <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
+            <span className={styles.timeDisplayUnit}>分</span>
+          </button>
+          {remaining != null && remaining > 0 && !alreadySet && (
+            <button
+              className={styles.remainingBtn}
+              onClick={() => { setHStr(rh > 0 ? String(rh) : ''); setMStr(rm > 0 ? String(rm) : '') }}
+            >
+              残り{fmtMinutes(remaining)}
+            </button>
+          )}
         </div>
-      )}
-    </>
+        <div className={styles.timeNumGrid}>
+          {TIME_KEYS.map((k, i) => (
+            <button
+              key={i}
+              className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
+              onClick={() => pressKey(k)}
+              disabled={k === ''}
+            >{k}</button>
+          ))}
+        </div>
+        <button className={styles.timeModalOk} onClick={handleOk}>OK</button>
+      </div>
+    </div>
   )
 }
 
@@ -191,9 +261,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
     }
   }
 
-  const hourOptions = Array.from({ length: 24 }, (_, i) => i)
-  const minuteOptions = Array.from({ length: 60 }, (_, i) => i)
-
   return (
     <div className={styles.screen}>
 
@@ -251,62 +318,16 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
       {/* 時間入力モーダル */}
       {editingItem && (
-        <div className={styles.timeModalOverlay} onClick={() => setEditingItem(null)}>
-          <div className={styles.timeModal} onClick={e => e.stopPropagation()}>
-            <div className={styles.timeModalTitle}>{editingItem}の時間を入力</div>
-            {workingMinutes !== null && (
-              <div className={styles.timeModalHint}>
-                勤務時間合計: {fmtMinutes(workingMinutes)}
-                {activeItems.filter(id => id !== editingItem).length > 0 && (
-                  <> / 他の合計: {fmtMinutes(activeItems.filter(id => id !== editingItem).reduce((sum, id) => {
-                    const t = workTimes[id] || { h: 0, m: 0 }
-                    return sum + t.h * 60 + t.m
-                  }, 0))}</>
-                )}
-              </div>
-            )}
-            <div className={styles.timeModalRow}>
-              <NumberPicker
-                value={workTimes[editingItem]?.h ?? 0}
-                options={hourOptions}
-                onChange={val => setTime(editingItem, 'h', val)}
-                label="時間"
-              />
-              <span className={styles.timeUnit}>時間</span>
-              <NumberPicker
-                value={workTimes[editingItem]?.m ?? 0}
-                options={minuteOptions}
-                onChange={val => setTime(editingItem, 'm', val)}
-                label="分"
-              />
-              <span className={styles.timeUnit}>分</span>
-              {workingMinutes !== null && (() => {
-                const otherMins = activeItems
-                  .filter(id => id !== editingItem)
-                  .reduce((sum, id) => {
-                    const t = workTimes[id] || { h: 0, m: 0 }
-                    return sum + t.h * 60 + t.m
-                  }, 0)
-                const remaining = workingMinutes - otherMins
-                if (remaining <= 0) return null
-                const rh = Math.floor(remaining / 60)
-                const rm = remaining % 60
-                const alreadySet = (workTimes[editingItem]?.h ?? 0) * 60 + (workTimes[editingItem]?.m ?? 0) === remaining
-                if (alreadySet) return null
-                return (
-                  <button
-                    className={styles.remainingBtn}
-                    onClick={() => { setTime(editingItem, 'h', rh); setTime(editingItem, 'm', rm) }}
-                  >
-                    残り{fmtMinutes(remaining)}
-                  </button>
-                )
-              })()}
-            </div>
-            <button className={styles.timeModalOk} onClick={() => setEditingItem(null)}>OK</button>
-          </div>
-        </div>
+        <TimeInputModal
+          item={editingItem}
+          workTimes={workTimes}
+          workingMinutes={workingMinutes}
+          activeItems={activeItems}
+          onSetTime={setTime}
+          onClose={() => setEditingItem(null)}
+        />
       )}
+
 
     </div>
   )
