@@ -56,7 +56,7 @@
 .weatherBox {
   display: flex;
   flex-direction: row;
-  gap: 20px;
+  gap: 16px;
   align-items: center;
 }
 
@@ -65,16 +65,29 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  font-size: 36px;
+  font-size: 52px;
   line-height: 1;
 }
 
 .weatherLabel {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: #9ca3af;
   white-space: nowrap;
 }
+
+.weatherTemp {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.weatherTempHigh { color: #e05c2a; }
+.weatherTempSep  { color: #9ca3af; font-weight: 400; }
+.weatherTempLow  { color: #3b82f6; }
 
 /* ── メインエリア ── */
 .main {

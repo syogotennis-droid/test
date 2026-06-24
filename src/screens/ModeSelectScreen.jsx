@@ -19,14 +19,17 @@ function wmoEmoji(code) {
 }
 
 async function fetchWeather() {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=weathercode&timezone=Asia%2FTokyo&forecast_days=1`
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+    `&hourly=weathercode&daily=temperature_2m_max,temperature_2m_min` +
+    `&timezone=Asia%2FTokyo&forecast_days=1`
   const res = await fetch(url)
   const data = await res.json()
   const codes = data.hourly.weathercode
-  // AM: 6〜11時のうち最悪コード、PM: 12〜17時のうち最悪コード
   const amCode = Math.max(...codes.slice(6, 12))
   const pmCode = Math.max(...codes.slice(12, 18))
-  return { am: wmoEmoji(amCode), pm: wmoEmoji(pmCode) }
+  const tMax = Math.round(data.daily.temperature_2m_max[0])
+  const tMin = Math.round(data.daily.temperature_2m_min[0])
+  return { am: wmoEmoji(amCode), pm: wmoEmoji(pmCode), tMax, tMin }
 }
 
 function ScanIcon({ size = 48, color = '#333' }) {
@@ -67,6 +70,11 @@ function Clock({ weather }) {
           <div className={styles.weatherBox}>
             <span className={styles.weatherItem}><span className={styles.weatherLabel}>午前</span>{weather.am}</span>
             <span className={styles.weatherItem}><span className={styles.weatherLabel}>午後</span>{weather.pm}</span>
+            <span className={styles.weatherTemp}>
+              <span className={styles.weatherTempHigh}>{weather.tMax}°</span>
+              <span className={styles.weatherTempSep}>/</span>
+              <span className={styles.weatherTempLow}>{weather.tMin}°</span>
+            </span>
           </div>
         )}
       </div>
