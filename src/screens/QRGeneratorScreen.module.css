@@ -70,6 +70,29 @@
   gap: 12px;
 }
 
+/* ── カード＋印刷ボタンのラッパー ── */
+.cardWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.singlePrintBtn {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #c8d6e5;
+  border-radius: 6px;
+  background: #f4f7fb;
+  color: #1a3f6f;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.singlePrintBtn:active {
+  background: #e0eaf5;
+}
+
 /* ── 個別カード ── */
 .card {
   background: #fff;
@@ -153,11 +176,12 @@
     gap: 6mm;
   }
 
+  .singlePrintBtn { display: none; }
+
   .card {
     border-radius: 4px;
     border: 1px solid #c0c8d4;
     box-shadow: none;
-    /* A4(190mm usable) / 2col - gap = 約90mm幅, 高さ55mm(クレジットカード比率) */
     height: 55mm;
     break-inside: avoid;
     page-break-inside: avoid;
