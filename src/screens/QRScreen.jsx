@@ -165,18 +165,11 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       <div className={styles.scannerWrap}>
         <div id="qr-reader" className={styles.scanner} ref={scannerRef} />
         {/* ガイド枠 */}
-        <svg className={styles.scanGuide} viewBox="0 0 100 100" preserveAspectRatio="none">
-          {/* 暗い外側マスク */}
-          <path
-            fillRule="evenodd"
-            fill="rgba(0,0,0,0.45)"
-            d="M0,0 H100 V100 H0 Z M22,22 H78 V78 H22 Z"
-          />
-          {/* コーナーブラケット */}
-          <path d="M22,34 L22,22 L34,22" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-          <path d="M66,22 L78,22 L78,34" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-          <path d="M22,66 L22,78 L34,78" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-          <path d="M66,78 L78,78 L78,66" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+        <svg className={styles.scanGuide} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+          <path d="M25,35 L25,25 L35,25" stroke="white" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+          <path d="M65,25 L75,25 L75,35" stroke="white" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+          <path d="M25,65 L25,75 L35,75" stroke="white" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+          <path d="M65,75 L75,75 L75,65" stroke="white" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
         </svg>
         {!scanning && !error && (
           <div className={styles.loading}>
