@@ -86,7 +86,7 @@ export default function ModeSelectScreen({ onSelect }) {
           <button
             type="button"
             className={`${styles.modeBtn} ${styles.clockCheck}`}
-            onClick={() => onSelect('確認')}
+            onMouseDown={() => onSelect('確認')}
           >
             <span className={styles.scanHintText}>勤務確認</span>
           </button>

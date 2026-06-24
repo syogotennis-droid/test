@@ -36,7 +36,7 @@ export default function App() {
 
   function handleModeSelect(selectedMode) {
     setMode(selectedMode)
-    requestAnimationFrame(() => setState(STATE.QR))
+    setState(STATE.QR)
   }
 
   async function handleUserScanned(user) {
