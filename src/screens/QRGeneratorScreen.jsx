@@ -19,10 +19,12 @@ const CARD_CSS = `
     align-items: center; justify-content: center;
     border: 0.3mm solid #ccc;
     vertical-align: top;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .id { position: absolute; top: 4mm; left: 5mm; font-size: 10pt; font-weight: 700; color: #1a5fa8; letter-spacing: 0.04em; }
-  .qr { width: 36mm; height: 36mm; }
-  .name { margin-top: 2mm; font-size: 20pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
+  .qr { width: 34mm; height: 34mm; }
+  .name { margin-top: 1mm; font-size: 20pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
 `
 
 function cardHtml(user) {
@@ -36,13 +38,18 @@ function cardHtml(user) {
 function openPrintWindow(users) {
   const isSingle = users.length === 1
   const win = window.open('', '_blank', 'width=700,height=500')
+
+  const pageStyle = isSingle
+    ? `@page { size: 91mm 55mm; margin: 0; }
+       html, body { width: 91mm; height: 55mm; overflow: hidden; }`
+    : `@page { margin: 8mm; }
+       body { margin: 0; }
+       .wrap { display: grid; grid-template-columns: repeat(auto-fill, 91mm); gap: 3mm; }`
+
   win.document.write(`<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  ${isSingle
-    ? `@page { size: 91mm 55mm; margin: 0; } body { margin: 0; }`
-    : `@page { margin: 10mm; } body { margin: 0; } .wrap { display: flex; flex-wrap: wrap; gap: 4mm; }`
-  }
+  ${pageStyle}
   ${CARD_CSS}
 </style>
 </head><body>
