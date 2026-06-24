@@ -9,16 +9,16 @@ function QRImage({ value, size = 200 }) {
   return <img src={QR_API(value, size)} alt={value} width={size} height={size} />
 }
 
-const CARD_STYLE = `
-  @page { size: 91mm 55mm; margin: 0; }
+const CARD_CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: sans-serif; background: #fff; }
   .card {
     width: 91mm; height: 55mm;
     position: relative;
-    display: flex; flex-direction: column;
+    display: inline-flex; flex-direction: column;
     align-items: center; justify-content: center;
-    page-break-after: always; break-after: page;
+    border: 0.3mm solid #ccc;
+    vertical-align: top;
   }
   .id { position: absolute; top: 4mm; left: 5mm; font-size: 10pt; font-weight: 700; color: #1a5fa8; letter-spacing: 0.04em; }
   .qr { width: 36mm; height: 36mm; }
@@ -34,10 +34,23 @@ function cardHtml(user) {
 }
 
 function openPrintWindow(users) {
+  const isSingle = users.length === 1
   const win = window.open('', '_blank', 'width=700,height=500')
   win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>${CARD_STYLE}</style></head>
-<body>${users.map(cardHtml).join('')}</body></html>`)
+<html><head><meta charset="utf-8">
+<style>
+  ${isSingle
+    ? `@page { size: 91mm 55mm; margin: 0; } body { margin: 0; }`
+    : `@page { margin: 10mm; } body { margin: 0; } .wrap { display: flex; flex-wrap: wrap; gap: 4mm; }`
+  }
+  ${CARD_CSS}
+</style>
+</head><body>
+${isSingle
+    ? cardHtml(users[0])
+    : `<div class="wrap">${users.map(cardHtml).join('')}</div>`
+  }
+</body></html>`)
   win.document.close()
   win.onload = () => { win.focus(); win.print(); win.close() }
 }
