@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { getTodayStatuses, getUsers } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
@@ -43,18 +43,6 @@ function Clock() {
 
 export default function ModeSelectScreen({ onSelect }) {
   const [checkedInCount, setCheckedInCount] = useState(0)
-  const confirmBtnRef = useRef(null)
-  const onSelectRef = useRef(onSelect)
-  useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
-
-  // Android WebView では onClick が発火しない場合があるため native touchstart を使用
-  useEffect(() => {
-    const btn = confirmBtnRef.current
-    if (!btn) return
-    const handler = () => onSelectRef.current('確認')
-    btn.addEventListener('touchstart', handler, { passive: true })
-    return () => btn.removeEventListener('touchstart', handler)
-  }, [])
 
   useEffect(() => {
     async function fetchCount() {
@@ -77,7 +65,7 @@ export default function ModeSelectScreen({ onSelect }) {
       {/* メインエリア */}
       <div className={styles.main}>
 
-        {/* 出勤・退勤ボタン */}
+        {/* 出勤・退勤・確認ボタン（同じ構造） */}
         <div className={styles.mainBtns}>
           <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
             <div className={styles.iconCircle}>
@@ -91,27 +79,20 @@ export default function ModeSelectScreen({ onSelect }) {
             </div>
             <span className={styles.modeLabel}>退勤</span>
           </button>
+          <button className={`${styles.modeBtn} ${styles.clockCheck}`} onClick={() => onSelect('確認')}>
+            <div className={styles.iconCircle}>
+              <ScanIcon size={76} color="#374151" />
+            </div>
+            <span className={styles.modeLabel}>確認</span>
+          </button>
         </div>
 
-        {/* 下部ステータスパネル */}
-        <div className={styles.bottomPanel}>
-          <button
-            ref={confirmBtnRef}
-            type="button"
-            className={styles.confirmBtn}
-            onClick={() => onSelect('確認')}
-          >
-            <div className={styles.iconCircleSmall}>
-              <ScanIcon size={36} color="#555" />
-            </div>
-            <span className={styles.scanHintText}>勤務確認</span>
-          </button>
-          <div className={styles.statusPanel}>
-            <span className={styles.statusIconLarge}>👥</span>
-            <div>
-              <div className={styles.statusLabel}>本日の状況</div>
-              <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
-            </div>
+        {/* 下部ステータスバー */}
+        <div className={styles.statusBar}>
+          <span className={styles.statusIconLarge}>👥</span>
+          <div>
+            <div className={styles.statusLabel}>本日の状況</div>
+            <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
           </div>
         </div>
 
