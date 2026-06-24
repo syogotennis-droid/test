@@ -88,9 +88,6 @@ export default function ModeSelectScreen({ onSelect }) {
             className={`${styles.modeBtn} ${styles.clockCheck}`}
             onClick={() => onSelect('確認')}
           >
-            <div className={styles.iconCircleSmall}>
-              <ScanIcon size={36} color="#fff" />
-            </div>
             <span className={styles.scanHintText}>勤務確認</span>
           </button>
           <div className={styles.statusPanel}>
