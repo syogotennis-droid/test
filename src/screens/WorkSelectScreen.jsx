@@ -357,6 +357,11 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                   )}
                   <div className={styles.workCardInner}>
                     <div className={styles.workLabel}>{id}</div>
+                    {active && (
+                      <div className={styles.workCardTime}>
+                        {fmtMinutes((workTimes[id]?.h ?? 0) * 60 + (workTimes[id]?.m ?? 0))}
+                      </div>
+                    )}
                   </div>
                   <div className={styles.workCardBar} style={{ background: meta.barColor }} />
                 </div>
@@ -383,7 +388,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
                   {activeMember && (
                     <div className={styles.workCardSub}>
                       {members.filter(m => isActive(m)).map(m => (
-                        <span key={m}>{variantLabel(key, m)}</span>
+                        <span key={m}>{variantLabel(key, m)}: {fmtMinutes((workTimes[m]?.h ?? 0) * 60 + (workTimes[m]?.m ?? 0))}</span>
                       ))}
                     </div>
                   )}

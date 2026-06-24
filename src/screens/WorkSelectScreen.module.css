@@ -474,6 +474,14 @@
   cursor: default;
 }
 
+/* ── カード内時間表示 ── */
+.workCardTime {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #34a36f;
+  margin-top: 4px;
+}
+
 /* ── グループカード サブ表示 ── */
 .workCardSub {
   display: flex;
