@@ -111,16 +111,166 @@
   text-align: center;
 }
 
-.backBtn {
+/* ── 下部ボタン行 ── */
+.bottomBtns {
+  display: flex;
+  gap: 12px;
   width: 100%;
   max-width: 360px;
+}
+
+.backBtn {
+  flex: 1;
   height: 60px;
   background: var(--color-white);
   border: 2px solid var(--color-border);
   border-radius: var(--radius);
   color: var(--color-text);
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 500;
   cursor: pointer;
   box-shadow: var(--shadow);
+}
+
+.pinBtn {
+  flex: 1;
+  height: 60px;
+  background: #1a5fa8;
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+/* ── PINオーバーレイ ── */
+.pinOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.pinBox {
+  background: #fff;
+  border-radius: 20px;
+  padding: 28px 24px 24px;
+  width: min(380px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pinHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.pinIcon { font-size: 1.6rem; }
+
+.pinTitle {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #1a3f6f;
+}
+
+.pinDots {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  min-height: 24px;
+}
+
+.pinDot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #9baab8;
+  background: transparent;
+  transition: background 0.1s;
+}
+
+.pinDotFilled {
+  background: #1a5fa8;
+  border-color: #1a5fa8;
+}
+
+.pinError {
+  text-align: center;
+  color: #dc2626;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.pinGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.pinKey {
+  height: 64px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.pinKey:active { background: #dbeafe; }
+
+.pinKeyDel {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.pinKeyEmpty {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.pinActions {
+  display: flex;
+  gap: 10px;
+}
+
+.pinCancel {
+  flex: 1;
+  height: 52px;
+  border: 2px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
+  color: #374151;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pinOk {
+  flex: 2;
+  height: 52px;
+  border: none;
+  border-radius: 12px;
+  background: #1a5fa8;
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pinOk:disabled {
+  background: #9baab8;
+  cursor: not-allowed;
 }

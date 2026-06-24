@@ -999,6 +999,7 @@ const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当'].inclu
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [step, setStep] = useState('main')
   const [name, setName] = useState(user.name)
+  const [pin, setPin] = useState(user.pin || '')
   const [workItems, setWorkItems] = useState(user.workItems || [])
   const [itemRates, setItemRates] = useState(() => {
     const r = {}
@@ -1076,12 +1077,17 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
 
   async function handleSaveName() {
     if (!name.trim()) return
-    await upsertUser({ id: user.id, name: name.trim(), workItems, itemRates: buildItemRates() })
+    await upsertUser({ id: user.id, name: name.trim(), workItems, itemRates: buildItemRates(), pin })
+    onSaved()
+  }
+
+  async function handleSavePin() {
+    await upsertUser({ id: user.id, name: user.name, workItems, itemRates: buildItemRates(), pin })
     onSaved()
   }
 
   async function handleSaveItems() {
-    await upsertUser({ id: user.id, name: name || user.name, workItems, itemRates: buildItemRates() })
+    await upsertUser({ id: user.id, name: name || user.name, workItems, itemRates: buildItemRates(), pin })
     onSaved()
   }
 
@@ -1119,6 +1125,29 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                 disabled={!name.trim() || name.trim() === user.name}
               >
                 名前を保存
+              </button>
+            </div>
+
+            <hr className={styles.modalDivider} />
+
+            {/* PIN設定 */}
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>PINコード</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={8}
+                placeholder="未設定（数字のみ）"
+                value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+                className={styles.filterInput}
+              />
+              <div className={styles.formHint}>未入力の場合はPINで打刻できません</div>
+            </div>
+            <div className={styles.modalActions}>
+              <button className={styles.saveBtn} onClick={handleSavePin}>
+                PINを保存
               </button>
             </div>
 

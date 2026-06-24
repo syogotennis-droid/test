@@ -1079,3 +1079,9 @@
 .calIn  { font-size: 1rem; color: #2e7d32; font-weight: bold; }
 .calSpacer { height: 0.8em; }
 .calOut { font-size: 1rem; color: #c62828; font-weight: bold; }
+
+.formHint {
+  font-size: 0.82rem;
+  color: var(--color-subtext, #888);
+  margin-top: 4px;
+}

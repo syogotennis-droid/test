@@ -131,6 +131,15 @@ export async function resolveUser(qrValue) {
   return { id: d.id, ...d.data() }
 }
 
+export async function resolveUserByPin(pin) {
+  if (!pin) return null
+  const q = query(collection(db, 'users'), where('pin', '==', pin))
+  const snap = await getDocs(q)
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() }
+}
+
 export async function saveLog({ userId, workType, workItems, logType, transportCount }) {
   const now = new Date()
   const timestamp = now.toISOString()
