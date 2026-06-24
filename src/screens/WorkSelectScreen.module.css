@@ -473,3 +473,113 @@
   border-color: transparent;
   cursor: default;
 }
+
+/* ── グループカード サブ表示 ── */
+.workCardSub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  justify-content: center;
+}
+
+.workCardSub span {
+  font-size: 0.75rem;
+  background: rgba(255,255,255,0.6);
+  border-radius: 20px;
+  padding: 1px 8px;
+  color: #2f2f35;
+}
+
+/* ── サブ選択モーダル ── */
+.subPickerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.subPickerBox {
+  background: #fff;
+  border-radius: 20px;
+  padding: 24px 20px 20px;
+  width: min(340px, 88vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.subPickerTitle {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  text-align: center;
+}
+
+.subPickerList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subPickerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subPickerItem {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  cursor: pointer;
+}
+
+.subPickerItemActive {
+  border-color: #41b883;
+  background: #e8f8f0;
+  color: #1a5f3f;
+}
+
+.subPickerTime {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #34a36f;
+  margin-left: 8px;
+}
+
+.subPickerClear {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.subPickerCancel {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
+  color: #374151;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}

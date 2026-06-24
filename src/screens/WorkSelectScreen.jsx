@@ -27,11 +27,50 @@ const ITEM_META = {
   '事務':        { icon: '📋', circleColor: '#eef1f5', barColor: '#9baab8' },
 }
 
-function getDisplayItems(userWorkItems) {
+const ITEM_GROUPS = {
+  'スイム':  ['スイム', 'スイム短期', 'スイム成人', 'スイムベビー'],
+  'フロント': ['フロント', 'フロント短期'],
+  '監視':    ['監視', '監視短期'],
+}
+
+function variantLabel(groupKey, member) {
+  if (member === groupKey) return '通常'
+  return member.replace(groupKey, '').trim()
+}
+
+function getDisplayCards(userWorkItems) {
   const base = (userWorkItems && userWorkItems.length > 0) ? userWorkItems : LEGACY_ITEMS
   const filtered = base.filter(item => !CLOCK_OUT_HIDDEN.has(item))
   if (!filtered.includes('休憩')) filtered.push('休憩')
-  return filtered
+
+  const cards = []
+  const used = new Set()
+  const doneGroups = new Set()
+
+  for (const item of filtered) {
+    if (used.has(item)) continue
+    let pushed = false
+    for (const [groupKey, groupMembers] of Object.entries(ITEM_GROUPS)) {
+      if (!doneGroups.has(groupKey) && groupMembers.includes(item)) {
+        const matching = groupMembers.filter(m => filtered.includes(m))
+        if (matching.length > 1) {
+          cards.push({ type: 'group', key: groupKey, members: matching })
+          matching.forEach(m => used.add(m))
+        } else {
+          cards.push({ type: 'single', id: item })
+          used.add(item)
+        }
+        doneGroups.add(groupKey)
+        pushed = true
+        break
+      }
+    }
+    if (!pushed) {
+      cards.push({ type: 'single', id: item })
+      used.add(item)
+    }
+  }
+  return cards
 }
 
 function ScanIcon({ size = 48, color = '#fff' }) {
@@ -191,15 +230,48 @@ function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTim
   )
 }
 
+function SubPickerModal({ groupKey, members, workTimes, onSelect, onClear, onClose }) {
+  return (
+    <div className={styles.subPickerOverlay} onClick={onClose}>
+      <div className={styles.subPickerBox} onClick={e => e.stopPropagation()}>
+        <div className={styles.subPickerTitle}>{groupKey}</div>
+        <div className={styles.subPickerList}>
+          {members.map(m => {
+            const t = workTimes[m]
+            const active = t && (t.h > 0 || t.m > 0)
+            return (
+              <div key={m} className={styles.subPickerRow}>
+                <button
+                  className={[styles.subPickerItem, active ? styles.subPickerItemActive : ''].join(' ')}
+                  onClick={() => onSelect(m)}
+                >
+                  <span>{variantLabel(groupKey, m)}</span>
+                  {active && <span className={styles.subPickerTime}>{fmtMinutes(t.h * 60 + t.m)}</span>}
+                </button>
+                {active && (
+                  <button className={styles.subPickerClear} onClick={() => onClear(m)}>×</button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <button className={styles.subPickerCancel} onClick={onClose}>閉じる</button>
+      </div>
+    </div>
+  )
+}
+
 export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [workTimes, setWorkTimes] = useState({})
   const [saving, setSaving] = useState(false)
   const [workingMinutes, setWorkingMinutes] = useState(null)
   const [timeError, setTimeError] = useState('')
   const [editingItem, setEditingItem] = useState(null)
+  const [subPickerGroup, setSubPickerGroup] = useState(null)
   const clockOutRef = useRef(new Date())
 
-  const displayItems = getDisplayItems(user.workItems)
+  const displayCards = getDisplayCards(user.workItems)
+  const allFlatItems = displayCards.flatMap(c => c.type === 'single' ? [c.id] : c.members)
 
   useEffect(() => {
     getClockInTime(user.id).then(log => {
@@ -231,7 +303,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
     setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
   }
 
-  const activeItems = displayItems.filter(id => isActive(id))
+  const activeItems = allFlatItems.filter(id => isActive(id))
 
   const totalInputMinutes = activeItems.reduce((sum, id) => {
     const t = workTimes[id] || { h: 0, m: 0 }
@@ -269,20 +341,52 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
         {/* 作業カード */}
         <div className={styles.workGrid}>
-          {displayItems.map(id => {
-            const meta = ITEM_META[id] || { icon: '📝', circleColor: '#eef1f5', barColor: '#9baab8' }
-            const active = isActive(id)
+          {displayCards.map(card => {
+            if (card.type === 'single') {
+              const id = card.id
+              const meta = ITEM_META[id] || { barColor: '#9baab8' }
+              const active = isActive(id)
+              return (
+                <div
+                  key={id}
+                  className={[styles.workCard, active ? styles.workCardActive : ''].join(' ')}
+                  onClick={() => handleCardTap(id)}
+                >
+                  {active && (
+                    <button className={styles.clearBtn} onClick={e => handleClear(id, e)}>×</button>
+                  )}
+                  <div className={styles.workCardInner}>
+                    <div className={styles.workLabel}>{id}</div>
+                  </div>
+                  <div className={styles.workCardBar} style={{ background: meta.barColor }} />
+                </div>
+              )
+            }
+            // type === 'group'
+            const { key, members } = card
+            const activeMember = members.find(m => isActive(m))
+            const meta = ITEM_META[key] || { barColor: '#9baab8' }
             return (
               <div
-                key={id}
-                className={[styles.workCard, active ? styles.workCardActive : ''].join(' ')}
-                onClick={() => handleCardTap(id)}
+                key={key}
+                className={[styles.workCard, activeMember ? styles.workCardActive : ''].join(' ')}
+                onClick={() => setSubPickerGroup(card)}
               >
-                {active && (
-                  <button className={styles.clearBtn} onClick={e => handleClear(id, e)}>×</button>
+                {activeMember && (
+                  <button
+                    className={styles.clearBtn}
+                    onClick={e => { e.stopPropagation(); members.forEach(m => handleClear(m, { stopPropagation: () => {} })) }}
+                  >×</button>
                 )}
                 <div className={styles.workCardInner}>
-                  <div className={styles.workLabel}>{id}</div>
+                  <div className={styles.workLabel}>{key}</div>
+                  {activeMember && (
+                    <div className={styles.workCardSub}>
+                      {members.filter(m => isActive(m)).map(m => (
+                        <span key={m}>{variantLabel(key, m)}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className={styles.workCardBar} style={{ background: meta.barColor }} />
               </div>
@@ -316,6 +420,23 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
       </div>
 
+      {/* サブ選択モーダル（グループカードタップ時） */}
+      {subPickerGroup && (
+        <SubPickerModal
+          groupKey={subPickerGroup.key}
+          members={subPickerGroup.members}
+          workTimes={workTimes}
+          onSelect={id => {
+            setSubPickerGroup(null)
+            handleCardTap(id)
+          }}
+          onClear={id => {
+            setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
+          }}
+          onClose={() => setSubPickerGroup(null)}
+        />
+      )}
+
       {/* 時間入力モーダル */}
       {editingItem && (
         <TimeInputModal
@@ -327,7 +448,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           onClose={() => setEditingItem(null)}
         />
       )}
-
 
     </div>
   )
