@@ -91,6 +91,7 @@
   border-radius: 10px 0 0 10px;
   border-right: 1px solid #d6d9de;
   gap: 16px;
+  touch-action: manipulation;
 }
 
 /* ── ボタン内・白丸アイコン ── */
@@ -120,6 +121,7 @@
   border-radius: 10px;
   border: 1px solid #d6d9de;
   display: flex;
+  touch-action: manipulation;
 }
 
 /* 下部左：勤務確認ボタン（出退勤と同じ.modeBtnクラス使用） */
