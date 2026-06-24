@@ -24,13 +24,19 @@ function Clock() {
     const t = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
-  const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-  const date = now.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+
+  const time     = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+  const year     = now.toLocaleDateString('ja-JP', { year: 'numeric' })
+  const monthDay = now.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })
+
   return (
-    <div className={styles.clockBox}>
+    <>
       <div className={styles.clockTime}>{time}</div>
-      <div className={styles.clockDate}>{date}</div>
-    </div>
+      <div className={styles.dateBox}>
+        <div className={styles.dateYear}>{year}</div>
+        <div className={styles.dateMonthDay}>{monthDay}</div>
+      </div>
+    </>
   )
 }
 
@@ -52,12 +58,6 @@ export default function ModeSelectScreen({ onSelect }) {
 
       {/* ヘッダー */}
       <div className={styles.header}>
-        <div className={styles.headerLeft}>
-          <div className={styles.headerIconBox}>
-            <ScanIcon size={30} color="#41b883" />
-          </div>
-          <span className={styles.headerTitle}>QR勤怠システム</span>
-        </div>
         <Clock />
       </div>
 

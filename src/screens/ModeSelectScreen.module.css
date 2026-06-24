@@ -10,57 +10,39 @@
 
 /* ── ヘッダー ── */
 .header {
-  padding: 0 32px;
+  padding: 0 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(90deg, #41b883, #55c494);
-}
-
-.headerLeft {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.headerIconBox {
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
   background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.headerTitle {
-  font-size: 32px;
-  font-weight: 800;
-  color: #fff;
-  line-height: 1;
-}
-
-.clockBox {
-  background: #fff;
-  border-radius: 12px;
-  padding: 10px 20px;
-  text-align: center;
-  flex-shrink: 0;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .clockTime {
-  font-size: 36px;
-  font-weight: 800;
-  color: #2f2f35;
+  font-size: 80px;
+  font-weight: 900;
+  color: #1a1a2e;
   line-height: 1;
+  letter-spacing: -0.02em;
 }
 
-.clockDate {
-  font-size: 20px;
+.dateBox {
+  text-align: right;
+}
+
+.dateYear {
+  font-size: 18px;
   font-weight: 600;
-  color: #6b7280;
-  margin-top: 5px;
+  color: #9ca3af;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.dateMonthDay {
+  font-size: 32px;
+  font-weight: 800;
+  color: #374151;
+  line-height: 1;
   white-space: nowrap;
 }
 
