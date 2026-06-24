@@ -71,13 +71,17 @@ export default function TabletApp() {
   }
 
   function handleModeSelect(selectedMode) {
-    if (selectedMode === '確認') return
     setMode(selectedMode)
     setState(STATE.QR)
   }
 
   async function handleUserScanned(user) {
     try {
+      if (mode === '確認') {
+        setCurrentUser(user)
+        setState(STATE.CHECK)
+        return
+      }
       if (mode === '出勤') {
         const alreadyIn = await isCheckedIn(user.id)
         if (alreadyIn) {
