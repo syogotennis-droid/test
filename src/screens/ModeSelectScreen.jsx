@@ -84,6 +84,7 @@ export default function ModeSelectScreen({ onSelect }) {
         {/* 下部ステータスパネル */}
         <div className={styles.bottomPanel}>
           <button
+            type="button"
             className={styles.confirmBtn}
             onClick={() => onSelect('確認')}
           >

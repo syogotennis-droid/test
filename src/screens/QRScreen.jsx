@@ -90,7 +90,13 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
 
   useEffect(() => {
     const qrId = 'qr-reader'
-    const qr = new Html5Qrcode(qrId)
+    let qr
+    try {
+      qr = new Html5Qrcode(qrId)
+    } catch (err) {
+      setError('カメラを初期化できませんでした。\nPINで入力してください。\n(' + (err?.message || String(err)) + ')')
+      return
+    }
     instanceRef.current = qr
 
     const config = {
@@ -114,9 +120,9 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
         console.error(err)
         const msg = err?.message || ''
         if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
-          setError('カメラへのアクセスが許可されていません。\nブラウザのアドレスバー横のアイコンからカメラを許可してください。')
+          setError('カメラへのアクセスが許可されていません。\nPINで入力するか、ブラウザのカメラ権限を確認してください。')
         } else {
-          setError(`カメラを起動できませんでした。\nページを再読み込みしてお試しください。\n(${msg})`)
+          setError(`カメラを起動できませんでした。\nPINで入力するか、ページを再読み込みしてください。\n(${msg})`)
         }
       })
 
