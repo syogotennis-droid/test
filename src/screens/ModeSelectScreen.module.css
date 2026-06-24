@@ -11,9 +11,9 @@
 /* ── ヘッダー ── */
 .header {
   padding: 0 36px;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
 }
@@ -25,7 +25,6 @@
   line-height: 1;
   letter-spacing: -0.02em;
   text-align: right;
-  justify-self: end;
 }
 
 .dateBox {
@@ -48,42 +47,6 @@
   white-space: nowrap;
 }
 
-.weatherBox {
-  display: flex;
-  flex-direction: row;
-  gap: 20px;
-  align-items: center;
-  justify-content: center;
-}
-
-.weatherItem {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-size: 52px;
-  line-height: 1;
-}
-
-.weatherLabel {
-  font-size: 16px;
-  font-weight: 600;
-  color: #9ca3af;
-  white-space: nowrap;
-}
-
-.weatherTemp {
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.weatherTempHigh { color: #e05c2a; }
-.weatherTempSep  { color: #9ca3af; font-weight: 400; }
-.weatherTempLow  { color: #3b82f6; }
 
 /* ── メインエリア ── */
 .main {
