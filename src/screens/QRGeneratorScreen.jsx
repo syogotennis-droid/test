@@ -36,27 +36,17 @@ function cardHtml(user) {
 }
 
 function openPrintWindow(users) {
-  const isSingle = users.length === 1
   const win = window.open('', '_blank', 'width=700,height=500')
-
-  const pageStyle = isSingle
-    ? `@page { size: 91mm 55mm; margin: 0; }
-       html, body { width: 91mm; height: 55mm; overflow: hidden; }`
-    : `@page { margin: 8mm; }
-       body { margin: 0; }
-       .wrap { display: grid; grid-template-columns: repeat(auto-fill, 91mm); gap: 3mm; }`
-
   win.document.write(`<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  ${pageStyle}
+  @page { margin: 8mm; }
+  body { margin: 0; }
+  .wrap { display: grid; grid-template-columns: repeat(auto-fill, 91mm); gap: 3mm; }
   ${CARD_CSS}
 </style>
 </head><body>
-${isSingle
-    ? cardHtml(users[0])
-    : `<div class="wrap">${users.map(cardHtml).join('')}</div>`
-  }
+<div class="wrap">${users.map(cardHtml).join('')}</div>
 </body></html>`)
   win.document.close()
   win.onload = () => { win.focus(); win.print(); win.close() }
