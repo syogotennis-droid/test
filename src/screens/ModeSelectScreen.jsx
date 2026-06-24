@@ -51,11 +51,8 @@ export default function ModeSelectScreen({ onSelect }) {
   useEffect(() => {
     const btn = confirmBtnRef.current
     if (!btn) return
-    const handler = (e) => {
-      e.preventDefault()
-      onSelectRef.current('確認')
-    }
-    btn.addEventListener('touchstart', handler, { passive: false })
+    const handler = () => onSelectRef.current('確認')
+    btn.addEventListener('touchstart', handler, { passive: true })
     return () => btn.removeEventListener('touchstart', handler)
   }, [])
 

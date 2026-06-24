@@ -110,12 +110,13 @@
   background: #fff;
   border-radius: 10px;
   border: 1px solid #d6d9de;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
 }
 
 /* 下部左：勤務確認ボタン */
 .confirmBtn {
+  flex: 0 0 50%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -127,7 +128,6 @@
   -webkit-tap-highlight-color: transparent;
   transition: background 0.08s;
   border-radius: 10px 0 0 10px;
-  min-height: 0;
 }
 
 .confirmBtn:active {
@@ -153,6 +153,7 @@
 
 /* 下部右：本日の状況 */
 .statusPanel {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
