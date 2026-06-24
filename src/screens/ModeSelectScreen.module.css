@@ -51,15 +51,15 @@
 /* ── メインエリア ── */
 .main {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 90px;
+  grid-template-rows: minmax(0, 1fr) 120px;
   gap: 16px;
   padding: 20px 42px 56px;
 }
 
-/* ── 出勤・退勤・確認ボタングリッド ── */
+/* ── 出勤・退勤ボタングリッド ── */
 .mainBtns {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 28px;
   min-height: 0;
 }
@@ -81,14 +81,22 @@
 
 .modeBtn:active { transform: scale(0.98); }
 
-.clockIn    { background: #16a34a; }
-.clockOut   { background: #dc2626; }
-.clockCheck { background: #374151; }
+.clockIn  { background: #16a34a; }
+.clockOut { background: #dc2626; }
+
+.clockCheck {
+  flex: 0 0 50%;
+  height: 100%;
+  background: #374151;
+  border-radius: 10px 0 0 10px;
+  border-right: 1px solid #d6d9de;
+  gap: 16px;
+}
 
 /* ── ボタン内・白丸アイコン ── */
 .iconCircle {
-  width: 130px;
-  height: 130px;
+  width: 150px;
+  height: 150px;
   border-radius: 9999px;
   background: #fff;
   display: flex;
@@ -97,19 +105,43 @@
   flex-shrink: 0;
 }
 
-/* ── 出勤・退勤・確認テキスト ── */
+/* ── 出勤・退勤テキスト ── */
 .modeLabel {
-  font-size: 56px;
+  font-size: 64px;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.04em;
 }
 
-/* ── 下部ステータスバー ── */
-.statusBar {
+/* ── 下部ステータスパネル ── */
+.bottomPanel {
+  height: 120px;
   background: #fff;
   border-radius: 10px;
   border: 1px solid #d6d9de;
+  display: flex;
+}
+
+/* 下部左：勤務確認ボタン（出退勤と同じ.modeBtnクラス使用） */
+.iconCircleSmall {
+  width: 68px;
+  height: 68px;
+  border-radius: 9999px;
+  background: rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.scanHintText {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+/* 下部右：本日の状況 */
+.statusPanel {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -117,18 +149,18 @@
 }
 
 .statusIconLarge {
-  font-size: 44px;
+  font-size: 54px;
   line-height: 1;
 }
 
 .statusLabel {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
   color: #6b7280;
 }
 
 .statusValue {
-  font-size: 32px;
+  font-size: 38px;
   font-weight: 900;
   color: #111827;
   line-height: 1;

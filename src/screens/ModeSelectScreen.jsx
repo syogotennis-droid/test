@@ -65,7 +65,7 @@ export default function ModeSelectScreen({ onSelect }) {
       {/* メインエリア */}
       <div className={styles.main}>
 
-        {/* 出勤・退勤・確認ボタン（同じ構造） */}
+        {/* 出勤・退勤ボタン */}
         <div className={styles.mainBtns}>
           <button className={`${styles.modeBtn} ${styles.clockIn}`} onClick={() => onSelect('出勤')}>
             <div className={styles.iconCircle}>
@@ -79,20 +79,26 @@ export default function ModeSelectScreen({ onSelect }) {
             </div>
             <span className={styles.modeLabel}>退勤</span>
           </button>
-          <button className={`${styles.modeBtn} ${styles.clockCheck}`} onClick={() => onSelect('確認')}>
-            <div className={styles.iconCircle}>
-              <ScanIcon size={76} color="#374151" />
-            </div>
-            <span className={styles.modeLabel}>確認</span>
-          </button>
         </div>
 
-        {/* 下部ステータスバー */}
-        <div className={styles.statusBar}>
-          <span className={styles.statusIconLarge}>👥</span>
-          <div>
-            <div className={styles.statusLabel}>本日の状況</div>
-            <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
+        {/* 下部ステータスパネル */}
+        <div className={styles.bottomPanel}>
+          <button
+            type="button"
+            className={`${styles.modeBtn} ${styles.clockCheck}`}
+            onClick={() => onSelect('確認')}
+          >
+            <div className={styles.iconCircleSmall}>
+              <ScanIcon size={36} color="#fff" />
+            </div>
+            <span className={styles.scanHintText}>勤務確認</span>
+          </button>
+          <div className={styles.statusPanel}>
+            <span className={styles.statusIconLarge}>👥</span>
+            <div>
+              <div className={styles.statusLabel}>本日の状況</div>
+              <div className={styles.statusValue}>出勤中 {checkedInCount}名</div>
+            </div>
           </div>
         </div>
 
