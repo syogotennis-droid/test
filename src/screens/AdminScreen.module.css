@@ -681,8 +681,8 @@
   background: var(--color-white);
   border-radius: 16px;
   padding: 24px;
-  width: min(340px, 92vw);
-  max-height: 85vh;
+  width: min(620px, 96vw);
+  max-height: 90vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1091,4 +1091,157 @@
   color: #dc2626;
   font-weight: 700;
   margin-top: 6px;
+}
+
+/* ── テンキートリガーボタン ── */
+.numpadTrigger {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #d1d5db;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  text-align: left;
+  cursor: pointer;
+}
+
+.numpadTrigger:hover { border-color: #9baab8; }
+
+.numpadTriggerSm {
+  min-width: 72px;
+  padding: 6px 10px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  text-align: center;
+  cursor: pointer;
+}
+
+.numpadTriggerSm:hover { border-color: #9baab8; }
+
+.numpadTriggerXs {
+  min-width: 52px;
+  padding: 6px 8px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  text-align: center;
+  cursor: pointer;
+}
+
+.numpadTriggerXs:hover { border-color: #9baab8; }
+
+.numpadTriggerPlaceholder {
+  color: #9baab8;
+  font-weight: 400;
+}
+
+/* ── テンキーオーバーレイ ── */
+.numpadOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.numpadBox {
+  background: #fff;
+  border-radius: 20px;
+  padding: 24px 20px 20px;
+  width: min(360px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.numpadTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  text-align: center;
+}
+
+.numpadDisplay {
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #1a3f6f;
+  text-align: center;
+  background: #f0f4f8;
+  border-radius: 12px;
+  padding: 12px;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.numpadGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.numpadKey {
+  height: 64px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  cursor: pointer;
+}
+
+.numpadKey:active { background: #dbeafe; }
+
+.numpadDel {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.numpadEmpty {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.numpadActions {
+  display: flex;
+  gap: 10px;
+}
+
+.numpadCancel {
+  flex: 1;
+  height: 52px;
+  border: 2px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
+  color: #374151;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.numpadOk {
+  flex: 2;
+  height: 52px;
+  border: none;
+  border-radius: 12px;
+  background: #1a5fa8;
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
 }

@@ -992,6 +992,48 @@ function UsersTab({ users, today, onRefresh }) {
   )
 }
 
+// ─── NumpadOverlay ────────────────────────────────────────────────────────────
+
+const NUMPAD_KEYS     = ['1','2','3','4','5','6','7','8','9','','0','⌫']
+const NUMPAD_KEYS_DEC = ['1','2','3','4','5','6','7','8','9','.','0','⌫']
+
+function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = false, onConfirm, onClose }) {
+  const [val, setVal] = useState(String(initialValue))
+
+  function pressKey(k) {
+    if (k === '⌫') { setVal(v => v.slice(0, -1)); return }
+    if (k === '') return
+    if (k === '.' && val.includes('.')) return
+    if (val.length >= maxLength) return
+    setVal(v => v + k)
+  }
+
+  const keys = decimal ? NUMPAD_KEYS_DEC : NUMPAD_KEYS
+
+  return (
+    <div className={styles.numpadOverlay} onClick={onClose}>
+      <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
+        <div className={styles.numpadTitle}>{title}</div>
+        <div className={styles.numpadDisplay}>{val || '0'}</div>
+        <div className={styles.numpadGrid}>
+          {keys.map((k, i) => (
+            <button
+              key={i}
+              className={[styles.numpadKey, k === '⌫' ? styles.numpadDel : k === '' ? styles.numpadEmpty : ''].join(' ')}
+              onClick={() => pressKey(k)}
+              disabled={k === ''}
+            >{k}</button>
+          ))}
+        </div>
+        <div className={styles.numpadActions}>
+          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
+          <button className={styles.numpadOk} onClick={() => { onConfirm(val); onClose() }}>OK</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── UserEditModal ────────────────────────────────────────────────────────────
 
 const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当'].includes(p))
@@ -1032,6 +1074,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     return m
   })
   const [dangerOpen, setDangerOpen] = useState(false)
+  const [numpad, setNumpad] = useState(null) // { title, field, item, decimal, maxLength, initialValue }
 
   function toggleWorkItem(item) {
     setWorkItems(prev =>
@@ -1142,17 +1185,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
             {/* PIN設定 */}
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>PINコード</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={8}
-                placeholder="未設定（数字のみ）"
-                value={pin}
-                onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
-                className={styles.filterInput}
-              />
-              <div className={styles.formHint}>数字のみ・最大8桁（未入力の場合はPINで打刻できません）</div>
+              <button
+                className={styles.numpadTrigger}
+                onClick={() => setNumpad({ title: 'PINコード', field: 'pin', maxLength: 8 })}
+              >
+                {pin || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
+              </button>
+              <div className={styles.formHint}>最大8桁（未入力の場合はPINで打刻できません）</div>
               {pinError && <div className={styles.pinErrorMsg}>{pinError}</div>}
             </div>
             <div className={styles.modalActions}>
@@ -1188,42 +1227,33 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                         <div className={styles.itemRateInputs}>
                           {isTransport ? (
                             <div className={styles.rateRow}>
-                              <input
-                                type="number" min="0" placeholder="0"
-                                value={r.amount}
-                                onChange={e => setRate(item, 'amount', e.target.value)}
-                                className={styles.rateInputSm}
-                              />
+                              <button className={styles.numpadTriggerSm}
+                                onClick={() => setNumpad({ title: `${item} 金額`, field: 'amount', item, maxLength: 6 })}>
+                                {r.amount || '0'}
+                              </button>
                               <span className={styles.rateUnit}>円/回</span>
                             </div>
                           ) : (
                             <>
                               <div className={styles.rateRow}>
                                 <span className={styles.rateRowLabel}>時給</span>
-                                <input
-                                  type="number" min="0" placeholder="0"
-                                  value={r.normal}
-                                  onChange={e => setRate(item, 'normal', e.target.value)}
-                                  className={styles.rateInputSm}
-                                />
+                                <button className={styles.numpadTriggerSm}
+                                  onClick={() => setNumpad({ title: `${item} 時給`, field: 'normal', item, maxLength: 6 })}>
+                                  {r.normal || '0'}
+                                </button>
                                 <span className={styles.rateUnit}>円</span>
                               </div>
                               {multipliers[item] != null && (
                                 <div className={styles.rateRow}>
                                   <span className={styles.rateRowLabel}>日曜</span>
                                   <span className={styles.rateMultSign}>×</span>
-                                  <input
-                                    type="number" min="0.01" step="0.01"
-                                    value={multipliers[item]}
-                                    onChange={e => setRate(item, 'multiplier', e.target.value)}
-                                    className={styles.rateInputXs}
-                                  />
-                                  <input
-                                    type="number"
-                                    value={r.sunday}
-                                    readOnly
-                                    className={[styles.rateInputSm, styles.rateInputReadOnly].join(' ')}
-                                  />
+                                  <button className={styles.numpadTriggerXs}
+                                    onClick={() => setNumpad({ title: `${item} 日曜倍率`, field: 'multiplier', item, maxLength: 5, decimal: true })}>
+                                    {multipliers[item] || '1.1'}
+                                  </button>
+                                  <span className={[styles.numpadTriggerSm, styles.rateInputReadOnly].join(' ')}>
+                                    {r.sunday || '0'}
+                                  </span>
                                   <span className={styles.rateUnit}>円</span>
                                 </div>
                               )}
@@ -1307,6 +1337,29 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
             </div>
           </>
         )}
+
+      {numpad && (
+        <NumpadOverlay
+          title={numpad.title}
+          initialValue={
+            numpad.field === 'pin' ? pin
+            : numpad.field === 'multiplier' ? (multipliers[numpad.item] || '')
+            : (itemRates[numpad.item]?.[numpad.field] || '')
+          }
+          maxLength={numpad.maxLength}
+          decimal={!!numpad.decimal}
+          onConfirm={val => {
+            if (numpad.field === 'pin') {
+              setPin(val)
+            } else if (numpad.field === 'multiplier') {
+              setRate(numpad.item, 'multiplier', val)
+            } else {
+              setRate(numpad.item, numpad.field, val)
+            }
+          }}
+          onClose={() => setNumpad(null)}
+        />
+      )}
       </div>
     </div>
   )
