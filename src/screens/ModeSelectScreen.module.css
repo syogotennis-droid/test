@@ -3,7 +3,7 @@
   width: 100vw;
   height: 100dvh;
   display: grid;
-  grid-template-rows: 120px 1fr;
+  grid-template-rows: 86px 1fr;
   background: #f7f8fa;
   overflow: hidden;
 }
@@ -19,7 +19,7 @@
 }
 
 .clockTime {
-  font-size: 80px;
+  font-size: 56px;
   font-weight: 900;
   color: #1a1a2e;
   line-height: 1;
@@ -32,15 +32,15 @@
 }
 
 .dateYear {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 600;
   color: #9ca3af;
   line-height: 1;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .dateMonthDay {
-  font-size: 44px;
+  font-size: 34px;
   font-weight: 800;
   color: #374151;
   line-height: 1;
@@ -86,8 +86,8 @@
 
 /* ── ボタン内・白丸アイコン ── */
 .iconCircle {
-  width: 160px;
-  height: 160px;
+  width: 190px;
+  height: 190px;
   border-radius: 9999px;
   background: #fff;
   display: flex;
@@ -98,7 +98,7 @@
 
 /* ── 出勤・退勤テキスト ── */
 .modeLabel {
-  font-size: 76px;
+  font-size: 88px;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.04em;
