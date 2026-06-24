@@ -49,32 +49,43 @@
   font-weight: bold;
 }
 
-/* ── プレビューエリア ── */
-.preview {
+/* ── カードグリッド（画面表示：元のスタイル） ── */
+.grid {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
-}
-
-.hint {
-  font-size: 0.85rem;
-  color: var(--color-subtext);
-  margin-bottom: 14px;
-  text-align: center;
-}
-
-/* ── カードグリッド（画面表示） ── */
-.grid {
+  padding: 16px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  align-content: start;
 }
 
-/* ── カード＋印刷ボタンのラッパー ── */
 .cardWrap {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow);
+}
+
+.name {
+  font-weight: bold;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.userId {
+  font-size: 0.75rem;
+  color: var(--color-subtext);
 }
 
 .singlePrintBtn {
@@ -93,119 +104,66 @@
   background: #e0eaf5;
 }
 
-/* ── 個別カード ── */
-.card {
-  background: #fff;
-  border: 1.5px solid #d0d7e2;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  overflow: hidden;
-  aspect-ratio: 91 / 55;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-
-/* 左エリア：ID・名前 */
-.cardLeft {
-  flex: 1;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-}
-
-.cardId {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #5b7fa6;
-  letter-spacing: 0.04em;
-}
-
-.cardName {
-  font-size: clamp(1rem, 3vw, 1.6rem);
-  font-weight: 900;
-  color: #1a3f6f;
-  line-height: 1.15;
-  letter-spacing: 0.04em;
-  word-break: break-all;
-}
-
-/* 右エリア：QR */
-.cardRight {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-  background: #fff;
-}
-
-.cardRight img {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-}
-
 /* ═══════════════════════════
-   印刷スタイル
+   一括印刷スタイル
+   （画像と同じレイアウト：左上ID・中央QR大・下に名前）
 ═══════════════════════════ */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 10mm;
+    size: 91mm 55mm;
+    margin: 0;
   }
 
-  .screen {
-    height: auto;
+  .screen { height: auto; overflow: visible; background: #fff; }
+  .header { display: none; }
+  .singlePrintBtn { display: none; }
+
+  .grid {
+    display: block;
+    padding: 0;
     overflow: visible;
+  }
+
+  .cardWrap {
+    width: 91mm;
+    height: 55mm;
+    page-break-after: always;
+    break-after: page;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     background: #fff;
   }
 
-  .header { display: none; }
-  .preview {
-    overflow: visible;
-    padding: 0;
-  }
-  .hint { display: none; }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6mm;
-  }
-
-  .singlePrintBtn { display: none; }
-
   .card {
-    border-radius: 4px;
-    border: 1px solid #c0c8d4;
+    border-radius: 0;
     box-shadow: none;
-    height: 55mm;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    padding: 0;
+    gap: 2mm;
+    background: transparent;
   }
 
-  .cardLeft {
-    padding: 5mm 5mm 5mm 6mm;
-    gap: 3mm;
+  .card img {
+    width: 36mm !important;
+    height: 36mm !important;
   }
 
-  .cardId {
+  .name {
+    font-size: 13pt;
+    font-weight: 900;
+    color: #1a5fa8;
+    letter-spacing: 0.06em;
+  }
+
+  .userId {
+    position: absolute;
+    top: 4mm;
+    left: 5mm;
     font-size: 7pt;
-  }
-
-  .cardName {
-    font-size: 18pt;
-  }
-
-  .cardRight {
-    padding: 4mm;
-  }
-
-  .cardRight img {
-    width: 44mm !important;
-    height: 44mm !important;
+    font-weight: 700;
+    color: #1a5fa8;
+    letter-spacing: 0.04em;
   }
 }
