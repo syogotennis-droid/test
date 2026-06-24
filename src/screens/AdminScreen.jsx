@@ -435,10 +435,8 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   const [logType, setLogType] = useState('出勤')
   const [date, setDate] = useState(today)
   const [time, setTime] = useState(nowTime)
-  // workTimes: { 現場: { on: bool, h: '', m: '' }, ... }
-  const [workTimes, setWorkTimes] = useState(
-    Object.fromEntries(WORK_TYPES.map(t => [t, { on: false, h: '', m: '' }]))
-  )
+  const [workTimes, setWorkTimes] = useState({})
+  const [editingWorkItem, setEditingWorkItem] = useState(null)
   const [clockInTime, setClockInTime] = useState(null) // "HH:MM" from DB
 
   // Fetch 出勤時刻 for selected user+date when logType is 退勤
@@ -458,48 +456,19 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
     return diff > 0 ? diff : null
   }, [clockInTime, time])
 
-  // 入力合計 minutes
-  const totalInputMinutes = WORK_TYPES.reduce((sum, t) => {
-    if (!workTimes[t].on) return sum
-    return sum + (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
-  }, 0)
-
-  function toggleWork(t) {
-    setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], on: !prev[t].on } }))
-  }
-
-  function setWorkH(t, v) {
-    setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], h: v } }))
-  }
-
-  function setWorkM(t, v) {
-    setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], m: v } }))
-  }
-
-  function fillRemaining(t) {
-    if (workingMinutes === null) return
-    const otherMins = WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) => {
-      return sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0)
-    }, 0)
-    const remaining = workingMinutes - otherMins
-    if (remaining <= 0) return
-    setWorkH(t, String(Math.floor(remaining / 60)))
-    setWorkM(t, String(remaining % 60))
-  }
+  const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
 
   function buildWorkTypeStr() {
-    return WORK_TYPES.filter(t => workTimes[t].on).map(t => {
-      const mins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+    return WORK_TYPES.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)).map(t => {
+      const mins = workTimes[t].h * 60 + workTimes[t].m
       return mins > 0 ? `${t}:${mins}` : t
     }).join(',')
   }
 
   function workSummary(t) {
-    const { h, m } = workTimes[t]
-    const hv = parseInt(h) || 0
-    const mv = parseInt(m) || 0
-    if (hv === 0 && mv === 0) return t
-    return `${t} ${hv > 0 ? `${hv}時間` : ''}${mv > 0 ? `${mv}分` : ''}`
+    const tw = workTimes[t]
+    if (!tw || (tw.h === 0 && tw.m === 0)) return t
+    return `${t} ${tw.h > 0 ? `${tw.h}時間` : ''}${tw.m > 0 ? `${tw.m}分` : ''}`
   }
 
   async function handleConfirm() {
@@ -514,7 +483,7 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   }
 
   const userName = users.find(u => u.id === userId)?.name || userId
-  const selectedWorkTypes = WORK_TYPES.filter(t => workTimes[t].on)
+  const selectedWorkTypes = WORK_TYPES.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0))
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -585,49 +554,40 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
                 )}
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>作業内容</label>
-                  <div className={styles.workTypeList}>
+                  <div className={styles.workCards}>
                     {WORK_TYPES.map(t => {
-                      const otherMins = workingMinutes !== null
-                        ? WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) =>
-                            sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0), 0)
-                        : 0
-                      const remaining = workingMinutes !== null ? workingMinutes - otherMins : null
-                      const currentMins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
-                      const showRemainingBtn = remaining !== null && remaining > 0 && currentMins !== remaining
+                      const active = workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)
                       return (
-                        <div key={t} className={styles.workTypeEntry}>
-                          <button
-                            className={[styles.workTypeBtn, workTimes[t].on ? styles.workTypeBtnActive : ''].join(' ')}
-                            onClick={() => toggleWork(t)}
-                          >{t}</button>
-                          {workTimes[t].on && (
-                            <div className={styles.workTimeInputs}>
-                              <input
-                                type="number" min="0" max="23" placeholder="0"
-                                value={workTimes[t].h}
-                                onChange={e => setWorkH(t, e.target.value)}
-                                className={styles.workTimeNum}
-                              />
-                              <span className={styles.workTimeUnit}>時間</span>
-                              <input
-                                type="number" min="0" max="59" placeholder="0"
-                                value={workTimes[t].m}
-                                onChange={e => setWorkM(t, e.target.value)}
-                                className={styles.workTimeNum}
-                              />
-                              <span className={styles.workTimeUnit}>分</span>
-                              {showRemainingBtn && (
-                                <button className={styles.remainingBtn} onClick={() => fillRemaining(t)}>
-                                  残り{fmtMinutes(remaining)}
-                                </button>
-                              )}
-                            </div>
+                        <div
+                          key={t}
+                          className={[styles.wCard, active ? styles.wCardActive : ''].join(' ')}
+                          onClick={() => {
+                            if (!workTimes[t]) setWorkTimes(prev => ({ ...prev, [t]: { h: 0, m: 0 } }))
+                            setEditingWorkItem(t)
+                          }}
+                        >
+                          {active && (
+                            <button
+                              className={styles.wClearBtn}
+                              onClick={e => { e.stopPropagation(); setWorkTimes(prev => { const c = { ...prev }; delete c[t]; return c }) }}
+                            >×</button>
                           )}
+                          <div className={styles.wCardLabel}>{t}</div>
+                          {active && <div className={styles.wCardTime}>{fmtMinutes(workTimes[t].h * 60 + workTimes[t].m)}</div>}
                         </div>
                       )
                     })}
                   </div>
                 </div>
+                {editingWorkItem && (
+                  <WorkTimeInputModal
+                    item={editingWorkItem}
+                    workTimes={workTimes}
+                    workingMinutes={workingMinutes}
+                    onSetTime={(id, field, val) => setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))}
+                    onClose={() => setEditingWorkItem(null)}
+                  />
+                )}
               </>
             )}
 
@@ -669,16 +629,16 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 function parseWorkType(wt) {
-  const init = Object.fromEntries(WORK_TYPES.map(t => [t, { on: false, h: '', m: '' }]))
-  if (!wt) return init
+  const result = {}
+  if (!wt) return result
   wt.split(',').forEach(entry => {
     const [type, minsStr] = entry.split(':')
-    if (type && type in init) {
+    if (type && WORK_TYPES.includes(type)) {
       const mins = parseInt(minsStr) || 0
-      init[type] = { on: true, h: String(Math.floor(mins / 60)), m: String(mins % 60) }
+      result[type] = { h: Math.floor(mins / 60), m: mins % 60 }
     }
   })
-  return init
+  return result
 }
 
 function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
@@ -696,6 +656,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
   const [activeTimeField, setActiveTimeField] = useState(null) // 'in' | 'out' | null
+  const [editingWorkItem, setEditingWorkItem] = useState(null)
 
   const workingMinutes = useMemo(() => {
     if (!inTime || !outTime) return null
@@ -705,28 +666,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
     return diff > 0 ? diff : null
   }, [inTime, outTime])
 
-  const totalInputMinutes = WORK_TYPES.reduce((sum, t) => {
-    if (!workTimes[t].on) return sum
-    return sum + (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
-  }, 0)
+  const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
 
-  function toggleWork(t) { setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], on: !prev[t].on } })) }
-  function setWorkH(t, v) { setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], h: v } })) }
-  function setWorkM(t, v) { setWorkTimes(prev => ({ ...prev, [t]: { ...prev[t], m: v } })) }
-
-  function fillRemaining(t) {
-    if (workingMinutes === null) return
-    const otherMins = WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) =>
-      sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0), 0)
-    const remaining = workingMinutes - otherMins
-    if (remaining <= 0) return
-    setWorkH(t, String(Math.floor(remaining / 60)))
-    setWorkM(t, String(remaining % 60))
+  function setWorkTime(id, field, val) {
+    setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
   }
 
   function buildWorkTypeStr() {
-    return WORK_TYPES.filter(t => workTimes[t].on).map(t => {
-      const mins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
+    return WORK_TYPES.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)).map(t => {
+      const mins = workTimes[t].h * 60 + workTimes[t].m
       return mins > 0 ? `${t}:${mins}` : t
     }).join(',')
   }
@@ -799,37 +747,40 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                 )}
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>作業内容</label>
-                  <div className={styles.workTypeList}>
+                  <div className={styles.workCards}>
                     {WORK_TYPES.map(t => {
-                      const otherMins = workingMinutes !== null
-                        ? WORK_TYPES.filter(t2 => t2 !== t && workTimes[t2].on).reduce((sum, t2) =>
-                            sum + (parseInt(workTimes[t2].h) || 0) * 60 + (parseInt(workTimes[t2].m) || 0), 0)
-                        : 0
-                      const remaining = workingMinutes !== null ? workingMinutes - otherMins : null
-                      const currentMins = (parseInt(workTimes[t].h) || 0) * 60 + (parseInt(workTimes[t].m) || 0)
-                      const showRemainingBtn = remaining !== null && remaining > 0 && currentMins !== remaining
+                      const active = workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)
                       return (
-                        <div key={t} className={styles.workTypeEntry}>
-                          <button
-                            className={[styles.workTypeBtn, workTimes[t].on ? styles.workTypeBtnActive : ''].join(' ')}
-                            onClick={() => toggleWork(t)}
-                          >{t}</button>
-                          {workTimes[t].on && (
-                            <div className={styles.workTimeInputs}>
-                              <input type="number" min="0" max="23" placeholder="0" value={workTimes[t].h} onChange={e => setWorkH(t, e.target.value)} className={styles.workTimeNum} />
-                              <span className={styles.workTimeUnit}>時間</span>
-                              <input type="number" min="0" max="59" placeholder="0" value={workTimes[t].m} onChange={e => setWorkM(t, e.target.value)} className={styles.workTimeNum} />
-                              <span className={styles.workTimeUnit}>分</span>
-                              {showRemainingBtn && (
-                                <button className={styles.remainingBtn} onClick={() => fillRemaining(t)}>残り{fmtMinutes(remaining)}</button>
-                              )}
-                            </div>
+                        <div
+                          key={t}
+                          className={[styles.wCard, active ? styles.wCardActive : ''].join(' ')}
+                          onClick={() => {
+                            if (!workTimes[t]) setWorkTimes(prev => ({ ...prev, [t]: { h: 0, m: 0 } }))
+                            setEditingWorkItem(t)
+                          }}
+                        >
+                          {active && (
+                            <button
+                              className={styles.wClearBtn}
+                              onClick={e => { e.stopPropagation(); setWorkTimes(prev => { const c = { ...prev }; delete c[t]; return c }) }}
+                            >×</button>
                           )}
+                          <div className={styles.wCardLabel}>{t}</div>
+                          {active && <div className={styles.wCardTime}>{fmtMinutes(workTimes[t].h * 60 + workTimes[t].m)}</div>}
                         </div>
                       )
                     })}
                   </div>
                 </div>
+                {editingWorkItem && (
+                  <WorkTimeInputModal
+                    item={editingWorkItem}
+                    workTimes={workTimes}
+                    workingMinutes={workingMinutes}
+                    onSetTime={setWorkTime}
+                    onClose={() => setEditingWorkItem(null)}
+                  />
+                )}
               </>
             )}
 
@@ -1102,42 +1053,168 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
   )
 }
 
+// ─── WorkTimeInputModal ───────────────────────────────────────────────────────
+
+function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClose }) {
+  const initial = workTimes[item] || { h: 0, m: 0 }
+  const [hStr, setHStr] = useState(initial.h > 0 ? String(initial.h) : '')
+  const [mStr, setMStr] = useState(initial.m > 0 ? String(initial.m) : '')
+  const [focus, setFocus] = useState('h')
+
+  const h = parseInt(hStr) || 0
+  const m = parseInt(mStr) || 0
+
+  const activeItems = Object.keys(workTimes).filter(id => workTimes[id] && (workTimes[id].h > 0 || workTimes[id].m > 0))
+  const otherMins = activeItems.filter(id => id !== item).reduce((sum, id) => {
+    const t = workTimes[id] || { h: 0, m: 0 }
+    return sum + t.h * 60 + t.m
+  }, 0)
+  const remaining = workingMinutes != null ? workingMinutes - otherMins : null
+  const alreadySet = remaining != null && h * 60 + m === remaining
+
+  function pressKey(k) {
+    if (k === '⌫') {
+      if (focus === 'h') setHStr(s => s.slice(0, -1))
+      else setMStr(s => s.slice(0, -1))
+      return
+    }
+    if (k === '') return
+    if (focus === 'h') {
+      const next = hStr + k
+      if (parseInt(next) > 23) return
+      setHStr(next)
+    } else {
+      const next = mStr + k
+      if (parseInt(next) > 59) return
+      setMStr(next)
+    }
+  }
+
+  function handleOk() {
+    onSetTime(item, 'h', h)
+    onSetTime(item, 'm', m)
+    onClose()
+  }
+
+  return (
+    <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
+      <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
+        <div className={styles.numpadTitle}>{item}の時間</div>
+        {workingMinutes != null && (
+          <div className={styles.workTimeHint}>
+            勤務 {fmtMinutes(workingMinutes)}
+            {activeItems.filter(id => id !== item).length > 0 && <> / 他 {fmtMinutes(otherMins)}</>}
+          </div>
+        )}
+        <div className={styles.timeDisplayRow}>
+          <button
+            className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('h')}
+          >
+            <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
+            <span className={styles.timeDisplayUnit}>時間</span>
+          </button>
+          <span className={styles.timeDisplaySep}>:</span>
+          <button
+            className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('m')}
+          >
+            <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
+            <span className={styles.timeDisplayUnit}>分</span>
+          </button>
+          {remaining != null && remaining > 0 && !alreadySet && (
+            <button
+              className={styles.remainingBtnInline}
+              onClick={() => {
+                const rh = Math.floor(remaining / 60)
+                const rm = remaining % 60
+                setHStr(rh > 0 ? String(rh) : '')
+                setMStr(rm > 0 ? String(rm) : '')
+              }}
+            >残り{fmtMinutes(remaining)}</button>
+          )}
+        </div>
+        <div className={styles.numpadGrid}>
+          {NUMPAD_KEYS.map((k, i) => (
+            <button
+              key={i}
+              className={[styles.numpadKey, k === '⌫' ? styles.numpadDel : k === '' ? styles.numpadEmpty : ''].join(' ')}
+              onClick={() => pressKey(k)}
+              disabled={k === ''}
+            >{k}</button>
+          ))}
+        </div>
+        <div className={styles.numpadActions}>
+          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
+          <button className={styles.numpadOk} onClick={handleOk}>OK</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── TimeNumpadOverlay ────────────────────────────────────────────────────────
 
 function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
-  const [digits, setDigits] = useState(() => {
-    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) return initialValue.replace(':', '')
+  const [hourStr, setHourStr] = useState(() => {
+    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
+      const h = parseInt(initialValue.split(':')[0])
+      return h > 0 ? String(h) : ''
+    }
     return ''
   })
+  const [minStr, setMinStr] = useState(() => {
+    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
+      const m = parseInt(initialValue.split(':')[1])
+      return m > 0 ? String(m) : ''
+    }
+    return ''
+  })
+  const [focus, setFocus] = useState('h')
 
   function pressKey(k) {
-    if (k === '⌫') { setDigits(d => d.slice(0, -1)); return }
-    if (k === '' || digits.length >= 4) return
-    setDigits(d => d + k)
+    if (k === '⌫') {
+      if (focus === 'h') setHourStr(s => s.slice(0, -1))
+      else setMinStr(s => s.slice(0, -1))
+      return
+    }
+    if (k === '') return
+    if (focus === 'h') {
+      const next = hourStr + k
+      if (parseInt(next) > 23) return
+      setHourStr(next)
+      if (next.length >= 2) setFocus('m')
+    } else {
+      const next = minStr + k
+      if (parseInt(next) > 59) return
+      setMinStr(next)
+    }
   }
 
-  function formatDisplay() {
-    const d = digits.padEnd(4, '-')
-    return `${d[0]}${d[1]}:${d[2]}${d[3]}`
-  }
-
-  const timeValue = useMemo(() => {
-    if (digits.length < 4) return null
-    const h = parseInt(digits.substring(0, 2))
-    const m = parseInt(digits.substring(2, 4))
-    if (h > 23 || m > 59) return null
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  }, [digits])
-
-  const isInvalid = digits.length === 4 && !timeValue
+  const h = parseInt(hourStr) || 0
+  const m = parseInt(minStr) || 0
+  const timeValue = (hourStr !== '' && minStr !== '') ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : null
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
         <div className={styles.numpadTitle}>{title}</div>
-        <div className={[styles.timeNumpadDisplay, isInvalid ? styles.timeNumpadInvalid : ''].join(' ')}>
-          {formatDisplay()}
-          {isInvalid && <div className={styles.timeNumpadError}>無効な時刻です</div>}
+        <div className={styles.timeDisplayRow}>
+          <button
+            className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('h')}
+          >
+            <span className={styles.timeDisplayNum}>{hourStr || '-'}</span>
+            <span className={styles.timeDisplayUnit}>時</span>
+          </button>
+          <span className={styles.timeDisplaySep}>:</span>
+          <button
+            className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('m')}
+          >
+            <span className={styles.timeDisplayNum}>{minStr || '-'}</span>
+            <span className={styles.timeDisplayUnit}>分</span>
+          </button>
         </div>
         <div className={styles.numpadGrid}>
           {NUMPAD_KEYS.map((k, i) => (

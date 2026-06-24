@@ -1186,33 +1186,135 @@
   justify-content: center;
 }
 
-.timeNumpadDisplay {
-  font-size: 2.8rem;
-  font-weight: 900;
-  color: #1a3f6f;
-  text-align: center;
-  background: #f0f4f8;
-  border-radius: 12px;
-  padding: 12px;
-  min-height: 68px;
+.timeDisplayRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeDisplayBox {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  letter-spacing: 0.08em;
-  font-variant-numeric: tabular-nums;
+  min-width: 86px;
+  padding: 10px 12px;
+  border: 2px solid #d1d5db;
+  border-radius: 12px;
+  background: #f8fafc;
+  cursor: pointer;
+  gap: 2px;
 }
 
-.timeNumpadInvalid {
-  color: #dc2626;
+.timeDisplayActive {
+  border-color: #1a5fa8;
+  background: #dbeafe;
+  box-shadow: 0 0 0 3px rgba(26,95,168,0.15);
 }
 
-.timeNumpadError {
+.timeDisplayNum {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #1a3f6f;
+  line-height: 1;
+}
+
+.timeDisplayUnit {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.timeDisplaySep {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #9baab8;
+}
+
+.workTimeHint {
+  font-size: 0.88rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.remainingBtnInline {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 20px;
+  background: #1a5fa8;
+  color: #fff;
   font-size: 0.85rem;
-  font-weight: 600;
-  color: #dc2626;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.workCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
   margin-top: 4px;
-  letter-spacing: 0;
+}
+
+.wCard {
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  padding: 14px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  min-height: 70px;
+  gap: 6px;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.wCard:active { transform: scale(0.97); }
+
+.wCardActive {
+  border-color: #1a5fa8;
+  background: #eff6ff;
+}
+
+.wCardLabel {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  text-align: center;
+}
+
+.wCardTime {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1a5fa8;
+  text-align: center;
+}
+
+.wClearBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: #dbeafe;
+  color: #1a5fa8;
+  font-size: 0.9rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  z-index: 2;
+  padding: 0;
 }
 
 .numpadGrid {
