@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { initDB, saveLog, isCheckedIn, getClockInTime, resolveUserByPin } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -7,7 +7,6 @@ import CompleteScreen from './screens/CompleteScreen'
 import AdminScreen from './screens/AdminScreen'
 import EmployeeCalendarScreen from './screens/EmployeeCalendarScreen'
 import styles from './App.module.css'
-import pinStyles from './ConfirmPin.module.css'
 
 const STATE = {
   MODE: 'mode',
@@ -20,74 +19,6 @@ const STATE = {
 
 const ADMIN_TAP_COUNT = 5
 const ADMIN_TAP_TIMEOUT = 3000
-const PIN_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
-
-function ConfirmPinOverlay({ onSubmit, onClose }) {
-  const [pin, setPin] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  function pressKey(k) {
-    if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
-    if (k === '') return
-    if (pin.length >= 8) return
-    setPin(p => p + k)
-    setError('')
-  }
-
-  async function handleSubmit() {
-    if (!pin || loading) return
-    setLoading(true)
-    try {
-      const user = await resolveUserByPin(pin)
-      if (user) {
-        onSubmit(user)
-      } else {
-        setError('PINが一致しません')
-        setPin('')
-      }
-    } catch {
-      setError('通信エラーが発生しました')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className={pinStyles.overlay}>
-      <div className={pinStyles.box}>
-        <div className={pinStyles.header}>
-          <span className={pinStyles.title}>勤務確認 — PINを入力</span>
-        </div>
-        <div className={pinStyles.dots}>
-          {Array.from({ length: Math.max(pin.length, 4) }).map((_, i) => (
-            <span key={i} className={[pinStyles.dot, i < pin.length ? pinStyles.dotFilled : ''].join(' ')} />
-          ))}
-        </div>
-        {error && <div className={pinStyles.error}>{error}</div>}
-        <div className={pinStyles.grid}>
-          {PIN_KEYS.map((k, i) => (
-            <button
-              key={i}
-              type="button"
-              className={[pinStyles.key, k === '⌫' ? pinStyles.keyDel : k === '' ? pinStyles.keyEmpty : ''].join(' ')}
-              onClick={() => pressKey(k)}
-              disabled={k === ''}
-            >
-              {k}
-            </button>
-          ))}
-        </div>
-        <div className={pinStyles.actions}>
-          <button type="button" className={pinStyles.cancel} onClick={onClose}>キャンセル</button>
-          <button type="button" className={pinStyles.ok} onClick={handleSubmit} disabled={!pin || loading}>
-            {loading ? '確認中...' : '確認'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function App() {
   const [state, setState] = useState(STATE.MODE)
@@ -97,7 +28,6 @@ export default function App() {
   const [error, setError] = useState(null)
   const [dbReady, setDbReady] = useState(false)
   const [adminTaps, setAdminTaps] = useState(0)
-  const [confirmPinOpen, setConfirmPinOpen] = useState(false)
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
@@ -105,21 +35,16 @@ export default function App() {
   }, [])
 
   function handleModeSelect(selectedMode) {
-    if (selectedMode === '確認') {
-      setConfirmPinOpen(true)
-      return
-    }
     setMode(selectedMode)
     setState(STATE.QR)
   }
 
-  function handleConfirmPinSubmit(user) {
-    setConfirmPinOpen(false)
-    setCurrentUser(user)
-    setState(STATE.CHECK)
-  }
-
   async function handleUserScanned(user) {
+    if (mode === '確認') {
+      setCurrentUser(user)
+      setState(STATE.CHECK)
+      return
+    }
     if (mode === '出勤') {
       const alreadyIn = await isCheckedIn(user.id)
       if (alreadyIn) {
@@ -245,13 +170,6 @@ export default function App() {
           <span className={styles.errorIcon}>⚠️</span>
           <span>{error}</span>
         </div>
-      )}
-
-      {confirmPinOpen && (
-        <ConfirmPinOverlay
-          onSubmit={handleConfirmPinSubmit}
-          onClose={() => setConfirmPinOpen(false)}
-        />
       )}
 
       {state === STATE.MODE && (
