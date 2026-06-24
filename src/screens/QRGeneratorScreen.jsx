@@ -20,9 +20,9 @@ const CARD_STYLE = `
     align-items: center; justify-content: center;
     page-break-after: always; break-after: page;
   }
-  .id { position: absolute; top: 4mm; left: 5mm; font-size: 7pt; font-weight: 700; color: #1a5fa8; letter-spacing: 0.04em; }
+  .id { position: absolute; top: 4mm; left: 5mm; font-size: 10pt; font-weight: 700; color: #1a5fa8; letter-spacing: 0.04em; }
   .qr { width: 36mm; height: 36mm; }
-  .name { margin-top: 2mm; font-size: 13pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
+  .name { margin-top: 2mm; font-size: 20pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
 `
 
 function cardHtml(user) {
