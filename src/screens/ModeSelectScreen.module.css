@@ -86,8 +86,8 @@
 
 /* ── ボタン内・白丸アイコン ── */
 .iconCircle {
-  width: 120px;
-  height: 120px;
+  width: 160px;
+  height: 160px;
   border-radius: 9999px;
   background: #fff;
   display: flex;
@@ -98,7 +98,7 @@
 
 /* ── 出勤・退勤テキスト ── */
 .modeLabel {
-  font-size: 56px;
+  font-size: 76px;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.04em;
