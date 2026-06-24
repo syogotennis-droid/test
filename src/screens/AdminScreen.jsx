@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  PAY_ITEMS
+  resolveUserByPin, PAY_ITEMS
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -1000,6 +1000,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [step, setStep] = useState('main')
   const [name, setName] = useState(user.name)
   const [pin, setPin] = useState(user.pin || '')
+  const [pinError, setPinError] = useState('')
   const [workItems, setWorkItems] = useState(user.workItems || [])
   const [itemRates, setItemRates] = useState(() => {
     const r = {}
@@ -1082,6 +1083,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   }
 
   async function handleSavePin() {
+    setPinError('')
+    if (pin) {
+      const existing = await resolveUserByPin(pin)
+      if (existing && existing.id !== user.id) {
+        setPinError(`このPINは${existing.name}が使用中です`)
+        return
+      }
+    }
     await upsertUser({ id: user.id, name: user.name, workItems, itemRates: buildItemRates(), pin })
     onSaved()
   }
@@ -1144,6 +1153,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                 className={styles.filterInput}
               />
               <div className={styles.formHint}>未入力の場合はPINで打刻できません</div>
+              {pinError && <div className={styles.pinErrorMsg}>{pinError}</div>}
             </div>
             <div className={styles.modalActions}>
               <button className={styles.saveBtn} onClick={handleSavePin}>
