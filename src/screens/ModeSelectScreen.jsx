@@ -71,7 +71,7 @@ export default function ModeSelectScreen({ onSelect }) {
             <div className={styles.iconCircle}>
               <ScanIcon size={76} color="#16a34a" />
             </div>
-            <span className={styles.modeLabel}>出勤</span>
+            <span className={styles.modeLabel}>テスト</span>
           </button>
           <button className={`${styles.modeBtn} ${styles.clockOut}`} onClick={() => onSelect('退勤')}>
             <div className={styles.iconCircle}>
