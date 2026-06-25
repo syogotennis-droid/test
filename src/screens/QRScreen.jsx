@@ -105,27 +105,33 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       aspectRatio: 1.0
     }
 
-    const startCamera = (facingMode) =>
-      qr.start(
-        facingMode ? { facingMode } : true,
-        config,
-        handleScan,
-        () => {}
-      )
+    const startWithSpec = (spec) => qr.start(spec, config, handleScan, () => {})
 
-    startCamera('user')
-      .catch(() => startCamera('environment'))
-      .catch(() => startCamera(null))
-      .then(() => setScanning(true))
-      .catch(err => {
-        console.error(err)
-        const msg = err?.message || ''
-        if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
-          setError('カメラへのアクセスが許可されていません。\nPINで入力するか、ブラウザのカメラ権限を確認してください。')
-        } else {
-          setError(`カメラを起動できませんでした。\nPINで入力するか、ページを再読み込みしてください。\n(${msg})`)
-        }
+    const handleCameraError = (err) => {
+      console.error(err)
+      const msg = err?.message || ''
+      if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+        setError('カメラへのアクセスが許可されていません。\nPINで入力するか、ブラウザのカメラ権限を確認してください。')
+      } else {
+        setError(`カメラを起動できませんでした。\nPINで入力するか、ページを再読み込みしてください。\n(${msg})`)
+      }
+    }
+
+    // Try to enumerate cameras and pick front-facing one explicitly (more reliable on Android)
+    Html5Qrcode.getCameras()
+      .then(cameras => {
+        if (!cameras || cameras.length === 0) throw new Error('no cameras')
+        // Look for front camera by label, otherwise take last camera (front is usually last on Android)
+        const front = cameras.find(c => /front|selfie|user/i.test(c.label))
+          || (cameras.length > 1 ? cameras[cameras.length - 1] : null)
+          || cameras[0]
+        return startWithSpec(front.id)
       })
+      .catch(() => startWithSpec({ facingMode: 'user' }))
+      .catch(() => startWithSpec({ facingMode: 'environment' }))
+      .catch(() => startWithSpec(true))
+      .then(() => setScanning(true))
+      .catch(handleCameraError)
 
     return () => {
       qr.isScanning && qr.stop().catch(() => {})

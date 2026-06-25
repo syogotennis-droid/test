@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
@@ -1042,6 +1042,21 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
     setVal(v => v + k)
   }
 
+  const handlerRef = useRef(null)
+  handlerRef.current = { pressKey, val, onConfirm, onClose, decimal }
+  useEffect(() => {
+    function onKey(e) {
+      const h = handlerRef.current
+      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); h.pressKey(e.key) }
+      else if (h.decimal && e.key === '.') { e.preventDefault(); h.pressKey('.') }
+      else if (e.key === 'Backspace') { e.preventDefault(); h.pressKey('⌫') }
+      else if (e.key === 'Enter') { e.preventDefault(); h.onConfirm(h.val); h.onClose() }
+      else if (e.key === 'Escape') { e.preventDefault(); h.onClose() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const keys = decimal ? NUMPAD_KEYS_DEC : NUMPAD_KEYS
 
   return (
@@ -1104,6 +1119,20 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
     onSetTime(item, 'm', m)
     onClose()
   }
+
+  const wtHandlerRef = useRef(null)
+  wtHandlerRef.current = { pressKey, handleNext, onClose }
+  useEffect(() => {
+    function onKey(e) {
+      const h = wtHandlerRef.current
+      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); h.pressKey(e.key) }
+      else if (e.key === 'Backspace') { e.preventDefault(); h.pressKey('⌫') }
+      else if (e.key === 'Enter') { e.preventDefault(); h.handleNext() }
+      else if (e.key === 'Escape') { e.preventDefault(); h.onClose() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   function applyRemaining() {
     if (remaining == null) return
@@ -1185,6 +1214,20 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
     onConfirm(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
     onClose()
   }
+
+  const tnHandlerRef = useRef(null)
+  tnHandlerRef.current = { pressKey, handleNext, onClose }
+  useEffect(() => {
+    function onKey(e) {
+      const h = tnHandlerRef.current
+      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); h.pressKey(e.key) }
+      else if (e.key === 'Backspace') { e.preventDefault(); h.pressKey('⌫') }
+      else if (e.key === 'Enter') { e.preventDefault(); h.handleNext() }
+      else if (e.key === 'Escape') { e.preventDefault(); h.onClose() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
