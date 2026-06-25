@@ -24,6 +24,15 @@ function QRImage({ value, size = 200 }) {
   )
 }
 const WORK_TYPES = ['現場', '清掃', '事務', '休憩']
+const WORK_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
+const LEGACY_WORK_ITEMS = ['現場', '清掃', '事務', '休憩']
+
+function getWorkItemsForUser(workItems) {
+  const base = (workItems && workItems.length > 0) ? workItems : LEGACY_WORK_ITEMS
+  const filtered = base.filter(item => !WORK_HIDDEN.has(item))
+  if (!filtered.includes('休憩')) filtered.push('休憩')
+  return filtered
+}
 
 function fmtMinutes(mins) {
   const h = Math.floor(mins / 60)
@@ -439,6 +448,11 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   const [editingWorkItem, setEditingWorkItem] = useState(null)
   const [clockInTime, setClockInTime] = useState(null) // "HH:MM" from DB
 
+  const userWorkItems = useMemo(() => getWorkItemsForUser(users.find(u => u.id === userId)?.workItems), [userId, users])
+
+  // userId変更時にworkTimesをリセット
+  useEffect(() => { setWorkTimes({}) }, [userId])
+
   // Fetch 出勤時刻 for selected user+date when logType is 退勤
   useEffect(() => {
     if (logType !== '退勤') { setClockInTime(null); return }
@@ -459,10 +473,10 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
 
   function buildWorkTypeStr() {
-    return WORK_TYPES.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)).map(t => {
-      const mins = workTimes[t].h * 60 + workTimes[t].m
-      return mins > 0 ? `${t}:${mins}` : t
-    }).join(',')
+    return Object.entries(workTimes)
+      .filter(([, t]) => t.h > 0 || t.m > 0)
+      .map(([type, t]) => { const mins = t.h * 60 + t.m; return mins > 0 ? `${type}:${mins}` : type })
+      .join(',')
   }
 
   function workSummary(t) {
@@ -483,7 +497,7 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
   }
 
   const userName = users.find(u => u.id === userId)?.name || userId
-  const selectedWorkTypes = WORK_TYPES.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0))
+  const selectedWorkTypes = userWorkItems.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0))
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -555,7 +569,7 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>作業内容</label>
                   <div className={styles.workCards}>
-                    {WORK_TYPES.map(t => {
+                    {userWorkItems.map(t => {
                       const active = workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)
                       return (
                         <div
@@ -633,7 +647,7 @@ function parseWorkType(wt) {
   if (!wt) return result
   wt.split(',').forEach(entry => {
     const [type, minsStr] = entry.split(':')
-    if (type && WORK_TYPES.includes(type)) {
+    if (type) {
       const mins = parseInt(minsStr) || 0
       result[type] = { h: Math.floor(mins / 60), m: mins % 60 }
     }
@@ -666,6 +680,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
     return diff > 0 ? diff : null
   }, [inTime, outTime])
 
+  const userWorkItems = useMemo(() => getWorkItemsForUser(user?.workItems), [user])
   const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
 
   function setWorkTime(id, field, val) {
@@ -673,10 +688,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   }
 
   function buildWorkTypeStr() {
-    return WORK_TYPES.filter(t => workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)).map(t => {
-      const mins = workTimes[t].h * 60 + workTimes[t].m
-      return mins > 0 ? `${t}:${mins}` : t
-    }).join(',')
+    return Object.entries(workTimes)
+      .filter(([, t]) => t.h > 0 || t.m > 0)
+      .map(([type, t]) => { const mins = t.h * 60 + t.m; return mins > 0 ? `${type}:${mins}` : type })
+      .join(',')
   }
 
   async function handleConfirm() {
@@ -748,7 +763,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>作業内容</label>
                   <div className={styles.workCards}>
-                    {WORK_TYPES.map(t => {
+                    {userWorkItems.map(t => {
                       const active = workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)
                       return (
                         <div
