@@ -1057,12 +1057,9 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
 
 function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClose }) {
   const initial = workTimes[item] || { h: 0, m: 0 }
-  const [hStr, setHStr] = useState(initial.h > 0 ? String(initial.h) : '')
-  const [mStr, setMStr] = useState(initial.m > 0 ? String(initial.m) : '')
-  const [focus, setFocus] = useState('h')
-
-  const h = parseInt(hStr) || 0
-  const m = parseInt(mStr) || 0
+  const [step, setStep] = useState('h') // 'h' | 'm'
+  const [hVal, setHVal] = useState(initial.h > 0 ? String(initial.h) : '')
+  const [mVal, setMVal] = useState(initial.m > 0 ? String(initial.m) : '')
 
   const activeItems = Object.keys(workTimes).filter(id => workTimes[id] && (workTimes[id].h > 0 || workTimes[id].m > 0))
   const otherMins = activeItems.filter(id => id !== item).reduce((sum, id) => {
@@ -1070,70 +1067,48 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
     return sum + t.h * 60 + t.m
   }, 0)
   const remaining = workingMinutes != null ? workingMinutes - otherMins : null
+  const h = parseInt(hVal) || 0
+  const m = parseInt(mVal) || 0
   const alreadySet = remaining != null && h * 60 + m === remaining
 
+  const currentVal = step === 'h' ? hVal : mVal
+  const setCurrentVal = step === 'h' ? setHVal : setMVal
+  const maxVal = step === 'h' ? 23 : 59
+
   function pressKey(k) {
-    if (k === '⌫') {
-      if (focus === 'h') setHStr(s => s.slice(0, -1))
-      else setMStr(s => s.slice(0, -1))
-      return
-    }
+    if (k === '⌫') { setCurrentVal(v => v.slice(0, -1)); return }
     if (k === '') return
-    if (focus === 'h') {
-      const next = hStr + k
-      if (parseInt(next) > 23) return
-      setHStr(next)
-    } else {
-      const next = mStr + k
-      if (parseInt(next) > 59) return
-      setMStr(next)
-    }
+    const next = currentVal + k
+    if (parseInt(next) > maxVal) return
+    setCurrentVal(next)
   }
 
-  function handleOk() {
+  function handleNext() {
+    if (step === 'h') { setStep('m'); return }
     onSetTime(item, 'h', h)
     onSetTime(item, 'm', m)
+    onClose()
+  }
+
+  function applyRemaining() {
+    if (remaining == null) return
+    const rh = Math.floor(remaining / 60)
+    const rm = remaining % 60
+    onSetTime(item, 'h', rh)
+    onSetTime(item, 'm', rm)
     onClose()
   }
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
-        <div className={styles.numpadTitle}>{item}の時間</div>
-        {workingMinutes != null && (
-          <div className={styles.workTimeHint}>
-            勤務 {fmtMinutes(workingMinutes)}
-            {activeItems.filter(id => id !== item).length > 0 && <> / 他 {fmtMinutes(otherMins)}</>}
-          </div>
+        <div className={styles.numpadTitle}>{item} — {step === 'h' ? '時間' : '分'}</div>
+        <div className={styles.numpadDisplay}>{currentVal || '0'}</div>
+        {step === 'h' && remaining != null && remaining > 0 && !alreadySet && (
+          <button className={styles.remainingBtnInline} onClick={applyRemaining}>
+            残り{fmtMinutes(remaining)}を入力
+          </button>
         )}
-        <div className={styles.timeDisplayRow}>
-          <button
-            className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
-            onClick={() => setFocus('h')}
-          >
-            <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
-            <span className={styles.timeDisplayUnit}>時間</span>
-          </button>
-          <span className={styles.timeDisplaySep}>:</span>
-          <button
-            className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
-            onClick={() => setFocus('m')}
-          >
-            <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
-            <span className={styles.timeDisplayUnit}>分</span>
-          </button>
-          {remaining != null && remaining > 0 && !alreadySet && (
-            <button
-              className={styles.remainingBtnInline}
-              onClick={() => {
-                const rh = Math.floor(remaining / 60)
-                const rm = remaining % 60
-                setHStr(rh > 0 ? String(rh) : '')
-                setMStr(rm > 0 ? String(rm) : '')
-              }}
-            >残り{fmtMinutes(remaining)}</button>
-          )}
-        </div>
         <div className={styles.numpadGrid}>
           {NUMPAD_KEYS.map((k, i) => (
             <button
@@ -1145,8 +1120,12 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
           ))}
         </div>
         <div className={styles.numpadActions}>
-          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
-          <button className={styles.numpadOk} onClick={handleOk}>OK</button>
+          <button className={styles.numpadCancel} onClick={step === 'm' ? () => setStep('h') : onClose}>
+            {step === 'm' ? '← 戻る' : 'キャンセル'}
+          </button>
+          <button className={styles.numpadOk} onClick={handleNext}>
+            {step === 'h' ? '分へ →' : 'OK'}
+          </button>
         </div>
       </div>
     </div>
@@ -1156,66 +1135,47 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
 // ─── TimeNumpadOverlay ────────────────────────────────────────────────────────
 
 function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
-  const [hourStr, setHourStr] = useState(() => {
+  const [step, setStep] = useState('h')
+  const [hourVal, setHourVal] = useState(() => {
     if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
       const h = parseInt(initialValue.split(':')[0])
       return h > 0 ? String(h) : ''
     }
     return ''
   })
-  const [minStr, setMinStr] = useState(() => {
+  const [minVal, setMinVal] = useState(() => {
     if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
       const m = parseInt(initialValue.split(':')[1])
       return m > 0 ? String(m) : ''
     }
     return ''
   })
-  const [focus, setFocus] = useState('h')
+
+  const currentVal = step === 'h' ? hourVal : minVal
+  const setCurrentVal = step === 'h' ? setHourVal : setMinVal
+  const maxVal = step === 'h' ? 23 : 59
 
   function pressKey(k) {
-    if (k === '⌫') {
-      if (focus === 'h') setHourStr(s => s.slice(0, -1))
-      else setMinStr(s => s.slice(0, -1))
-      return
-    }
+    if (k === '⌫') { setCurrentVal(v => v.slice(0, -1)); return }
     if (k === '') return
-    if (focus === 'h') {
-      const next = hourStr + k
-      if (parseInt(next) > 23) return
-      setHourStr(next)
-      if (next.length >= 2) setFocus('m')
-    } else {
-      const next = minStr + k
-      if (parseInt(next) > 59) return
-      setMinStr(next)
-    }
+    const next = currentVal + k
+    if (parseInt(next) > maxVal) return
+    setCurrentVal(next)
   }
 
-  const h = parseInt(hourStr) || 0
-  const m = parseInt(minStr) || 0
-  const timeValue = (hourStr !== '' && minStr !== '') ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : null
+  function handleNext() {
+    if (step === 'h') { setStep('m'); return }
+    const h = parseInt(hourVal) || 0
+    const m = parseInt(minVal) || 0
+    onConfirm(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    onClose()
+  }
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
-        <div className={styles.numpadTitle}>{title}</div>
-        <div className={styles.timeDisplayRow}>
-          <button
-            className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
-            onClick={() => setFocus('h')}
-          >
-            <span className={styles.timeDisplayNum}>{hourStr || '-'}</span>
-            <span className={styles.timeDisplayUnit}>時</span>
-          </button>
-          <span className={styles.timeDisplaySep}>:</span>
-          <button
-            className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
-            onClick={() => setFocus('m')}
-          >
-            <span className={styles.timeDisplayNum}>{minStr || '-'}</span>
-            <span className={styles.timeDisplayUnit}>分</span>
-          </button>
-        </div>
+        <div className={styles.numpadTitle}>{title} — {step === 'h' ? '時' : '分'}</div>
+        <div className={styles.numpadDisplay}>{currentVal || '0'}</div>
         <div className={styles.numpadGrid}>
           {NUMPAD_KEYS.map((k, i) => (
             <button
@@ -1227,8 +1187,12 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
           ))}
         </div>
         <div className={styles.numpadActions}>
-          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
-          <button className={styles.numpadOk} onClick={() => { if (timeValue) { onConfirm(timeValue); onClose() } }} disabled={!timeValue}>OK</button>
+          <button className={styles.numpadCancel} onClick={step === 'm' ? () => setStep('h') : onClose}>
+            {step === 'm' ? '← 戻る' : 'キャンセル'}
+          </button>
+          <button className={styles.numpadOk} onClick={handleNext}>
+            {step === 'h' ? '分へ →' : 'OK'}
+          </button>
         </div>
       </div>
     </div>

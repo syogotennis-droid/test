@@ -113,7 +113,8 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
         () => {}
       )
 
-    startCamera('environment')
+    startCamera('user')
+      .catch(() => startCamera('environment'))
       .catch(() => startCamera(null))
       .then(() => setScanning(true))
       .catch(err => {
