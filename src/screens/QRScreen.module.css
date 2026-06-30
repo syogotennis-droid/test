@@ -45,6 +45,15 @@
   aspect-ratio: 1;
 }
 
+@media (orientation: landscape) {
+  .scannerWrap {
+    aspect-ratio: auto;
+    max-width: none;
+    width: auto;
+    height: calc(100dvh - 130px);
+  }
+}
+
 .scanner {
   width: 100% !important;
 }
