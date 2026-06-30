@@ -99,11 +99,9 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
     }
     instanceRef.current = qr
 
-    const isLandscape = window.innerWidth > window.innerHeight
     const config = {
       fps: 10,
       qrbox: { width: 280, height: 280 },
-      aspectRatio: isLandscape ? window.innerWidth / window.innerHeight : 1.0
     }
 
     const startWithSpec = (spec) => qr.start(spec, config, handleScan, () => {})
