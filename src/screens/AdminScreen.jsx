@@ -1042,20 +1042,15 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
     setVal(v => v + k)
   }
 
-  const handlerRef = useRef(null)
-  handlerRef.current = { pressKey, val, onConfirm, onClose, decimal }
-  useEffect(() => {
-    function onKey(e) {
-      const h = handlerRef.current
-      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); h.pressKey(e.key) }
-      else if (h.decimal && e.key === '.') { e.preventDefault(); h.pressKey('.') }
-      else if (e.key === 'Backspace') { e.preventDefault(); h.pressKey('⌫') }
-      else if (e.key === 'Enter') { e.preventDefault(); h.onConfirm(h.val); h.onClose() }
-      else if (e.key === 'Escape') { e.preventDefault(); h.onClose() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  function handleInputChange(e) {
+    let v = decimal ? e.target.value.replace(/[^\d.]/g, '') : e.target.value.replace(/\D/g, '')
+    if (decimal && (v.match(/\./g) || []).length > 1) return
+    if (v.length > maxLength) return
+    setVal(v)
+  }
 
   const keys = decimal ? NUMPAD_KEYS_DEC : NUMPAD_KEYS
 
@@ -1063,8 +1058,20 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
     <div className={styles.numpadOverlay} onClick={onClose}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
         <div className={styles.numpadTitle}>{title}</div>
-        <div className={styles.numpadDisplay}>{val || '0'}</div>
-        <div className={styles.numpadGrid}>
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode={decimal ? 'decimal' : 'numeric'}
+          value={val}
+          onChange={handleInputChange}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); onConfirm(val); onClose() }
+            else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+          }}
+          className={styles.numpadDisplay}
+          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
+        />
+        <div className={styles.numpadGrid} onMouseDown={e => e.preventDefault()}>
           {keys.map((k, i) => (
             <button
               key={i}
@@ -1120,19 +1127,14 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
     onClose()
   }
 
-  const wtHandlerRef = useRef(null)
-  wtHandlerRef.current = { pressKey, handleNext, onClose }
-  useEffect(() => {
-    function onKey(e) {
-      const h = wtHandlerRef.current
-      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); h.pressKey(e.key) }
-      else if (e.key === 'Backspace') { e.preventDefault(); h.pressKey('⌫') }
-      else if (e.key === 'Enter') { e.preventDefault(); h.handleNext() }
-      else if (e.key === 'Escape') { e.preventDefault(); h.onClose() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const activeInputRef = useRef(null)
+  useEffect(() => { activeInputRef.current?.focus() }, [step])
+
+  function handleWtInputChange(e) {
+    const raw = e.target.value.replace(/\D/g, '')
+    if (raw !== '' && parseInt(raw) > maxVal) return
+    setCurrentVal(raw)
+  }
 
   function applyRemaining() {
     if (remaining == null) return
@@ -1147,13 +1149,25 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
         <div className={styles.numpadTitle}>{item} — {step === 'h' ? '時間' : '分'}</div>
-        <div className={styles.numpadDisplay}>{currentVal || '0'}</div>
+        <input
+          ref={activeInputRef}
+          type="text"
+          inputMode="numeric"
+          value={currentVal}
+          onChange={handleWtInputChange}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); handleNext() }
+            else if (e.key === 'Escape') { e.preventDefault(); step === 'm' ? setStep('h') : onClose() }
+          }}
+          className={styles.numpadDisplay}
+          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
+        />
         {step === 'h' && remaining != null && remaining > 0 && !alreadySet && (
           <button className={styles.remainingBtnInline} onClick={applyRemaining}>
             残り{fmtMinutes(remaining)}を入力
           </button>
         )}
-        <div className={styles.numpadGrid}>
+        <div className={styles.numpadGrid} onMouseDown={e => e.preventDefault()}>
           {NUMPAD_KEYS.map((k, i) => (
             <button
               key={i}
@@ -1215,26 +1229,33 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
     onClose()
   }
 
-  const tnHandlerRef = useRef(null)
-  tnHandlerRef.current = { pressKey, handleNext, onClose }
-  useEffect(() => {
-    function onKey(e) {
-      const h = tnHandlerRef.current
-      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); h.pressKey(e.key) }
-      else if (e.key === 'Backspace') { e.preventDefault(); h.pressKey('⌫') }
-      else if (e.key === 'Enter') { e.preventDefault(); h.handleNext() }
-      else if (e.key === 'Escape') { e.preventDefault(); h.onClose() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const activeInputRef = useRef(null)
+  useEffect(() => { activeInputRef.current?.focus() }, [step])
+
+  function handleTnInputChange(e) {
+    const raw = e.target.value.replace(/\D/g, '')
+    if (raw !== '' && parseInt(raw) > maxVal) return
+    setCurrentVal(raw)
+  }
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
         <div className={styles.numpadTitle}>{title} — {step === 'h' ? '時' : '分'}</div>
-        <div className={styles.numpadDisplay}>{currentVal || '0'}</div>
-        <div className={styles.numpadGrid}>
+        <input
+          ref={activeInputRef}
+          type="text"
+          inputMode="numeric"
+          value={currentVal}
+          onChange={handleTnInputChange}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); handleNext() }
+            else if (e.key === 'Escape') { e.preventDefault(); step === 'm' ? setStep('h') : onClose() }
+          }}
+          className={styles.numpadDisplay}
+          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
+        />
+        <div className={styles.numpadGrid} onMouseDown={e => e.preventDefault()}>
           {NUMPAD_KEYS.map((k, i) => (
             <button
               key={i}
