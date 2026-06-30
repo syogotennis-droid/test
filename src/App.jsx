@@ -31,7 +31,11 @@ export default function App() {
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
-    initDB().then(() => setDbReady(true))
+    const timer = setTimeout(() => setDbReady(true), 8000)
+    initDB()
+      .then(() => { clearTimeout(timer); setDbReady(true) })
+      .catch(err => { clearTimeout(timer); console.error('DB init error:', err); setDbReady(true) })
+    return () => clearTimeout(timer)
   }, [])
 
   function handleModeSelect(selectedMode) {

@@ -33,9 +33,13 @@ export default function TabletApp() {
   const adminTapTimer = useRef(null)
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setNetworkError('接続タイムアウト。Firestoreのルール期限切れかネットワークを確認してください。')
+      setState(STATE.MODE)
+    }, 10000)
     initDB()
-      .then(() => setState(STATE.MODE))
-      .catch(e => setNetworkError('初期化エラー: ' + (e?.message || e)))
+      .then(() => { clearTimeout(timer); setState(STATE.MODE) })
+      .catch(e => { clearTimeout(timer); setNetworkError('初期化エラー: ' + (e?.message || e)); setState(STATE.MODE) })
 
     const onOnline = () => setIsOnline(true)
     const onOffline = () => setIsOnline(false)
