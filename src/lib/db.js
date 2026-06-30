@@ -13,6 +13,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore'
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 import * as XLSX from 'xlsx'
 import { KINMUBO_TEMPLATE_B64 } from './kinmuboTemplate'
 import { unzipSync, zipSync } from 'fflate'
@@ -28,6 +29,15 @@ const firebaseConfig = {
 }
 
 const firebaseApp = initializeApp(firebaseConfig)
+
+// App Check — prevents unauthorized API key abuse
+if (typeof window !== 'undefined' && !window?.Capacitor?.isNativePlatform?.()) {
+  initializeAppCheck(firebaseApp, {
+    provider: new ReCaptchaV3Provider('6LfjBD4tAAAANr2NC_SnRvd1ZPoXZBGpQyIsY0B'),
+    isTokenAutoRefreshEnabled: true
+  })
+}
+
 const db = getFirestore(firebaseApp)
 
 const usersCol = collection(db, 'users')
