@@ -40,9 +40,11 @@ QRコードで出退勤を打刻するシステム。タブレット（打刻）
 ## Windowsでのビルド＆デプロイ
 ```
 npm run build
-firebase deploy --only hosting
+firebase deploy --only hosting,firestore
 ```
 
+`--only hosting,firestore` とすることで、Firestoreのセキュリティルール（`firestore.rules`）も毎回一緒にデプロイされる。
+ルールはリポジトリで管理しており期限なし（`allow read, write: if true`）なので、期限切れは起きない。
+
 ## 注意事項
-- Firestoreのセキュリティルールはテストモード（30日間有効）。期限が切れたらFirebase consoleで延長すること
 - `setup-new-client.js` は同じプロジェクトへの誤上書きを防止する機能あり
