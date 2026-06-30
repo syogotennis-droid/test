@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react'
+import QRCode from 'qrcode'
 import { getUsers } from '../lib/db'
 import styles from './QRGeneratorScreen.module.css'
 
-const QR_API = (value, size) =>
-  `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(value)}&size=${size}x${size}&bgcolor=ffffff&color=000000&margin=6`
-
 function QRImage({ value, size = 200 }) {
-  return <img src={QR_API(value, size)} alt={value} width={size} height={size} />
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    QRCode.toDataURL(value, { width: size, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
+      .then(url => setSrc(url))
+  }, [value, size])
+  return src
+    ? <img src={src} alt={value} width={size} height={size} />
+    : <div style={{ width: size, height: size, background: '#eee' }} />
 }
 
 const CARD_CSS = `
@@ -27,15 +32,17 @@ const CARD_CSS = `
   .name { margin-top: 1mm; font-size: 20pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
 `
 
-function cardHtml(user) {
+async function cardHtml(user) {
+  const qrUrl = await QRCode.toDataURL(user.id, { width: 400, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
   return `<div class="card">
   <div class="id">${user.id}</div>
-  <img class="qr" src="${QR_API(user.id, 400)}" />
+  <img class="qr" src="${qrUrl}" />
   <div class="name">${user.name}</div>
 </div>`
 }
 
-function openPrintWindow(users) {
+async function openPrintWindow(users) {
+  const cards = await Promise.all(users.map(cardHtml))
   const win = window.open('', '_blank', 'width=700,height=500')
   win.document.write(`<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -46,7 +53,7 @@ function openPrintWindow(users) {
   ${CARD_CSS}
 </style>
 </head><body>
-<div class="wrap">${users.map(cardHtml).join('')}</div>
+<div class="wrap">${cards.join('')}</div>
 </body></html>`)
   win.document.close()
   win.onload = () => { win.focus(); win.print(); win.close() }

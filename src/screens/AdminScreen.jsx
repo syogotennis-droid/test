@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react'
+import QRCode from 'qrcode'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
@@ -13,15 +14,14 @@ import styles from './AdminScreen.module.css'
 const LOG_TYPE_COLOR = { '出勤': '#2e7d32', '退勤': '#1a73e8' }
 
 function QRImage({ value, size = 200 }) {
-  const encoded = encodeURIComponent(value)
-  return (
-    <img
-      src={`https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=${size}x${size}&bgcolor=ffffff&color=000000&margin=10`}
-      alt={value}
-      width={size}
-      height={size}
-    />
-  )
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    QRCode.toDataURL(value, { width: size, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
+      .then(url => setSrc(url))
+  }, [value, size])
+  return src
+    ? <img src={src} alt={value} width={size} height={size} />
+    : <div style={{ width: size, height: size, background: '#eee', borderRadius: 4 }} />
 }
 const WORK_TYPES = ['現場', '清掃', '事務', '休憩']
 const WORK_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])

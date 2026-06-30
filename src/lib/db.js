@@ -1,5 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import {
+  initializeFirestore,
+  persistentLocalCache,
   getFirestore,
   collection,
   doc,
@@ -28,7 +30,12 @@ const firebaseConfig = {
 }
 
 const firebaseApp = initializeApp(firebaseConfig)
-const db = getFirestore(firebaseApp)
+let db
+try {
+  db = initializeFirestore(firebaseApp, { localCache: persistentLocalCache() })
+} catch {
+  db = getFirestore(firebaseApp)
+}
 
 const usersCol = collection(db, 'users')
 const logsCol = collection(db, 'logs')
@@ -110,10 +117,8 @@ export async function initDB() {
 
   DEFAULT_USERS.forEach(u => {
     const cur = existing[u.id]
-    if (!cur) {
-      batch.set(doc(db, 'users', u.id), { name: u.name, workItems: u.workItems || [], itemRates: u.itemRates || {} })
-      hasChanges = true
-    } else if (!cur.workItems || cur.workItems.length === 0) {
+    if (!cur) return
+    if (!cur.workItems || cur.workItems.length === 0) {
       batch.update(doc(db, 'users', u.id), { workItems: u.workItems || [], itemRates: u.itemRates || {} })
       hasChanges = true
     } else if (!cur.itemRates) {
@@ -200,9 +205,9 @@ export async function getClockInTimeForDate(userId, date) {
 
 export async function isCheckedIn(userId) {
   const today = getTodayDate()
-  const q = query(logsCol, where('date', '==', today))
+  const q = query(logsCol, where('user_id', '==', userId))
   const snap = await getDocs(q)
-  const logs = snap.docs.map(d => d.data()).filter(l => l.user_id === userId)
+  const logs = snap.docs.map(d => d.data()).filter(l => l.date === today)
   const ins = logs.filter(l => l.log_type === '出勤').length
   const outs = logs.filter(l => l.log_type === '退勤').length
   return ins > outs
