@@ -21,12 +21,12 @@ import { unzipSync, zipSync } from 'fflate'
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDii_V8WK9VO0RiMsaPwm3EnCxk_3AVaW8",
-  authDomain: "kamiyashiro-swim-4e0a3.firebaseapp.com",
-  projectId: "kamiyashiro-swim-4e0a3",
-  storageBucket: "kamiyashiro-swim-4e0a3.firebasestorage.app",
-  messagingSenderId: "423895372020",
-  appId: "1:423895372020:web:b831fa05c335899afa4ea1"
+  apiKey: "AIzaSyCKm6AYwlgw9aAtY4xICdbLcmIz6ZuMb3o",
+  authDomain: "kamiyashiro-swim-c6f20.firebaseapp.com",
+  projectId: "kamiyashiro-swim-c6f20",
+  storageBucket: "kamiyashiro-swim-c6f20.firebasestorage.app",
+  messagingSenderId: "340386787852",
+  appId: "1:340386787852:web:1fc745bde363c4b7347429"
 }
 
 const firebaseApp = initializeApp(firebaseConfig)
