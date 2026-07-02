@@ -5,18 +5,19 @@ import App from './App.jsx'
 import TabletApp from './tablet/TabletApp.jsx'
 import AdminScreen from './screens/AdminScreen.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
+import { getAdminPin, DEFAULT_ADMIN_PIN } from './lib/db.js'
 import './styles/global.css'
-
-const ADMIN_PIN = '260701'
 
 function AdminRoute() {
   const [unlocked, setUnlocked] = useState(false)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const [adminPin, setAdminPin] = useState(DEFAULT_ADMIN_PIN)
   const inputRef = useRef(null)
 
   useEffect(() => {
     inputRef.current?.focus()
+    getAdminPin().then(p => setAdminPin(p))
   }, [])
 
   if (unlocked) {
@@ -28,13 +29,13 @@ function AdminRoute() {
     setPin(val)
     setError('')
     if (val.length === 6) {
-      if (val === ADMIN_PIN) { setUnlocked(true) }
+      if (val === adminPin) { setUnlocked(true) }
       else { setError('PINが違います'); setPin('') }
     }
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter' && pin === ADMIN_PIN) setUnlocked(true)
+    if (e.key === 'Enter' && pin === adminPin) setUnlocked(true)
   }
 
   return (
@@ -56,7 +57,7 @@ function AdminRoute() {
         />
         {error && <div style={{ textAlign: 'center', color: '#dc2626', fontWeight: 700, fontSize: '1rem' }}>{error}</div>}
         <button
-          onClick={() => { if (pin === ADMIN_PIN) setUnlocked(true); else { setError('PINが違います'); setPin('') } }}
+          onClick={() => { if (pin === adminPin) setUnlocked(true); else { setError('PINが違います'); setPin('') } }}
           style={{ height: 52, background: '#1a5fa8', border: 'none', borderRadius: 12, color: '#fff', fontSize: '1.1rem', fontWeight: 800, cursor: 'pointer' }}
         >
           入力

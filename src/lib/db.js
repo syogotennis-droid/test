@@ -39,6 +39,21 @@ try {
 
 const usersCol = collection(db, 'users')
 const logsCol = collection(db, 'logs')
+const configDocRef = doc(db, 'config', 'system')
+
+export const DEFAULT_ADMIN_PIN = '260701'
+
+export async function getAdminPin() {
+  try {
+    const snap = await getDoc(configDocRef)
+    if (snap.exists() && snap.data()?.adminPin) return snap.data().adminPin
+  } catch {}
+  return DEFAULT_ADMIN_PIN
+}
+
+export async function saveAdminPin(newPin) {
+  await setDoc(configDocRef, { adminPin: newPin }, { merge: true })
+}
 
 function getTodayDate() {
   return new Date().toLocaleDateString('ja-JP', {
@@ -474,15 +489,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
-    const userRates = user.rates || {}
+    const itemRates = user.itemRates || {}
 
     const byDate = {}
     userLogs.forEach(log => {
-      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workType: '' }
+      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {} }
       if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
       else if (log.log_type === '退勤') {
         byDate[log.date].outs.push(log.time || '')
-        if (log.work_type) byDate[log.date].workType = log.work_type
+        const items = getWorkItems(log)
+        Object.entries(items).forEach(([t, m]) => {
+          byDate[log.date].workItems[t] = (byDate[log.date].workItems[t] || 0) + m
+        })
       }
     })
 
@@ -547,42 +565,36 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           dC = `<c r="D${r}" s="${st.D}"><v>${excelTime(h, mi)}</v></c>`
         }
 
-        const workMins = parseWorkMins(entry?.workType || '')
-        const kyukeiMins = workMins['休憩'] > 0 ? workMins['休憩'] : 0
-        const totalMins = (inStr && outStr) ? Math.max(0, timeDiffMins(inStr, outStr)) : 0
+        const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
+        const wi = entry?.workItems || {}
+        const breakMins = wi['休憩'] || 0
+        const isWeekend = dow === 0 || dow === 6
+        const paidEntries = Object.entries(wi)
+          .filter(([t, m]) => !EXCL.has(t) && m > 0)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
 
-        if (kyukeiMins > 0) {
-          fC = `<c r="F${r}" s="${st.F}"><v>${kyukeiMins / 60}</v></c>`
+        if (breakMins > 0) {
+          fC = `<c r="F${r}" s="${st.F}"><v>${breakMins / 60}</v></c>`
         }
 
-        const PAID = [
-          { type: '現場', tC: 'G', wC: 'H' },
-          { type: '清掃', tC: 'I', wC: 'J' },
-          { type: '事務', tC: 'K', wC: 'L' },
-        ]
-        const zeroTypes = PAID.map(p => p.type).filter(t => workMins[t] === 0)
-        const typeMins = t => {
-          if (workMins[t] === null) return 0
-          if (workMins[t] > 0) return workMins[t]
-          return zeroTypes.length === 1 ? totalMins : 0
-        }
-        for (const { type, tC, wC } of PAID) {
-          if (workMins[type] === null) continue
-          const tm = typeMins(type)
-          if (tm > 0) {
-            const rate = Number(userRates[type]) || 0
-            if (tC === 'G') {
-              gC = `<c r="G${r}" s="${st.G}"><v>${tm / 60}</v></c>`
-              if (rate > 0) hC = `<c r="H${r}" s="${st.H}"><v>${Math.round(tm / 60 * rate)}</v></c>`
-            } else if (tC === 'I') {
-              iC = `<c r="I${r}" s="${st.I}"><v>${tm / 60}</v></c>`
-              if (rate > 0) jC = `<c r="J${r}" s="${st.J}"><v>${Math.round(tm / 60 * rate)}</v></c>`
-            } else if (tC === 'K') {
-              kC = `<c r="K${r}" s="${st.K}"><v>${tm / 60}</v></c>`
-              if (rate > 0) lC = `<c r="L${r}" s="${st.L}"><v>${Math.round(tm / 60 * rate)}</v></c>`
-            }
+        paidEntries.forEach(([type, mins], idx) => {
+          const rateObj = itemRates[type] || {}
+          const rate = isWeekend
+            ? (Number(rateObj.sunday) || Number(rateObj.normal) || 0)
+            : (Number(rateObj.normal) || 0)
+          const hours = mins / 60
+          if (idx === 0) {
+            gC = `<c r="G${r}" s="${st.G}"><v>${hours}</v></c>`
+            if (rate > 0) hC = `<c r="H${r}" s="${st.H}"><v>${Math.round(hours * rate)}</v></c>`
+          } else if (idx === 1) {
+            iC = `<c r="I${r}" s="${st.I}"><v>${hours}</v></c>`
+            if (rate > 0) jC = `<c r="J${r}" s="${st.J}"><v>${Math.round(hours * rate)}</v></c>`
+          } else if (idx === 2) {
+            kC = `<c r="K${r}" s="${st.K}"><v>${hours}</v></c>`
+            if (rate > 0) lC = `<c r="L${r}" s="${st.L}"><v>${Math.round(hours * rate)}</v></c>`
           }
-        }
+        })
       }
 
       dataRows.push(

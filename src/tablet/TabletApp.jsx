@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { initDB, saveLog, isCheckedIn, getClockInTime } from '../lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN } from '../lib/db'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
 import WorkSelectScreen from '../screens/WorkSelectScreen'
@@ -20,9 +20,8 @@ const STATE = {
 
 const ADMIN_TAP_COUNT = 5
 const ADMIN_TAP_TIMEOUT = 3000
-const ADMIN_PIN = '260701'
 
-function AdminPinOverlay({ onSuccess, onClose }) {
+function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫']
@@ -34,7 +33,7 @@ function AdminPinOverlay({ onSuccess, onClose }) {
     setPin(next)
     setError('')
     if (next.length === 6) {
-      if (next === ADMIN_PIN) { onSuccess() }
+      if (next === adminPin) { onSuccess() }
       else { setError('PINが違います'); setPin('') }
     }
   }
@@ -71,6 +70,7 @@ export default function TabletApp() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [adminTaps, setAdminTaps] = useState(0)
   const [adminPinMode, setAdminPinMode] = useState(false)
+  const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN)
   const adminTapTimer = useRef(null)
 
   useEffect(() => {
@@ -81,6 +81,7 @@ export default function TabletApp() {
     initDB()
       .then(() => { clearTimeout(timer); setState(STATE.MODE) })
       .catch(e => { clearTimeout(timer); setNetworkError('初期化エラー: ' + (e?.message || e)); setState(STATE.MODE) })
+    getAdminPin().then(p => setCurrentAdminPin(p))
 
     const onOnline = () => setIsOnline(true)
     const onOffline = () => setIsOnline(false)
@@ -255,6 +256,7 @@ export default function TabletApp() {
 
       {adminPinMode && (
         <AdminPinOverlay
+          adminPin={currentAdminPin}
           onSuccess={() => { setAdminPinMode(false); setState(STATE.ADMIN) }}
           onClose={() => { setAdminPinMode(false); setAdminTaps(0) }}
         />

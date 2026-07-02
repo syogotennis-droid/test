@@ -6,7 +6,7 @@ import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  resolveUserByPin, PAY_ITEMS
+  resolveUserByPin, PAY_ITEMS, saveAdminPin
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -67,12 +67,14 @@ export default function AdminScreen({ onBack }) {
         <button className={[styles.tab, tab === 'kinmubo' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('kinmubo')}>出勤簿作成</button>
         <button className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('users')}>ユーザー管理</button>
         <button className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('qr')}>QR印刷</button>
+        <button className={[styles.tab, tab === 'settings' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('settings')}>設定</button>
       </div>
 
       {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('calendar')} />}
       {tab === 'calendar' && <CalendarTab users={users} today={today} />}
       {tab === 'kinmubo' && <KinmuboTab today={today} />}
       {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} />}
+      {tab === 'settings' && <SettingsTab />}
     </div>
   )
 }
@@ -1027,6 +1029,74 @@ function UsersTab({ users, today, onRefresh }) {
 }
 
 // ─── NumpadOverlay ────────────────────────────────────────────────────────────
+
+// ─── SettingsTab ──────────────────────────────────────────────────────────────
+
+function SettingsTab() {
+  const [newPin, setNewPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSave() {
+    if (newPin.length !== 6) { setError('6桁のPINを入力してください'); return }
+    if (newPin !== confirmPin) { setError('PINが一致しません'); setConfirmPin(''); return }
+    try {
+      await saveAdminPin(newPin)
+      setSaved(true)
+      setNewPin('')
+      setConfirmPin('')
+      setError('')
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      setError('保存に失敗しました')
+    }
+  }
+
+  return (
+    <div style={{ padding: '24px 16px', maxWidth: 400 }}>
+      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 20 }}>管理者PIN変更</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>新しいPIN（6桁）</div>
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={6}
+            value={newPin}
+            onChange={e => { setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+            autoComplete="new-password"
+            placeholder="••••••"
+            style={{ height: 52, width: '100%', boxSizing: 'border-box', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.4rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f' }}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>確認（もう一度）</div>
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={6}
+            value={confirmPin}
+            onChange={e => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError('') }}
+            autoComplete="new-password"
+            placeholder="••••••"
+            style={{ height: 52, width: '100%', boxSizing: 'border-box', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.4rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f' }}
+          />
+        </div>
+        {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem' }}>{error}</div>}
+        {saved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem' }}>✓ PINを変更しました（全デバイスに反映）</div>}
+        <button
+          onClick={handleSave}
+          disabled={newPin.length !== 6 || confirmPin.length !== 6}
+          style={{ height: 52, background: '#1a5fa8', border: 'none', borderRadius: 12, color: '#fff', fontSize: '1.05rem', fontWeight: 800, cursor: 'pointer', opacity: (newPin.length !== 6 || confirmPin.length !== 6) ? 0.4 : 1 }}
+        >
+          PINを変更する
+        </button>
+        <div style={{ fontSize: '0.8rem', color: '#9baab8' }}>変更後は次回PIN入力から新しいPINが有効になります</div>
+      </div>
+    </div>
+  )
+}
 
 const NUMPAD_KEYS     = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 const NUMPAD_KEYS_DEC = ['1','2','3','4','5','6','7','8','9','.','0','⌫']
