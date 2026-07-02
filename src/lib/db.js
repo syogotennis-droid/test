@@ -420,7 +420,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   // 0=default 1=title 2=username 3=header 4=gap
   // date:{wd:5,sa:6,su:7} dow:{wd:8,sa:9,su:10}
   // time:{wd:11,sa:12,su:13} hours:{wd:14,sa:15,su:16} pay:{wd:17,sa:18,su:19}
-  // tot_lbl:20 tot_hrs:21 tot_pay:22
+  // tot_lbl:20 tot_hrs:21 tot_pay:22 pay_lbl:23 pay_rate:24
   const S = {
     title: 1, username: 2, hdr: 3, gap: 4,
     date:  { wd: 5,  sa: 6,  su: 7  },
@@ -429,6 +429,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     hours: { wd: 14, sa: 15, su: 16 },
     pay:   { wd: 17, sa: 18, su: 19 },
     tot_lbl: 20, tot_hrs: 21, tot_pay: 22,
+    pay_lbl: 23, pay_rate: 24,
   }
 
   const STYLES_XML = [
@@ -460,7 +461,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>',
     '</borders>',
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>',
-    '<cellXfs count="23">',
+    '<cellXfs count="25">',
     // 0 default
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
     // 1 title
@@ -497,6 +498,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<xf numFmtId="166" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="center"/></xf>',
     // 22 totals pay
     '<xf numFmtId="167" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="right"/></xf>',
+    // 23 pay row label: bordered, left aligned text
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left"/></xf>',
+    // 24 pay row hourly rate: bordered, #,##0 format, center
+    '<xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     '</cellXfs>',
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',
     '</styleSheet>',
@@ -509,41 +514,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
     const itemRates = user.itemRates || {}
-    const workTypes = (user.workItems || []).filter(t => !EXCL.has(t))
 
-    // Fixed cols: A=0(日付) B=1(曜) C=2(出勤) D=3(退勤) E=4(休憩) F=5(合計) G=6(空白区切り)
-    let ci = 7  // next dynamic column index, starts at H
-
-    // Time columns per work type (平日 / 土日 split when sunday rate exists)
-    const timeColMap = {}
-    for (const type of workTypes) {
-      const hasSunday = !!(itemRates[type]?.sunday)
-      const wdCol = colLetter(ci++)
-      const suCol = hasSunday ? colLetter(ci++) : null
-      timeColMap[type] = { wd: wdCol, su: suCol, hasSunday }
-    }
-    const timeTotalCol = colLetter(ci++)
-    const gap2Col = colLetter(ci++)
-
-    // Pay columns per work type (same structure as time columns)
-    const payColMap = {}
-    for (const type of workTypes) {
-      const hasSunday = !!(itemRates[type]?.sunday)
-      const wdCol = colLetter(ci++)
-      const suCol = hasSunday ? colLetter(ci++) : null
-      payColMap[type] = { wd: wdCol, su: suCol, hasSunday }
-    }
-    const payTotalCol = colLetter(ci++)
-
-    // Flat lists of all time/pay columns for SUM formulas
-    const allTimeCols = workTypes.flatMap(t =>
-      timeColMap[t].hasSunday ? [timeColMap[t].wd, timeColMap[t].su] : [timeColMap[t].wd]
-    )
-    const allPayCols = workTypes.flatMap(t =>
-      payColMap[t].hasSunday ? [payColMap[t].wd, payColMap[t].su] : [payColMap[t].wd]
-    )
-
-    // Build byDate from logs
+    // Build byDate first so we can compute monthly hours for filtering
     const byDate = {}
     userLogs.forEach(log => {
       if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {} }
@@ -557,39 +529,62 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
+    // Monthly hours split by weekday / weekend per type
+    const monthlyWdMins = {}, monthlyWeMins = {}
+    Object.entries(byDate).forEach(([dateStr, entry]) => {
+      const [y, mo, d] = dateStr.split('-').map(Number)
+      const isWe = new Date(y, mo - 1, d).getDay() % 6 === 0  // 0=Sun or 6=Sat
+      Object.entries(entry.workItems).forEach(([t, m]) => {
+        if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + m
+        else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + m
+      })
+    })
+    const monthlyMins = {}
+    new Set([...Object.keys(monthlyWdMins), ...Object.keys(monthlyWeMins)])
+      .forEach(t => { monthlyMins[t] = (monthlyWdMins[t] || 0) + (monthlyWeMins[t] || 0) })
+
+    // Filter: user.workItems types, not EXCL, with actual hours this month
+    const workTypes = (user.workItems || [])
+      .filter(t => !EXCL.has(t) && (monthlyMins[t] || 0) > 0)
+
+    // Time table columns: A=日付 B=曜 C=出勤 D=退勤 E=休憩 F=合計時間, then type cols, then 時間計
+    let ci = 6  // G onwards
+    const timeColMap = {}
+    for (const type of workTypes) {
+      const hasSunday = !!(itemRates[type]?.sunday)
+      const wdCol = colLetter(ci++)
+      const suCol = hasSunday ? colLetter(ci++) : null
+      timeColMap[type] = { wd: wdCol, su: suCol, hasSunday }
+    }
+    const timeTotalCol = colLetter(ci++)
+
+    const allTimeCols = workTypes.flatMap(t =>
+      timeColMap[t].hasSunday ? [timeColMap[t].wd, timeColMap[t].su] : [timeColMap[t].wd]
+    )
+
     // Row 1: title
     const row1 = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿')}</t></is></c></row>`
     // Row 2: user name
     const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
 
-    // Row 4: headers
-    const hdrCell = (col, text) =>
-      `<c r="${col}4" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
+    // Row 4: time table headers
+    const hdrCell = (col, rn, text) =>
+      `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
 
     const hdrCells = [
-      hdrCell('A', '日付'), hdrCell('B', '曜日'),
-      hdrCell('C', '出勤'), hdrCell('D', '退勤'),
-      hdrCell('E', '休憩'), hdrCell('F', '合計時間'),
-      `<c r="G4" s="${S.gap}"/>`,
+      hdrCell('A', 4, '日付'), hdrCell('B', 4, '曜日'),
+      hdrCell('C', 4, '出勤'), hdrCell('D', 4, '退勤'),
+      hdrCell('E', 4, '休憩'), hdrCell('F', 4, '合計時間'),
     ]
     for (const type of workTypes) {
       const { wd, su, hasSunday } = timeColMap[type]
       if (hasSunday) {
-        hdrCells.push(hdrCell(wd, type + '（平）'), hdrCell(su, type + '（土日）'))
+        hdrCells.push(hdrCell(wd, 4, type + '（平）'), hdrCell(su, 4, type + '（土日）'))
       } else {
-        hdrCells.push(hdrCell(wd, type))
+        hdrCells.push(hdrCell(wd, 4, type))
       }
     }
-    hdrCells.push(hdrCell(timeTotalCol, '時間計'), `<c r="${gap2Col}4" s="${S.gap}"/>`)
-    for (const type of workTypes) {
-      const { wd, su, hasSunday } = payColMap[type]
-      if (hasSunday) {
-        hdrCells.push(hdrCell(wd, type + '（平）\n給与'), hdrCell(su, type + '（土日）\n給与'))
-      } else {
-        hdrCells.push(hdrCell(wd, type + '\n給与'))
-      }
-    }
-    hdrCells.push(hdrCell(payTotalCol, '給与計'))
+    hdrCells.push(hdrCell(timeTotalCol, 4, '時間計'))
     const row4 = `<row r="4" ht="42">${hdrCells.join('')}</row>`
 
     // Data rows (rows 5–35, one per day up to 31)
@@ -609,12 +604,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           `<c r="A${r}" s="${S.date.wd}"/>`, `<c r="B${r}" s="${S.dow.wd}"/>`,
           `<c r="C${r}" s="${S.time.wd}"/>`, `<c r="D${r}" s="${S.time.wd}"/>`,
           `<c r="E${r}" s="${S.hours.wd}"/>`, `<c r="F${r}" s="${S.hours.wd}"/>`,
-          `<c r="G${r}" s="${S.gap}"/>`,
         )
         for (const col of allTimeCols) cells.push(`<c r="${col}${r}" s="${S.hours.wd}"/>`)
-        cells.push(`<c r="${timeTotalCol}${r}" s="${S.hours.wd}"/>`, `<c r="${gap2Col}${r}" s="${S.gap}"/>`)
-        for (const col of allPayCols) cells.push(`<c r="${col}${r}" s="${S.pay.wd}"/>`)
-        cells.push(`<c r="${payTotalCol}${r}" s="${S.pay.wd}"/>`)
+        cells.push(`<c r="${timeTotalCol}${r}" s="${S.hours.wd}"/>`)
       } else {
         cells.push(`<c r="A${r}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
         cells.push(`<c r="B${r}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
@@ -639,14 +631,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           ? `<c r="E${r}" s="${S.hours[dt]}"><v>${breakMins / 60}</v></c>`
           : `<c r="E${r}" s="${S.hours[dt]}"/>`)
 
-        // 合計勤務時間 = (退勤 − 出勤) × 24 − 休憩
         cells.push(inStr && outStr
           ? `<c r="F${r}" s="${S.hours[dt]}"><f>IF(OR(C${r}="",D${r}=""),"",MAX(0,(D${r}-C${r})*24-E${r}))</f></c>`
           : `<c r="F${r}" s="${S.hours[dt]}"/>`)
 
-        cells.push(`<c r="G${r}" s="${S.gap}"/>`)
-
-        // Time columns — split into 平日 / 土日 based on weekend flag
         for (const type of workTypes) {
           const { wd, su, hasSunday } = timeColMap[type]
           const mins = wi[type] || 0
@@ -670,71 +658,114 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           }
         }
 
-        // 時間計
         cells.push(allTimeCols.length > 0
           ? `<c r="${timeTotalCol}${r}" s="${S.hours[dt]}"><f>SUM(${allTimeCols.map(c => c + r).join(',')})</f></c>`
           : `<c r="${timeTotalCol}${r}" s="${S.hours[dt]}"/>`)
-
-        cells.push(`<c r="${gap2Col}${r}" s="${S.gap}"/>`)
-
-        // Pay columns — user's individual 時給 (normal / sunday) applied per day type
-        for (const type of workTypes) {
-          const { wd: pwdCol, su: psuCol, hasSunday } = payColMap[type]
-          const mins = wi[type] || 0
-          const hours = mins / 60
-          const rateObj = itemRates[type] || {}
-          const normalRate = Number(rateObj.normal) || 0
-          const sundayRate = Number(rateObj.sunday) || 0
-          if (hasSunday) {
-            if (isWeekend) {
-              cells.push(`<c r="${pwdCol}${r}" s="${S.pay[dt]}"/>`)
-              cells.push(mins > 0 && sundayRate > 0
-                ? `<c r="${psuCol}${r}" s="${S.pay[dt]}"><v>${Math.round(hours * sundayRate)}</v></c>`
-                : `<c r="${psuCol}${r}" s="${S.pay[dt]}"/>`)
-            } else {
-              cells.push(mins > 0 && normalRate > 0
-                ? `<c r="${pwdCol}${r}" s="${S.pay[dt]}"><v>${Math.round(hours * normalRate)}</v></c>`
-                : `<c r="${pwdCol}${r}" s="${S.pay[dt]}"/>`)
-              cells.push(`<c r="${psuCol}${r}" s="${S.pay[dt]}"/>`)
-            }
-          } else {
-            const rate = isWeekend ? (sundayRate || normalRate) : normalRate
-            cells.push(mins > 0 && rate > 0
-              ? `<c r="${pwdCol}${r}" s="${S.pay[dt]}"><v>${Math.round(hours * rate)}</v></c>`
-              : `<c r="${pwdCol}${r}" s="${S.pay[dt]}"/>`)
-          }
-        }
-
-        // 給与計
-        cells.push(allPayCols.length > 0
-          ? `<c r="${payTotalCol}${r}" s="${S.pay[dt]}"><f>SUM(${allPayCols.map(c => c + r).join(',')})</f></c>`
-          : `<c r="${payTotalCol}${r}" s="${S.pay[dt]}"/>`)
       }
 
       dataRows.push(`<row r="${r}">${cells.join('')}</row>`)
     }
 
-    // Totals row (row 36)
+    // Time totals row (row 36)
     const DATA_END = DATA_START + lastDay - 1
-    const TR = DATA_START + 31
+    const TR = DATA_START + 31  // = 36
     const tCells = [
       `<c r="A${TR}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>`,
       `<c r="B${TR}" s="${S.tot_lbl}"/>`, `<c r="C${TR}" s="${S.tot_lbl}"/>`, `<c r="D${TR}" s="${S.tot_lbl}"/>`,
       `<c r="E${TR}" s="${S.tot_hrs}"><f>SUM(E${DATA_START}:E${DATA_END})</f></c>`,
       `<c r="F${TR}" s="${S.tot_hrs}"><f>SUM(F${DATA_START}:F${DATA_END})</f></c>`,
-      `<c r="G${TR}" s="${S.gap}"/>`,
     ]
     for (const col of allTimeCols) {
       tCells.push(`<c r="${col}${TR}" s="${S.tot_hrs}"><f>SUM(${col}${DATA_START}:${col}${DATA_END})</f></c>`)
     }
     tCells.push(`<c r="${timeTotalCol}${TR}" s="${S.tot_hrs}"><f>SUM(${timeTotalCol}${DATA_START}:${timeTotalCol}${DATA_END})</f></c>`)
-    tCells.push(`<c r="${gap2Col}${TR}" s="${S.gap}"/>`)
-    for (const col of allPayCols) {
-      tCells.push(`<c r="${col}${TR}" s="${S.tot_pay}"><f>SUM(${col}${DATA_START}:${col}${DATA_END})</f></c>`)
-    }
-    tCells.push(`<c r="${payTotalCol}${TR}" s="${S.tot_pay}"><f>SUM(${payTotalCol}${DATA_START}:${payTotalCol}${DATA_END})</f></c>`)
 
-    const sheetData = `<sheetData>${row1}${row2}${row4}${dataRows.join('')}<row r="${TR}">${tCells.join('')}</row></sheetData>`
+    // Pay summary table — row TR+2 (38) onwards, one row per work type variant
+    // Row TR+1 (37): blank separator
+    const PAY_HDR_ROW = TR + 2
+    const payHdrRow =
+      `<row r="${PAY_HDR_ROW}" ht="32">` +
+      `<c r="A${PAY_HDR_ROW}" s="${S.hdr}" t="inlineStr"><is><t>業務</t></is></c>` +
+      `<c r="B${PAY_HDR_ROW}" s="${S.hdr}" t="inlineStr"><is><t>時間計</t></is></c>` +
+      `<c r="C${PAY_HDR_ROW}" s="${S.hdr}" t="inlineStr"><is><t>時給</t></is></c>` +
+      `<c r="D${PAY_HDR_ROW}" s="${S.hdr}" t="inlineStr"><is><t>給与</t></is></c>` +
+      `</row>`
+
+    const payRows = []
+    let payRowIdx = PAY_HDR_ROW + 1
+    let totalPayHours = 0
+    let totalPayAmount = 0
+
+    for (const type of workTypes) {
+      const rateObj = itemRates[type] || {}
+      const normalRate = Number(rateObj.normal) || 0
+      const sundayRate = Number(rateObj.sunday) || 0
+      const hasSunday = !!(itemRates[type]?.sunday)
+
+      if (hasSunday) {
+        const wdMins = monthlyWdMins[type] || 0
+        const weMins = monthlyWeMins[type] || 0
+
+        if (wdMins > 0) {
+          const wdHours = wdMins / 60
+          const wdPay = Math.round(wdHours * normalRate)
+          totalPayHours += wdHours
+          totalPayAmount += wdPay
+          payRows.push(
+            `<row r="${payRowIdx}">` +
+            `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（平）')}</t></is></c>` +
+            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${wdHours}</v></c>` +
+            (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
+            (wdPay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wdPay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
+            `</row>`
+          )
+          payRowIdx++
+        }
+
+        if (weMins > 0) {
+          const weHours = weMins / 60
+          const wePay = Math.round(weHours * sundayRate)
+          totalPayHours += weHours
+          totalPayAmount += wePay
+          payRows.push(
+            `<row r="${payRowIdx}">` +
+            `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（土日）')}</t></is></c>` +
+            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${weHours}</v></c>` +
+            (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
+            (wePay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wePay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
+            `</row>`
+          )
+          payRowIdx++
+        }
+      } else {
+        const totalMins = monthlyMins[type] || 0
+        const totalHours = totalMins / 60
+        const totalPay = Math.round(totalHours * normalRate)
+        totalPayHours += totalHours
+        totalPayAmount += totalPay
+        payRows.push(
+          `<row r="${payRowIdx}">` +
+          `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
+          `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${totalHours}</v></c>` +
+          (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
+          (totalPay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${totalPay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
+          `</row>`
+        )
+        payRowIdx++
+      }
+    }
+
+    // Pay total row
+    const PTR = payRowIdx
+    const payTotalRow =
+      `<row r="${PTR}">` +
+      `<c r="A${PTR}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
+      `<c r="B${PTR}" s="${S.tot_hrs}"><v>${totalPayHours}</v></c>` +
+      `<c r="C${PTR}" s="${S.tot_lbl}"/>` +
+      `<c r="D${PTR}" s="${S.tot_pay}"><v>${totalPayAmount}</v></c>` +
+      `</row>`
+
+    const sheetData = `<sheetData>${row1}${row2}${row4}${dataRows.join('')}<row r="${TR}">${tCells.join('')}</row>${payHdrRow}${payRows.join('')}${payTotalRow}</sheetData>`
     const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const WB_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     sheetXmls.push(
