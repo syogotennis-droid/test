@@ -28,22 +28,22 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
   function press(k) {
     if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
     if (k === '') return
-    if (pin.length >= 6) return
-    const next = pin + k
-    setPin(next)
+    if (pin.length >= 8) return
+    setPin(p => p + k)
     setError('')
-    if (next.length === 6) {
-      if (next === adminPin) { onSuccess() }
-      else { setError('PINが違います'); setPin('') }
-    }
+  }
+  function confirm() {
+    if (pin.length < 4) { setError('4桁以上入力してください'); return }
+    if (pin === adminPin) { onSuccess() }
+    else { setError('PINが違います'); setPin('') }
   }
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
       <div style={{background:'#fff',borderRadius:20,padding:'28px 24px 24px',width:'min(340px,92vw)',display:'flex',flexDirection:'column',gap:16}}>
         <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理画面 — PINを入力</div>
-        <div style={{display:'flex',justifyContent:'center',gap:10}}>
-          {Array.from({length:6}).map((_,i) => (
-            <span key={i} style={{width:14,height:14,borderRadius:'50%',border:'2px solid #9baab8',background:i<pin.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
+        <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
+          {Array.from({length:8}).map((_,i) => (
+            <span key={i} style={{width:12,height:12,borderRadius:'50%',border:'2px solid #9baab8',background:i<pin.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
           ))}
         </div>
         {error && <div style={{textAlign:'center',color:'#dc2626',fontWeight:700,fontSize:'0.9rem'}}>{error}</div>}
@@ -54,7 +54,10 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
             </button>
           ))}
         </div>
-        <button onClick={onClose} style={{height:44,border:'2px solid #d1d5db',borderRadius:10,background:'#fff',color:'#374151',fontWeight:700,cursor:'pointer'}}>キャンセル</button>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={onClose} style={{flex:1,height:44,border:'2px solid #d1d5db',borderRadius:10,background:'#fff',color:'#374151',fontWeight:700,cursor:'pointer'}}>キャンセル</button>
+          <button onClick={confirm} disabled={pin.length < 4} style={{flex:2,height:44,border:'none',borderRadius:10,background:'#1a5fa8',color:'#fff',fontWeight:800,fontSize:'1rem',cursor:'pointer',opacity:pin.length<4?0.4:1}}>確認 →</button>
+        </div>
       </div>
     </div>
   )
