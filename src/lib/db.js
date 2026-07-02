@@ -487,9 +487,27 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
   const sheetXmls = []
 
+  const EXCL_HDR = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
+  function replaceHdr(xml, col, text) {
+    return xml.replace(
+      new RegExp(`<c r="${col}4"([^>]*)>(?:<v>\\d+</v>|<is>[\\s\\S]*?</is>)</c>`),
+      (_, attrs) => {
+        const cleanAttrs = attrs.replace(/\s*t="[^"]*"/, '')
+        return `<c r="${col}4"${cleanAttrs} t="inlineStr"><is><t>${esc(text)}</t></is></c>`
+      }
+    )
+  }
+
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
     const itemRates = user.itemRates || {}
+    const colTypes = (user.workItems || []).filter(t => !EXCL_HDR.has(t)).slice(0, 3)
+
+    // Rewrite G4/I4/K4 headers with user's actual work type names
+    let userRow4xml = row4xml
+    if (colTypes[0]) userRow4xml = replaceHdr(userRow4xml, 'G', colTypes[0])
+    if (colTypes[1]) userRow4xml = replaceHdr(userRow4xml, 'I', colTypes[1])
+    if (colTypes[2]) userRow4xml = replaceHdr(userRow4xml, 'K', colTypes[2])
 
     const byDate = {}
     userLogs.forEach(log => {
@@ -565,20 +583,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           dC = `<c r="D${r}" s="${st.D}"><v>${excelTime(h, mi)}</v></c>`
         }
 
-        const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
         const wi = entry?.workItems || {}
         const breakMins = wi['休憩'] || 0
         const isWeekend = dow === 0 || dow === 6
-        const paidEntries = Object.entries(wi)
-          .filter(([t, m]) => !EXCL.has(t) && m > 0)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
 
         if (breakMins > 0) {
           fC = `<c r="F${r}" s="${st.F}"><v>${breakMins / 60}</v></c>`
         }
 
-        paidEntries.forEach(([type, mins], idx) => {
+        colTypes.forEach((type, idx) => {
+          const mins = wi[type] || 0
+          if (!mins) return
           const rateObj = itemRates[type] || {}
           const rate = isWeekend
             ? (Number(rateObj.sunday) || Number(rateObj.normal) || 0)
@@ -608,7 +623,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       )
     }
 
-    const sheetData = `<sheetData>${row1}${row2}${row4xml}${dataRows.join('')}${row36xml}</sheetData>`
+    const sheetData = `<sheetData>${row1}${row2}${userRow4xml}${dataRows.join('')}${row36xml}</sheetData>`
     sheetXmls.push(beforeData + sheetData + afterData)
   }
 
