@@ -834,13 +834,21 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
+    // ci now equals Excel 1-based col number of typeTotalCol (last T2 column)
+    const maxColIdx = Math.max(8, ci) // 8 = col H (last T1 column)
+    const colsXml =
+      `<cols>` +
+      `<col min="1" max="1" width="13" customWidth="1"/>` +
+      `<col min="2" max="2" width="6" customWidth="1"/>` +
+      (maxColIdx >= 3 ? `<col min="3" max="${maxColIdx}" width="12" customWidth="1"/>` : '') +
+      `</cols>`
     const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const WB_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     sheetXmls.push(
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<worksheet xmlns="${WB_NS}" xmlns:r="${WB_REL_NS}">` +
       `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
-      `${sheetData}</worksheet>`
+      `${colsXml}${sheetData}</worksheet>`
     )
   }
 
