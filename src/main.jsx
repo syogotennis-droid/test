@@ -52,9 +52,12 @@ function AdminRoute() {
           value={pin}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onFocus={() => setPin('')}
           maxLength={4}
+          name="admin-pin-entry"
+          autoComplete="new-password"
+          data-lpignore="true"
           style={{ height: 56, fontSize: '1.8rem', textAlign: 'center', letterSpacing: '0.4em', border: '2px solid #e2e8f0', borderRadius: 12, outline: 'none', padding: '0 16px', color: '#1a3f6f', background: '#f8fafc', width: '100%', boxSizing: 'border-box' }}
-          autoComplete="off"
         />
         {error && <div style={{ textAlign: 'center', color: '#dc2626', fontWeight: 700, fontSize: '1rem' }}>{error}</div>}
         <button
