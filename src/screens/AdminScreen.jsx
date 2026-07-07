@@ -1321,68 +1321,83 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
 
 // ─── TimeNumpadOverlay ────────────────────────────────────────────────────────
 
-function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
-  const [step, setStep] = useState('h')
-  const [hourVal, setHourVal] = useState(() => {
-    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
-      const h = parseInt(initialValue.split(':')[0])
-      return h > 0 ? String(h) : ''
-    }
-    return ''
-  })
-  const [minVal, setMinVal] = useState(() => {
-    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
-      const m = parseInt(initialValue.split(':')[1])
-      return m > 0 ? String(m) : ''
-    }
-    return ''
-  })
+// digits: up to 3 or 4 digit string. first digit ≥3 → 1-digit hour (H:MM), else 2-digit (HH:MM)
+function parseTimeDigits(d) {
+  if (!d || d.length === 0) return { h: 0, m: 0, complete: false }
+  const first = parseInt(d[0])
+  if (first >= 3) {
+    const h = first
+    if (d.length === 1) return { h, m: 0, complete: false }
+    if (parseInt(d[1]) > 5) return null
+    if (d.length === 2) return { h, m: parseInt(d[1]) * 10, complete: false }
+    const m = parseInt(d.slice(1))
+    return m > 59 ? null : { h, m, complete: true }
+  } else {
+    if (d.length === 1) return { h: first, m: 0, complete: false }
+    const h = parseInt(d.slice(0, 2))
+    if (h > 23) return null
+    if (d.length === 2) return { h, m: 0, complete: false }
+    if (parseInt(d[2]) > 5) return null
+    if (d.length === 3) return { h, m: parseInt(d[2]) * 10, complete: false }
+    const m = parseInt(d.slice(2))
+    return m > 59 ? null : { h, m, complete: true }
+  }
+}
 
-  const currentVal = step === 'h' ? hourVal : minVal
-  const setCurrentVal = step === 'h' ? setHourVal : setMinVal
-  const maxVal = step === 'h' ? 23 : 59
+function formatTimeDigits(d) {
+  if (!d || d.length === 0) return '--:--'
+  const first = parseInt(d[0])
+  if (first >= 3) {
+    return `${d[0]}:${d.slice(1).padEnd(2, '-')}`
+  }
+  return `${d.slice(0, 2).padEnd(2, '-')}:${d.slice(2).padEnd(2, '-')}`
+}
+
+function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
+  const [digits, setDigits] = useState(() => {
+    if (initialValue && /^\d{2}:\d{2}$/.test(initialValue)) {
+      return initialValue.replace(':', '')
+    }
+    return ''
+  })
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const parsed = parseTimeDigits(digits)
+  const display = formatTimeDigits(digits)
 
   function pressKey(k) {
-    if (k === '⌫') { setCurrentVal(v => v.slice(0, -1)); return }
+    if (k === '⌫') { setDigits(d => d.slice(0, -1)); return }
     if (k === '') return
-    const next = currentVal + k
-    if (parseInt(next) > maxVal) return
-    setCurrentVal(next)
+    const next = digits + k
+    if (parseTimeDigits(next) === null) return
+    setDigits(next)
   }
 
-  function handleNext() {
-    if (step === 'h') { setStep('m'); return }
-    const h = parseInt(hourVal) || 0
-    const m = parseInt(minVal) || 0
-    onConfirm(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+  function handleConfirm() {
+    if (!parsed?.complete) return
+    onConfirm(`${String(parsed.h).padStart(2, '0')}:${String(parsed.m).padStart(2, '0')}`)
     onClose()
-  }
-
-  const activeInputRef = useRef(null)
-  useEffect(() => { activeInputRef.current?.focus() }, [step])
-
-  function handleTnInputChange(e) {
-    const raw = e.target.value.replace(/\D/g, '')
-    if (raw !== '' && parseInt(raw) > maxVal) return
-    setCurrentVal(raw)
   }
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
-        <div className={styles.numpadTitle}>{title} — {step === 'h' ? '時' : '分'}</div>
+        <div className={styles.numpadTitle}>{title}</div>
         <input
-          ref={activeInputRef}
+          ref={inputRef}
           type="text"
-          inputMode="numeric"
-          value={currentVal}
-          onChange={handleTnInputChange}
+          inputMode="none"
+          readOnly
+          value={display}
           onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); handleNext() }
-            else if (e.key === 'Escape') { e.preventDefault(); step === 'm' ? setStep('h') : onClose() }
+            if (/^\d$/.test(e.key)) { e.preventDefault(); pressKey(e.key) }
+            else if (e.key === 'Backspace') { e.preventDefault(); pressKey('⌫') }
+            else if (e.key === 'Enter' && parsed?.complete) { e.preventDefault(); handleConfirm() }
+            else if (e.key === 'Escape') { e.preventDefault(); onClose() }
           }}
           className={styles.numpadDisplay}
-          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
+          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'default', caretColor: 'transparent' }}
         />
         <div className={styles.numpadGrid} onMouseDown={e => e.preventDefault()}>
           {NUMPAD_KEYS.map((k, i) => (
@@ -1395,12 +1410,8 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
           ))}
         </div>
         <div className={styles.numpadActions}>
-          <button className={styles.numpadCancel} onClick={step === 'm' ? () => setStep('h') : onClose}>
-            {step === 'm' ? '← 戻る' : 'キャンセル'}
-          </button>
-          <button className={styles.numpadOk} onClick={handleNext}>
-            {step === 'h' ? '分へ →' : 'OK'}
-          </button>
+          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
+          <button className={styles.numpadOk} onClick={handleConfirm} disabled={!parsed?.complete}>OK</button>
         </div>
       </div>
     </div>
