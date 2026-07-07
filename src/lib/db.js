@@ -838,7 +838,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const WB_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     sheetXmls.push(
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<worksheet xmlns="${WB_NS}" xmlns:r="${WB_REL_NS}">${sheetData}</worksheet>`
+      `<worksheet xmlns="${WB_NS}" xmlns:r="${WB_REL_NS}">` +
+      `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
+      `${sheetData}</worksheet>`
     )
   }
 
@@ -855,7 +857,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const wbXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<workbook xmlns="${WB_NS}" xmlns:r="${WB_REL}">` +
-    `<calcPr fullCalcOnLoad="1"/><sheets>${sheetEls}</sheets></workbook>`
+    `<bookViews><workbookView xWindow="0" yWindow="0" windowWidth="14400" windowHeight="8100"/></bookViews>` +
+    `<sheets>${sheetEls}</sheets>` +
+    `<calcPr fullCalcOnLoad="1"/>` +
+    `</workbook>`
 
   const wbRels =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
