@@ -1223,9 +1223,13 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
 
 function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClose }) {
   const initial = workTimes[item] || { h: 0, m: 0 }
-  const [step, setStep] = useState('h') // 'h' | 'm'
-  const [hVal, setHVal] = useState(initial.h > 0 ? String(initial.h) : '')
-  const [mVal, setMVal] = useState(initial.m > 0 ? String(initial.m) : '')
+  const [digits, setDigits] = useState(() => {
+    const { h, m } = initial
+    if (h === 0 && m === 0) return ''
+    return String(h).padStart(2, '0') + String(m).padStart(2, '0')
+  })
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
 
   const activeItems = Object.keys(workTimes).filter(id => workTimes[id] && (workTimes[id].h > 0 || workTimes[id].m > 0))
   const otherMins = activeItems.filter(id => id !== item).reduce((sum, id) => {
@@ -1233,65 +1237,55 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
     return sum + t.h * 60 + t.m
   }, 0)
   const remaining = workingMinutes != null ? workingMinutes - otherMins : null
-  const h = parseInt(hVal) || 0
-  const m = parseInt(mVal) || 0
-  const alreadySet = remaining != null && h * 60 + m === remaining
 
-  const currentVal = step === 'h' ? hVal : mVal
-  const setCurrentVal = step === 'h' ? setHVal : setMVal
-  const maxVal = step === 'h' ? 23 : 59
+  const parsed = parseTimeDigits(digits)
+  const display = formatTimeDigits(digits)
+  const curH = parsed ? parsed.h : 0
+  const curM = parsed ? parsed.m : 0
+  const alreadySet = remaining != null && curH * 60 + curM === remaining
 
   function pressKey(k) {
-    if (k === '⌫') { setCurrentVal(v => v.slice(0, -1)); return }
+    if (k === '⌫') { setDigits(d => d.slice(0, -1)); return }
     if (k === '') return
-    const next = currentVal + k
-    if (parseInt(next) > maxVal) return
-    setCurrentVal(next)
+    const next = digits + k
+    if (parseTimeDigits(next) === null) return
+    setDigits(next)
   }
 
-  function handleNext() {
-    if (step === 'h') { setStep('m'); return }
-    onSetTime(item, 'h', h)
-    onSetTime(item, 'm', m)
+  function handleConfirm() {
+    if (digits !== '' && !parsed?.complete) return
+    onSetTime(item, 'h', curH)
+    onSetTime(item, 'm', curM)
     onClose()
-  }
-
-  const activeInputRef = useRef(null)
-  useEffect(() => { activeInputRef.current?.focus() }, [step])
-
-  function handleWtInputChange(e) {
-    const raw = e.target.value.replace(/\D/g, '')
-    if (raw !== '' && parseInt(raw) > maxVal) return
-    setCurrentVal(raw)
   }
 
   function applyRemaining() {
     if (remaining == null) return
-    const rh = Math.floor(remaining / 60)
-    const rm = remaining % 60
-    onSetTime(item, 'h', rh)
-    onSetTime(item, 'm', rm)
+    onSetTime(item, 'h', Math.floor(remaining / 60))
+    onSetTime(item, 'm', remaining % 60)
     onClose()
   }
 
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
-        <div className={styles.numpadTitle}>{item} — {step === 'h' ? '時間' : '分'}</div>
+        <div className={styles.numpadTitle}>{item}</div>
         <input
-          ref={activeInputRef}
+          ref={inputRef}
           type="text"
-          inputMode="numeric"
-          value={currentVal}
-          onChange={handleWtInputChange}
+          inputMode="none"
+          readOnly
+          value={display}
           onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); handleNext() }
-            else if (e.key === 'Escape') { e.preventDefault(); step === 'm' ? setStep('h') : onClose() }
+            if (/^\d$/.test(e.key)) { e.preventDefault(); pressKey(e.key) }
+            else if (e.key === 'Backspace') { e.preventDefault(); pressKey('⌫') }
+            else if (e.key === 'Enter' && (digits === '' || parsed?.complete)) { e.preventDefault(); handleConfirm() }
+            else if (e.key === 'Escape') { e.preventDefault(); onClose() }
           }}
           className={styles.numpadDisplay}
-          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
+          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'default', caretColor: 'transparent' }}
         />
-        {step === 'h' && remaining != null && remaining > 0 && !alreadySet && (
+        {remaining != null && remaining > 0 && !alreadySet && (
           <button className={styles.remainingBtnInline} onClick={applyRemaining}>
             残り{fmtMinutes(remaining)}を入力
           </button>
@@ -1307,12 +1301,8 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
           ))}
         </div>
         <div className={styles.numpadActions}>
-          <button className={styles.numpadCancel} onClick={step === 'm' ? () => setStep('h') : onClose}>
-            {step === 'm' ? '← 戻る' : 'キャンセル'}
-          </button>
-          <button className={styles.numpadOk} onClick={handleNext}>
-            {step === 'h' ? '分へ →' : 'OK'}
-          </button>
+          <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
+          <button className={styles.numpadOk} onClick={handleConfirm} disabled={digits !== '' && !parsed?.complete}>OK</button>
         </div>
       </div>
     </div>
