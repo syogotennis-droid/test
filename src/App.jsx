@@ -17,7 +17,7 @@ const STATE = {
   CHECK: 'check',
 }
 
-const ADMIN_TAP_COUNT = 5
+const ADMIN_TAP_COUNT = 1
 const ADMIN_TAP_TIMEOUT = 3000
 
 function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
@@ -27,12 +27,12 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
   function press(k) {
     if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
     if (k === '') return
-    if (pin.length >= 8) return
+    if (pin.length >= 4) return
     setPin(p => p + k)
     setError('')
   }
   function confirm() {
-    if (pin.length < 4) { setError('4桁以上入力してください'); return }
+    if (pin.length !== 4) { setError('4桁で入力してください'); return }
     if (pin === adminPin) { onSuccess() }
     else { setError('PINが違います'); setPin('') }
   }
@@ -41,7 +41,7 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
       <div style={{background:'#fff',borderRadius:20,padding:'28px 24px 24px',width:'min(340px,92vw)',display:'flex',flexDirection:'column',gap:16}}>
         <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理画面 — PINを入力</div>
         <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
-          {Array.from({length:8}).map((_,i) => (
+          {Array.from({length:4}).map((_,i) => (
             <span key={i} style={{width:12,height:12,borderRadius:'50%',border:'2px solid #9baab8',background:i<pin.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
           ))}
         </div>
@@ -55,7 +55,7 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
         </div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={onClose} style={{flex:1,height:44,border:'2px solid #d1d5db',borderRadius:10,background:'#fff',color:'#374151',fontWeight:700,cursor:'pointer'}}>キャンセル</button>
-          <button onClick={confirm} disabled={pin.length < 4} style={{flex:2,height:44,border:'none',borderRadius:10,background:'#1a5fa8',color:'#fff',fontWeight:800,fontSize:'1rem',cursor:'pointer',opacity:pin.length<4?0.4:1}}>確認 →</button>
+          <button onClick={confirm} disabled={pin.length !== 4} style={{flex:2,height:44,border:'none',borderRadius:10,background:'#1a5fa8',color:'#fff',fontWeight:800,fontSize:'1rem',cursor:'pointer',opacity:pin.length!==4?0.4:1}}>確認 →</button>
         </div>
       </div>
     </div>
