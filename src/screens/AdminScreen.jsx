@@ -1074,7 +1074,8 @@ function SettingsTab() {
   }
 
   return (
-    <div style={{ padding: '24px 16px', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px' }}>
+    <div style={{ maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 32 }}>
       {/* PIN変更 */}
       <div>
         <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 16 }}>管理者PIN変更</div>
@@ -1147,6 +1148,7 @@ function SettingsTab() {
           <div style={{ fontSize: '0.8rem', color: '#9baab8' }}>出勤日の前後5分分の給与計算に使用されます（出勤簿Excel）</div>
         </div>
       </div>
+    </div>
     </div>
   )
 }
