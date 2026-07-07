@@ -533,16 +533,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const itemRates = user.itemRates || {}
 
     // Build byDate first so we can compute monthly hours for filtering
+    // Sort by timestamp so later 退勤 records overwrite earlier ones (prevents double-count from duplicate punches)
+    const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
     const byDate = {}
-    userLogs.forEach(log => {
+    sortedLogs.forEach(log => {
       if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {} }
       if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
       else if (log.log_type === '退勤') {
         byDate[log.date].outs.push(log.time || '')
         const items = getWorkItems(log)
-        Object.entries(items).forEach(([t, m]) => {
-          byDate[log.date].workItems[t] = (byDate[log.date].workItems[t] || 0) + m
-        })
+        if (Object.keys(items).length > 0) {
+          byDate[log.date].workItems = { ...items }  // replace entirely; last 退勤 wins
+        }
       }
     })
 
