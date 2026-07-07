@@ -454,7 +454,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<numFmt numFmtId="165" formatCode="h:mm"/>',
     '<numFmt numFmtId="166" formatCode="0.0"/>',
     '<numFmt numFmtId="167" formatCode="#,##0"/>',
-    '<numFmt numFmtId="168" formatCode="[h]&quot;時間&quot;mm&quot;分&quot;"/>',
+    '<numFmt numFmtId="168" formatCode="[h]時間mm分"/>',
     '</numFmts>',
     '<fonts count="4">',
     '<font><sz val="11"/><name val="Calibri"/></font>',
@@ -666,7 +666,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         } else { t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`) }
         // E: 合計 = 退勤 - 出勤（休憩未控除）
         t1c.push(inStr && outStr
-          ? `<c r="E${r1}" s="${S.hours[dt]}"><f>IF(OR(C${r1}="",D${r1}=""),"",MAX(0,D${r1}-C${r1}))</f></c>`
+          ? `<c r="E${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1})</f></c>`
           : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
         // F: 休憩
         const breakMins = wi['休憩'] || 0
@@ -675,7 +675,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
         // G: 勤務時間 = 合計 - 休憩
         t1c.push(inStr && outStr
-          ? `<c r="G${r1}" s="${S.hours[dt]}"><f>IF(E${r1}="","",E${r1}-F${r1})</f></c>`
+          ? `<c r="G${r1}" s="${S.hours[dt]}"><f>E${r1}-F${r1}</f></c>`
           : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
         // H: 準備時間 = 前後5分 = 10分 (出勤 or 退勤がある日のみ)
         const hasAttendance = (inStr || outStr)
