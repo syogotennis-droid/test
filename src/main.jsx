@@ -17,6 +17,14 @@ function AdminRoute() {
   const [adminPin, setAdminPin] = useState(DEFAULT_ADMIN_PIN)
 
   useEffect(() => { getAdminPin().then(p => setAdminPin(p)) }, [])
+  useEffect(() => {
+    function onKey(e) {
+      if (/^\d$/.test(e.key)) press(e.key)
+      else if (e.key === 'Backspace') press('⌫')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (unlocked) return <AdminScreen onBack={() => setUnlocked(false)} />
 
