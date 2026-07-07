@@ -767,9 +767,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           payRows.push(
             `<row r="${payRowIdx}">` +
             `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
-            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${wdHours / 24}</v></c>` +
+            `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>` +
             (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
-            (wdPay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wdPay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
+            `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
             `</row>`
           )
           payRowIdx++
@@ -781,9 +781,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           payRows.push(
             `<row r="${payRowIdx}">` +
             `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（日曜）')}</t></is></c>` +
-            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${weHours / 24}</v></c>` +
+            `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].su}${T2_TOT}</f></c>` +
             (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
-            (wePay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wePay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
+            `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
             `</row>`
           )
           payRowIdx++
@@ -796,9 +796,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         payRows.push(
           `<row r="${payRowIdx}">` +
           `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
-          `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${totalHours / 24}</v></c>` +
+          `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>` +
           (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
-          (totalPay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${totalPay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
+          `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
           `</row>`
         )
         payRowIdx++
@@ -815,7 +815,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>準備時間</t></is></c>` +
         `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${prepHours / 24}</v></c>` +
         `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${minWage}</v></c>` +
-        `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${prepPay}</v></c>` +
+        `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
         `</row>`
       )
       payRowIdx++
@@ -826,9 +826,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const payTotRow =
       `<row r="${PTR}">` +
       `<c r="A${PTR}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      `<c r="B${PTR}" s="${S.tot_hrs}"><v>${totalPayHours / 24}</v></c>` +
+      `<c r="B${PTR}" s="${S.tot_hrs}"><f>SUM(B${T3_HDR + 1}:B${PTR - 1})</f></c>` +
       `<c r="C${PTR}" s="${S.tot_lbl}"/>` +
-      `<c r="D${PTR}" s="${S.tot_pay}"><v>${totalPayAmount}</v></c>` +
+      `<c r="D${PTR}" s="${S.tot_pay}"><f>SUM(D${T3_HDR + 1}:D${PTR - 1})</f></c>` +
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
