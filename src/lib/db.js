@@ -840,7 +840,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<cols>` +
       `<col min="1" max="1" width="13" customWidth="1"/>` +
       `<col min="2" max="2" width="6" customWidth="1"/>` +
-      (maxColIdx >= 3 ? `<col min="3" max="${maxColIdx}" width="12" customWidth="1"/>` : '') +
+      (maxColIdx >= 3 ? `<col min="3" max="${maxColIdx}" width="16" customWidth="1"/>` : '') +
       `</cols>`
     const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const WB_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
