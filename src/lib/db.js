@@ -449,11 +449,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const STYLES_XML = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-    '<numFmts count="4">',
+    '<numFmts count="5">',
     '<numFmt numFmtId="164" formatCode="yyyy/m/d"/>',
     '<numFmt numFmtId="165" formatCode="h:mm"/>',
     '<numFmt numFmtId="166" formatCode="0.0"/>',
     '<numFmt numFmtId="167" formatCode="#,##0"/>',
+    '<numFmt numFmtId="168" formatCode="[h]&quot;時間&quot;mm&quot;分&quot;"/>',
     '</numFmts>',
     '<fonts count="4">',
     '<font><sz val="11"/><name val="Calibri"/></font>',
@@ -499,9 +500,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<xf numFmtId="165" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     '<xf numFmtId="165" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     // 14-16 hours wd/sa/su
-    '<xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
-    '<xf numFmtId="166" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
-    '<xf numFmtId="166" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="168" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="168" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="168" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     // 17-19 pay wd/sa/su
     '<xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="right"/></xf>',
     '<xf numFmtId="167" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="right"/></xf>',
@@ -509,7 +510,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // 20 totals label
     '<xf numFmtId="0" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     // 21 totals hours
-    '<xf numFmtId="166" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="168" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="center"/></xf>',
     // 22 totals pay
     '<xf numFmtId="167" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="right"/></xf>',
     // 23 pay row label: bordered, left aligned text
@@ -663,17 +664,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         } else { t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`) }
         // E: 合計 = 退勤 - 出勤（休憩未控除）
         t1c.push(inStr && outStr
-          ? `<c r="E${r1}" s="${S.hours[dt]}"><f>IF(OR(C${r1}="",D${r1}=""),"",MAX(0,(D${r1}-C${r1})*24))</f></c>`
+          ? `<c r="E${r1}" s="${S.hours[dt]}"><f>IF(OR(C${r1}="",D${r1}=""),"",MAX(0,D${r1}-C${r1}))</f></c>`
           : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
         // F: 休憩
         const breakMins = wi['休憩'] || 0
         t1c.push(breakMins > 0
-          ? `<c r="F${r1}" s="${S.hours[dt]}"><v>${breakMins / 60}</v></c>`
+          ? `<c r="F${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>`
           : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
         // G: 準備時間 = 前後5分 = 10分 (出勤 or 退勤がある日のみ)
         const hasAttendance = (inStr || outStr)
         t1c.push(hasAttendance
-          ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 60}</v></c>`
+          ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>`
           : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
         // H: 勤務合計 = 合計 - 休憩 + 準備時間
         t1c.push(inStr && outStr
@@ -693,17 +694,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             if (isSun) {
               t2c.push(`<c r="${wd}${r2}" s="${S.hours[dt]}"/>`)
               t2c.push(mins > 0
-                ? `<c r="${su}${r2}" s="${S.hours[dt]}"><v>${hours}</v></c>`
+                ? `<c r="${su}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>`
                 : `<c r="${su}${r2}" s="${S.hours[dt]}"/>`)
             } else {
               t2c.push(mins > 0
-                ? `<c r="${wd}${r2}" s="${S.hours[dt]}"><v>${hours}</v></c>`
+                ? `<c r="${wd}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>`
                 : `<c r="${wd}${r2}" s="${S.hours[dt]}"/>`)
               t2c.push(`<c r="${su}${r2}" s="${S.hours[dt]}"/>`)
             }
           } else {
             t2c.push(mins > 0
-              ? `<c r="${wd}${r2}" s="${S.hours[dt]}"><v>${hours}</v></c>`
+              ? `<c r="${wd}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>`
               : `<c r="${wd}${r2}" s="${S.hours[dt]}"/>`)
           }
         }
@@ -766,7 +767,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           payRows.push(
             `<row r="${payRowIdx}">` +
             `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
-            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${wdHours}</v></c>` +
+            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${wdHours / 24}</v></c>` +
             (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
             (wdPay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wdPay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
             `</row>`
@@ -780,7 +781,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           payRows.push(
             `<row r="${payRowIdx}">` +
             `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（日曜）')}</t></is></c>` +
-            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${weHours}</v></c>` +
+            `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${weHours / 24}</v></c>` +
             (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
             (wePay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wePay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
             `</row>`
@@ -795,7 +796,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         payRows.push(
           `<row r="${payRowIdx}">` +
           `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
-          `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${totalHours}</v></c>` +
+          `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${totalHours / 24}</v></c>` +
           (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
           (totalPay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${totalPay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
           `</row>`
@@ -812,7 +813,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       payRows.push(
         `<row r="${payRowIdx}">` +
         `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>準備時間</t></is></c>` +
-        `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${prepHours}</v></c>` +
+        `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${prepHours / 24}</v></c>` +
         `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${minWage}</v></c>` +
         `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${prepPay}</v></c>` +
         `</row>`
@@ -825,7 +826,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const payTotRow =
       `<row r="${PTR}">` +
       `<c r="A${PTR}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      `<c r="B${PTR}" s="${S.tot_hrs}"><v>${totalPayHours}</v></c>` +
+      `<c r="B${PTR}" s="${S.tot_hrs}"><v>${totalPayHours / 24}</v></c>` +
       `<c r="C${PTR}" s="${S.tot_lbl}"/>` +
       `<c r="D${PTR}" s="${S.tot_pay}"><v>${totalPayAmount}</v></c>` +
       `</row>`
