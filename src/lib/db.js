@@ -40,7 +40,7 @@ const usersCol = collection(db, 'users')
 const logsCol = collection(db, 'logs')
 const configDocRef = doc(db, 'config', 'system')
 
-export const DEFAULT_ADMIN_PIN = '260701'
+export const DEFAULT_ADMIN_PIN = '2607'
 
 export async function getAdminPin() {
   try {

@@ -1052,7 +1052,7 @@ function SettingsTab() {
   }, [])
 
   async function handleSave() {
-    if (newPin.length < 4 || newPin.length > 8) { setError('4〜8桁のPINを入力してください'); return }
+    if (newPin.length !== 4) { setError('4桁のPINを入力してください'); return }
     if (newPin !== confirmPin) { setError('PINが一致しません'); setConfirmPin(''); return }
     try {
       await saveAdminPin(newPin)
@@ -1087,15 +1087,14 @@ function SettingsTab() {
         <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 16 }}>管理者PIN変更</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>新しいPIN（4〜8桁）</div>
+            <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>新しいPIN（4桁）</div>
             <input
               type="password"
               inputMode="numeric"
-              maxLength={8}
+              maxLength={4}
               value={newPin}
-              onChange={e => { setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError('') }}
+              onChange={e => { setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }}
               autoComplete="new-password"
-              placeholder="••••••"
               style={{ height: 52, width: '100%', boxSizing: 'border-box', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.4rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f' }}
             />
           </div>
@@ -1104,11 +1103,10 @@ function SettingsTab() {
             <input
               type="password"
               inputMode="numeric"
-              maxLength={8}
+              maxLength={4}
               value={confirmPin}
-              onChange={e => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 8)); setError('') }}
+              onChange={e => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }}
               autoComplete="new-password"
-              placeholder="••••••"
               style={{ height: 52, width: '100%', boxSizing: 'border-box', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.4rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f' }}
             />
           </div>
@@ -1116,8 +1114,8 @@ function SettingsTab() {
           {saved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem' }}>✓ PINを変更しました（全デバイスに反映）</div>}
           <button
             onClick={handleSave}
-            disabled={newPin.length < 4 || confirmPin.length < 4}
-            style={{ height: 52, background: '#1a5fa8', border: 'none', borderRadius: 12, color: '#fff', fontSize: '1.05rem', fontWeight: 800, cursor: 'pointer', opacity: (newPin.length < 4 || confirmPin.length < 4) ? 0.4 : 1 }}
+            disabled={newPin.length !== 4 || confirmPin.length !== 4}
+            style={{ height: 52, background: '#1a5fa8', border: 'none', borderRadius: 12, color: '#fff', fontSize: '1.05rem', fontWeight: 800, cursor: 'pointer', opacity: (newPin.length !== 4 || confirmPin.length !== 4) ? 0.4 : 1 }}
           >
             PINを変更する
           </button>
