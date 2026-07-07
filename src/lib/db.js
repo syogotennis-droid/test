@@ -533,7 +533,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const monthlyWdMins = {}, monthlyWeMins = {}
     Object.entries(byDate).forEach(([dateStr, entry]) => {
       const [y, mo, d] = dateStr.split('-').map(Number)
-      const isWe = new Date(y, mo - 1, d).getDay() % 6 === 0  // 0=Sun or 6=Sat
+      const isWe = new Date(y, mo - 1, d).getDay() === 0  // Sunday only
       Object.entries(entry.workItems).forEach(([t, m]) => {
         if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + m
         else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + m
@@ -579,7 +579,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     for (const type of workTypes) {
       const { wd, su, hasSunday } = timeColMap[type]
       if (hasSunday) {
-        hdrCells.push(hdrCell(wd, 4, type + '（平）'), hdrCell(su, 4, type + '（土日）'))
+        hdrCells.push(hdrCell(wd, 4, type + '（平/土）'), hdrCell(su, 4, type + '（日曜）'))
       } else {
         hdrCells.push(hdrCell(wd, 4, type))
       }
@@ -640,7 +640,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           const mins = wi[type] || 0
           const hours = mins / 60
           if (hasSunday) {
-            if (isWeekend) {
+            if (isSun) {
               cells.push(`<c r="${wd}${r}" s="${S.hours[dt]}"/>`)
               cells.push(mins > 0
                 ? `<c r="${su}${r}" s="${S.hours[dt]}"><v>${hours}</v></c>`
@@ -729,7 +729,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           totalPayAmount += wePay
           payRows.push(
             `<row r="${payRowIdx}">` +
-            `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（土日）')}</t></is></c>` +
+            `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（日曜）')}</t></is></c>` +
             `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${weHours}</v></c>` +
             (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
             (wePay > 0 ? `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${wePay}</v></c>` : `<c r="D${payRowIdx}" s="${S.pay.wd}"/>`) +
