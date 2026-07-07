@@ -610,7 +610,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     for (const type of workTypes) {
       const { wd, su, hasSunday } = typeColMap[type]
       if (hasSunday) {
-        t2HdrCells.push(hdrCell(wd, T2_HDR, type), hdrCell(su, T2_HDR, type + '（日曜）'))
+        t2HdrCells.push(
+          hdrCell(wd, T2_HDR, type),
+          `<c r="${su}${T2_HDR}" s="${S.hdr}" t="inlineStr"><is><t xml:space="preserve">${esc(type)}&#10;（日曜）</t></is></c>`
+        )
       } else {
         t2HdrCells.push(hdrCell(wd, T2_HDR, type))
       }

@@ -6,7 +6,8 @@ import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE
+  resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
+  getWorkItems
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -303,11 +304,15 @@ function buildDayMap(logs, year, month) {
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
-    if (!map[d]) map[d] = { ins: [], outs: [], workType: '' }
+    if (!map[d]) map[d] = { ins: [], outs: [], workType: '', hasWorkItems: false }
     if (log.log_type === '出勤') map[d].ins.push(log.time || '')
     else if (log.log_type === '退勤') {
       map[d].outs.push(log.time || '')
       if (log.work_type) map[d].workType = log.work_type
+      const wi = getWorkItems(log)
+      if (Object.entries(wi).some(([t, mins]) => t !== '休憩' && mins > 0)) {
+        map[d].hasWorkItems = true
+      }
     }
   })
   return map
@@ -400,11 +405,12 @@ function CalendarTab({ users, today }) {
             const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
             const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
             const worked = !!inTime
+            const needsAlert = !!inTime && !!outTime && !entry?.hasWorkItems
             const dow = new Date(year, month, d).getDay()
             return (
               <div
                 key={d}
-                className={[styles.calCell, worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}
+                className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}
                 onClick={() => setSelectedDay(d)}
               >
                 <div className={styles.calDayNum}>{d}</div>
