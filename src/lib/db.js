@@ -814,6 +814,22 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     }
 
+    // 交通費行
+    const transportAmount = Number(itemRates['交通費']?.amount) || 0
+    if (transportAmount > 0 && workingDays > 0) {
+      const transportTotal = Math.round(workingDays * transportAmount)
+      totalPayAmount += transportTotal
+      payRows.push(
+        `<row r="${payRowIdx}">` +
+        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc('交通費（' + workingDays + '日）')}</t></is></c>` +
+        `<c r="B${payRowIdx}" s="${S.pay_lbl}"/>` +
+        `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${transportAmount}</v></c>` +
+        `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${transportTotal}</v></c>` +
+        `</row>`
+      )
+      payRowIdx++
+    }
+
     // 前後5分（最低賃金）行
     if (workingDays > 0 && minWage > 0) {
       const prepHours = workingDays * (10 / 60)

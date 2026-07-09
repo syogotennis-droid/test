@@ -1419,7 +1419,7 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
 
 // ─── UserEditModal ────────────────────────────────────────────────────────────
 
-const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当'].includes(p))
+const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当', '休憩', '準備'].includes(p))
 
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [step, setStep] = useState('main')
