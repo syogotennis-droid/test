@@ -1160,7 +1160,7 @@ function SettingsTab() {
 const NUMPAD_KEYS     = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 const NUMPAD_KEYS_DEC = ['1','2','3','4','5','6','7','8','9','.','0','⌫']
 
-function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = false, onConfirm, onClose }) {
+function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = false, pinMode = false, onConfirm, onClose }) {
   const [val, setVal] = useState(String(initialValue))
 
   function pressKey(k) {
@@ -1168,11 +1168,16 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
     if (k === '') return
     if (k === '.' && val.includes('.')) return
     if (val.length >= maxLength) return
-    setVal(v => v + k)
+    const next = val + k
+    setVal(next)
+    if (pinMode && next.length === maxLength) {
+      onConfirm(next)
+      onClose()
+    }
   }
 
   const inputRef = useRef(null)
-  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => { if (!pinMode) inputRef.current?.focus() }, [])
 
   function handleInputChange(e) {
     let v = decimal ? e.target.value.replace(/[^\d.]/g, '') : e.target.value.replace(/\D/g, '')
@@ -1187,19 +1192,27 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
     <div className={styles.numpadOverlay} onClick={onClose}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
         <div className={styles.numpadTitle}>{title}</div>
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode={decimal ? 'decimal' : 'numeric'}
-          value={val}
-          onChange={handleInputChange}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); onConfirm(val); onClose() }
-            else if (e.key === 'Escape') { e.preventDefault(); onClose() }
-          }}
-          className={styles.numpadDisplay}
-          style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
-        />
+        {pinMode ? (
+          <div style={{display:'flex',justifyContent:'center',gap:12,padding:'8px 0 4px'}}>
+            {Array.from({length:maxLength}).map((_,i) => (
+              <span key={i} style={{width:14,height:14,borderRadius:'50%',border:'2px solid #9baab8',background:i<val.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
+            ))}
+          </div>
+        ) : (
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode={decimal ? 'decimal' : 'numeric'}
+            value={val}
+            onChange={handleInputChange}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); onConfirm(val); onClose() }
+              else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+            }}
+            className={styles.numpadDisplay}
+            style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'text' }}
+          />
+        )}
         <div className={styles.numpadGrid} onMouseDown={e => e.preventDefault()}>
           {keys.map((k, i) => (
             <button
@@ -1212,7 +1225,7 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
         </div>
         <div className={styles.numpadActions}>
           <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
-          <button className={styles.numpadOk} onClick={() => { onConfirm(val); onClose() }}>OK</button>
+          {!pinMode && <button className={styles.numpadOk} onClick={() => { onConfirm(val); onClose() }}>OK</button>}
         </div>
       </div>
     </div>
@@ -1561,11 +1574,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
               <label className={styles.formLabel}>PINコード</label>
               <button
                 className={styles.numpadTrigger}
-                onClick={() => setNumpad({ title: 'PINコード', field: 'pin', maxLength: 8 })}
+                onClick={() => setNumpad({ title: 'PINコード', field: 'pin', maxLength: 4, pinMode: true })}
               >
                 {pin || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
               </button>
-              <div className={styles.formHint}>最大8桁（未入力の場合はPINで打刻できません）</div>
+              <div className={styles.formHint}>4桁（未入力の場合はPINで打刻できません）</div>
               {pinError && <div className={styles.pinErrorMsg}>{pinError}</div>}
             </div>
             <div className={styles.modalActions}>
@@ -1716,12 +1729,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
         <NumpadOverlay
           title={numpad.title}
           initialValue={
-            numpad.field === 'pin' ? pin
+            numpad.field === 'pin' ? ''
             : numpad.field === 'multiplier' ? (multipliers[numpad.item] || '')
             : (itemRates[numpad.item]?.[numpad.field] || '')
           }
           maxLength={numpad.maxLength}
           decimal={!!numpad.decimal}
+          pinMode={!!numpad.pinMode}
           onConfirm={val => {
             if (numpad.field === 'pin') {
               setPin(val)

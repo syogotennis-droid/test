@@ -7,6 +7,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   addDoc,
   setDoc,
   updateDoc,
@@ -405,7 +406,13 @@ function formatWorkType(wt) {
 // Fully dynamic columns: one sheet per user, time and pay sections separated
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
-  const users = await getUsers()
+  let users
+  try {
+    const snap = await getDocsFromServer(usersCol)
+    users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  } catch {
+    users = await getUsers()
+  }
 
   const [ym_y_str, ym_m_str] = (dateFrom || '').split('-')
   const ym_y = Number(ym_y_str)
