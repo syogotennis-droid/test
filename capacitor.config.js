@@ -1,0 +1,12 @@
+/** @type {import('@capacitor/cli').CapacitorConfig} */
+const config = {
+  appId: 'jp.co.qrattendance',
+  appName: 'QR打刻システム',
+  webDir: 'dist',
+  android: {
+    webContentsDebuggingEnabled: true,
+    allowMixedContent: false,
+  },
+}
+
+module.exports = config
