@@ -1615,30 +1615,39 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                         <div className={styles.itemRateInputs}>
                           {isTransport ? (
                             <div className={styles.rateRow}>
-                              <button className={styles.numpadTriggerSm}
-                                onClick={() => setNumpad({ title: `${item} 金額`, field: 'amount', item, maxLength: 6 })}>
-                                {r.amount || '0'}
-                              </button>
+                              <input
+                                className={styles.numpadTriggerSm}
+                                type="text"
+                                inputMode="numeric"
+                                value={r.amount}
+                                onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
+                              />
                               <span className={styles.rateUnit}>円/回</span>
                             </div>
                           ) : (
                             <>
                               <div className={styles.rateRow}>
                                 <span className={styles.rateRowLabel}>時給</span>
-                                <button className={styles.numpadTriggerSm}
-                                  onClick={() => setNumpad({ title: `${item} 時給`, field: 'normal', item, maxLength: 6 })}>
-                                  {r.normal || '0'}
-                                </button>
+                                <input
+                                  className={styles.numpadTriggerSm}
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={r.normal}
+                                  onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'normal', e.target.value) }}
+                                />
                                 <span className={styles.rateUnit}>円</span>
                               </div>
                               {multipliers[item] != null && (
                                 <div className={styles.rateRow}>
                                   <span className={styles.rateRowLabel}>日曜</span>
                                   <span className={styles.rateMultSign}>×</span>
-                                  <button className={styles.numpadTriggerXs}
-                                    onClick={() => setNumpad({ title: `${item} 日曜倍率`, field: 'multiplier', item, maxLength: 5, decimal: true })}>
-                                    {multipliers[item] || '1.1'}
-                                  </button>
+                                  <input
+                                    className={styles.numpadTriggerXs}
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={multipliers[item] || ''}
+                                    onChange={e => { const v = e.target.value; if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v) }}
+                                  />
                                   <span className={[styles.numpadTriggerSm, styles.rateInputReadOnly].join(' ')}>
                                     {r.sunday || '0'}
                                   </span>

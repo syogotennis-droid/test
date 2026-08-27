@@ -1120,10 +1120,12 @@
   font-weight: 700;
   color: #1a3f6f;
   text-align: center;
-  cursor: pointer;
+  cursor: text;
+  outline: none;
+  font-family: inherit;
 }
 
-.numpadTriggerSm:hover { border-color: #9baab8; }
+.numpadTriggerSm:focus { border-color: #1a5fa8; background: #fff; }
 
 .numpadTriggerXs {
   min-width: 52px;
@@ -1135,10 +1137,12 @@
   font-weight: 700;
   color: #1a3f6f;
   text-align: center;
-  cursor: pointer;
+  cursor: text;
+  outline: none;
+  font-family: inherit;
 }
 
-.numpadTriggerXs:hover { border-color: #9baab8; }
+.numpadTriggerXs:focus { border-color: #1a5fa8; background: #fff; }
 
 .numpadTriggerPlaceholder {
   color: #9baab8;
