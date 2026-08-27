@@ -1032,7 +1032,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                 </span>
               )}
               <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
-              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={(!inTime && !outTime) || isExceeded}>保存する</button>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={(!inTime && !outTime) || isExceeded || (workingMinutes !== null && !isComplete)}>保存する</button>
             </div>
           </>
         )}
