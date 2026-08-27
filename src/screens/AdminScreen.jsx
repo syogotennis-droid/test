@@ -1491,8 +1491,8 @@ function UsersTab({ users, today, onRefresh }) {
   const [editingUser, setEditingUser] = useState(null)
   const [qrUser, setQrUser] = useState(null)
   const [adding, setAdding] = useState(false)
-  const [addId, setAddId] = useState('')
-  const [addName, setAddName] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   useEffect(() => { loadStatuses() }, [])
 
@@ -1501,67 +1501,129 @@ function UsersTab({ users, today, onRefresh }) {
     setStatuses(s)
   }
 
-  async function handleAdd() {
-    if (!addId.trim() || !addName.trim()) return
-    const newUser = { id: addId.trim(), name: addName.trim() }
-    await upsertUser(newUser)
-    setAdding(false)
-    setAddId('')
-    setAddName('')
-    onRefresh()
-    setQrUser(newUser)
-  }
-
   async function handleModalSaved() {
     setEditingUser(null)
     await loadStatuses()
     onRefresh()
   }
 
+  const q = searchQuery.toLowerCase()
+  const filtered = users.filter(u => {
+    const matchSearch = !q || u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q)
+    const isIn = statuses[u.id] === true
+    const matchStatus = statusFilter === 'all'
+      || (statusFilter === 'in' && isIn)
+      || (statusFilter === 'out' && !isIn)
+    return matchSearch && matchStatus
+  })
+  const isFiltering = !!searchQuery || statusFilter !== 'all'
+  const countLabel = isFiltering
+    ? `${users.length}名中 ${filtered.length}名を表示`
+    : `登録ユーザー ${users.length}名`
+
   return (
-    <div className={styles.content}>
-      <div className={styles.summary}>
-        <span className={styles.count}>{users.length}名</span>
-        <button className={styles.exportBtn} onClick={() => setAdding(true)}>＋ ユーザー追加</button>
+    <div className={styles.calContent}>
+      <div className={styles.usersPage}>
+
+        {/* Page header */}
+        <div className={styles.usersPageHeader}>
+          <div>
+            <h2 className={styles.kinmuboPageTitle}>ユーザー管理</h2>
+            <p className={styles.kinmuboPageDesc}>従業員情報、PINコード、作業項目、時給を管理します。</p>
+          </div>
+          <button className={styles.kinmuboExportBtn} onClick={() => setAdding(true)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            ユーザーを追加
+          </button>
+        </div>
+
+        {/* Filter card */}
+        <div className={styles.usersFilterCard}>
+          <input
+            type="text"
+            className={styles.kinmuboSearch}
+            placeholder="氏名・ユーザーIDで検索"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          <div className={styles.usersStatusFilter}>
+            {[['all','すべて'],['in','出勤中'],['out','退勤中']].map(([v,l]) => (
+              <button
+                key={v}
+                className={[styles.usersFilterBtn, statusFilter === v ? styles.usersFilterBtnActive : ''].join(' ')}
+                onClick={() => setStatusFilter(v)}
+              >{l}</button>
+            ))}
+          </div>
+          <span className={styles.usersCount}>{countLabel}</span>
+        </div>
+
+        {/* User table */}
+        <div className={styles.usersTableCard}>
+          {users.length === 0 ? (
+            <div className={styles.kinmuboEmpty}>登録されているユーザーはいません。</div>
+          ) : filtered.length === 0 ? (
+            <div className={styles.kinmuboEmpty}>該当するユーザーがいません。</div>
+          ) : (
+            <table className={styles.usersTable}>
+              <thead>
+                <tr>
+                  <th className={styles.usersTh}>氏名</th>
+                  <th className={styles.usersTh}>ユーザーID</th>
+                  <th className={styles.usersTh}>本日の状態</th>
+                  <th className={styles.usersTh} style={{width:90}}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(user => {
+                  const isIn = statuses[user.id] === true
+                  return (
+                    <tr
+                      key={user.id}
+                      className={styles.usersTr}
+                      onClick={() => setEditingUser(user)}
+                      tabIndex={0}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditingUser(user) } }}
+                    >
+                      <td className={styles.usersTd}>
+                        <div className={styles.usersNameCell}>
+                          <div className={styles.usersAvatar}>{user.name.charAt(0)}</div>
+                          <span className={styles.usersName}>{user.name}</span>
+                        </div>
+                      </td>
+                      <td className={styles.usersTd}>
+                        <span className={styles.usersId}>{user.id}</span>
+                      </td>
+                      <td className={styles.usersTd}>
+                        <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
+                          {isIn ? '出勤中' : '退勤中'}
+                        </span>
+                      </td>
+                      <td className={styles.usersTd}>
+                        <button
+                          className={styles.usersEditBtn}
+                          onClick={e => { e.stopPropagation(); setEditingUser(user) }}
+                        >編集</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
       </div>
 
       {adding && (
-        <div className={styles.addForm}>
-          <input placeholder="ユーザーID (例: USER011)" value={addId} onChange={e => setAddId(e.target.value)} className={styles.filterInput} />
-          <input placeholder="氏名" value={addName} onChange={e => setAddName(e.target.value)} className={styles.filterInput} />
-          <div className={styles.addActions}>
-            <button className={styles.exportBtn} onClick={handleAdd}>保存</button>
-            <button className={styles.clearBtn} onClick={() => setAdding(false)}>キャンセル</button>
-          </div>
-        </div>
+        <AddUserModal
+          onClose={() => setAdding(false)}
+          onAdded={newUser => { setAdding(false); onRefresh(); setQrUser(newUser) }}
+        />
       )}
 
-      <div className={styles.list}>
-        {users.map(user => {
-          const isIn = statuses[user.id] === true
-          return (
-            <div key={user.id} className={styles.userItem}>
-              <div className={styles.userAvatar}>👤</div>
-              <div className={styles.logInfo}>
-                <div className={styles.logUser}>{user.name}</div>
-                <div className={styles.logTime}>{user.id}</div>
-              </div>
-
-              <div className={styles.statusArea}>
-                <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                  {isIn ? '出勤中' : '退勤中'}
-                </span>
-              </div>
-
-              <div className={styles.userActions}>
-                <button className={styles.editBtn} onClick={() => setEditingUser(user)}>編集</button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* ユーザー追加後のQRモーダル */}
       {qrUser && (
         <div className={styles.modalOverlay} onClick={() => setQrUser(null)}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
@@ -1572,7 +1634,7 @@ function UsersTab({ users, today, onRefresh }) {
               <QRImage value={qrUser.id} size={200} />
             </div>
             <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={() => { window.print(); }}>🖨 印刷</button>
+              <button className={styles.saveBtn} onClick={() => { window.print() }}>🖨 印刷</button>
               <button className={styles.cancelBtn} onClick={() => setQrUser(null)}>閉じる</button>
             </div>
           </div>
@@ -1588,6 +1650,84 @@ function UsersTab({ users, today, onRefresh }) {
           onDeleted={() => { setEditingUser(null); onRefresh() }}
         />
       )}
+    </div>
+  )
+}
+
+// ─── AddUserModal ─────────────────────────────────────────────────────────────
+
+function AddUserModal({ onClose, onAdded }) {
+  const [addId, setAddId] = useState('')
+  const [addName, setAddName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleAdd() {
+    if (!addId.trim() || !addName.trim() || saving) return
+    setSaving(true)
+    try {
+      const newUser = { id: addId.trim(), name: addName.trim() }
+      await upsertUser(newUser)
+      onAdded(newUser)
+    } catch(e) {
+      alert('追加に失敗しました: ' + (e?.message || e))
+      setSaving(false)
+    }
+  }
+
+  const canSave = addId.trim() && addName.trim()
+
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.userEditModal} onClick={e => e.stopPropagation()}>
+        <div className={styles.userEditHeader}>
+          <div>
+            <div className={styles.userEditTitle}>ユーザーを追加</div>
+            <div className={styles.userEditSubtitle}>ユーザーIDと氏名を入力してください</div>
+          </div>
+          <button className={styles.userEditClose} onClick={onClose} aria-label="閉じる">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div className={styles.userEditBody}>
+          <div className={styles.userEditSection}>
+            <div className={styles.userEditSectionTitle}>基本情報</div>
+            <div className={styles.userEditGrid2}>
+              <div>
+                <label className={styles.userEditLabel}>ユーザーID <span className={styles.userEditRequired}>必須</span></label>
+                <input
+                  className={styles.userEditInput}
+                  placeholder="例: USER011"
+                  value={addId}
+                  onChange={e => setAddId(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className={styles.userEditLabel}>氏名 <span className={styles.userEditRequired}>必須</span></label>
+                <input
+                  className={styles.userEditInput}
+                  placeholder="例: 山田 太郎"
+                  value={addName}
+                  onChange={e => setAddName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && canSave && handleAdd()}
+                />
+              </div>
+            </div>
+            <p className={styles.userEditHintText}>作業項目・時給・PINは追加後に「編集」から設定できます。</p>
+          </div>
+        </div>
+        <div className={styles.userEditFooter}>
+          <div />
+          <div className={styles.userEditFooterBtns}>
+            <button className={styles.userEditCancelBtn} onClick={onClose}>キャンセル</button>
+            <button className={styles.userEditSaveBtn} onClick={handleAdd} disabled={!canSave || saving}>
+              {saving ? '追加中…' : 'ユーザーを追加'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -2142,7 +2282,6 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     })
     return r
   })
-  // Per-item sunday multipliers (only set for items with sunday premium)
   const [multipliers, setMultipliers] = useState(() => {
     const m = {}
     ASSIGNABLE_ITEMS.forEach(item => {
@@ -2160,7 +2299,23 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     return m
   })
   const [dangerOpen, setDangerOpen] = useState(false)
-  const [numpad, setNumpad] = useState(null) // { title, field, item, decimal, maxLength, initialValue }
+  const [saving, setSaving] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
+  const isFirstRender = useRef(true)
+
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    setIsDirty(true)
+  }, [name, pin, workItems, itemRates, multipliers])
+
+  function handlePinChange(e) {
+    const v = e.target.value
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/\D/g, '')
+      .slice(0, 4)
+    setPin(v)
+    setPinError('')
+  }
 
   function toggleWorkItem(item) {
     setWorkItems(prev =>
@@ -2205,28 +2360,27 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     return result
   }
 
-  async function handleSaveName() {
+  async function handleSaveAll() {
     if (!name.trim()) return
-    await upsertUser({ id: user.id, name: name.trim(), workItems, itemRates: buildItemRates(), pin })
-    onSaved()
-  }
-
-  async function handleSavePin() {
+    if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
+    setSaving(true)
     setPinError('')
-    if (pin) {
-      const existing = await resolveUserByPin(pin)
-      if (existing && existing.id !== user.id) {
-        setPinError('このPINは使用中です')
-        return
+    try {
+      if (pin) {
+        const existing = await resolveUserByPin(pin)
+        if (existing && existing.id !== user.id) {
+          setPinError('このPINは使用中です')
+          setSaving(false)
+          return
+        }
       }
+      await upsertUser({ id: user.id, name: name.trim(), pin, workItems, itemRates: buildItemRates() })
+      setIsDirty(false)
+      onSaved()
+    } catch(e) {
+      alert('保存に失敗しました: ' + (e?.message || e))
+      setSaving(false)
     }
-    await upsertUser({ id: user.id, name: user.name, workItems, itemRates: buildItemRates(), pin })
-    onSaved()
-  }
-
-  async function handleSaveItems() {
-    await upsertUser({ id: user.id, name: name || user.name, workItems, itemRates: buildItemRates(), pin })
-    onSaved()
   }
 
   async function handleConfirmStatus() {
@@ -2239,223 +2393,266 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
     onDeleted()
   }
 
+  const XIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  )
+
+  if (step === 'confirmDelete') return (
+    <div className={styles.modalOverlay} onClick={() => setStep('main')}>
+      <div className={styles.userEditModal} onClick={e => e.stopPropagation()} style={{maxWidth: 480}}>
+        <div className={styles.userEditHeader}>
+          <div>
+            <div className={styles.userEditTitle}>ユーザー削除の確認</div>
+            <div className={styles.userEditSubtitle}>{user.name}（{user.id}）</div>
+          </div>
+          <button className={styles.userEditClose} onClick={() => setStep('main')} aria-label="閉じる"><XIcon /></button>
+        </div>
+        <div className={styles.userEditBody}>
+          <p className={styles.confirmWarn}>
+            このユーザーと全ての打刻記録を完全に削除します。<br />この操作は元に戻せません。
+          </p>
+        </div>
+        <div className={styles.userEditFooter}>
+          <div />
+          <div className={styles.userEditFooterBtns}>
+            <button className={styles.userEditCancelBtn} onClick={() => setStep('main')}>戻る</button>
+            <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (step === 'confirmStatus') return (
+    <div className={styles.modalOverlay} onClick={() => setStep('main')}>
+      <div className={styles.userEditModal} onClick={e => e.stopPropagation()} style={{maxWidth: 480}}>
+        <div className={styles.userEditHeader}>
+          <div>
+            <div className={styles.userEditTitle}>状態変更の確認</div>
+            <div className={styles.userEditSubtitle}>{user.name}</div>
+          </div>
+          <button className={styles.userEditClose} onClick={() => setStep('main')} aria-label="閉じる"><XIcon /></button>
+        </div>
+        <div className={styles.userEditBody}>
+          <p className={styles.confirmMsg}>
+            <span className={styles.oldTime}>{isIn ? '出勤中' : '退勤中'}</span>
+            {' → '}
+            <span className={styles.newTime}>{isIn ? '退勤中' : '出勤中'}</span>
+            {' に変更します'}
+          </p>
+          <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+        </div>
+        <div className={styles.userEditFooter}>
+          <div />
+          <div className={styles.userEditFooterBtns}>
+            <button className={styles.userEditCancelBtn} onClick={() => setStep('main')}>戻る</button>
+            <button className={styles.userEditSaveBtn} onClick={handleConfirmStatus}>確定する</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        {step === 'main' && (
-          <>
-            <h3>{user.name} の編集</h3>
+      <div className={styles.userEditModal} onClick={e => e.stopPropagation()}>
 
-            {/* Name edit */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>氏名</label>
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSaveName()}
-                className={styles.filterInput}
-              />
+        {/* Header */}
+        <div className={styles.userEditHeader}>
+          <div>
+            <div className={styles.userEditTitle}>{user.name} の編集</div>
+            <div className={styles.userEditSubtitle}>ID: {user.id}</div>
+          </div>
+          <button className={styles.userEditClose} onClick={onClose} aria-label="閉じる"><XIcon /></button>
+        </div>
+
+        {/* Body */}
+        <div className={styles.userEditBody}>
+
+          {/* 基本情報 */}
+          <div className={styles.userEditSection}>
+            <div className={styles.userEditSectionTitle}>基本情報</div>
+            <div className={styles.userEditGrid2}>
+              <div>
+                <label className={styles.userEditLabel}>氏名 <span className={styles.userEditRequired}>必須</span></label>
+                <input
+                  className={[styles.userEditInput, !name.trim() ? styles.userEditInputErr : ''].join(' ')}
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && isDirty && !saving && handleSaveAll()}
+                />
+              </div>
+              <div>
+                <label className={styles.userEditLabel}>PINコード</label>
+                <input
+                  className={[styles.userEditInput, pinError ? styles.userEditInputErr : ''].join(' ')}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="4桁（未設定も可）"
+                  value={pin}
+                  onChange={handlePinChange}
+                />
+                {pinError
+                  ? <div className={styles.userEditErrMsg}>{pinError}</div>
+                  : <div className={styles.userEditHintText}>4桁の数字。未設定の場合はPINで打刻できません。</div>
+                }
+              </div>
             </div>
-            <div className={styles.modalActions}>
-              <button
-                className={styles.saveBtn}
-                onClick={handleSaveName}
-                disabled={!name.trim() || name.trim() === user.name}
-              >
-                名前を保存
-              </button>
-            </div>
+          </div>
 
-            <hr className={styles.modalDivider} />
-
-            {/* PIN設定 */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>PINコード</label>
-              <button
-                className={styles.numpadTrigger}
-                onClick={() => setNumpad({ title: 'PINコード', field: 'pin', maxLength: 4, pinMode: true })}
-              >
-                {pin || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
-              </button>
-              <div className={styles.formHint}>4桁（未入力の場合はPINで打刻できません）</div>
-              {pinError && <div className={styles.pinErrorMsg}>{pinError}</div>}
-            </div>
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleSavePin}>
-                PINを保存
-              </button>
-            </div>
-
-            <hr className={styles.modalDivider} />
-
-            {/* Work items + rates */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>作業項目・時給</label>
-              <div className={styles.itemRatesList}>
-                {ASSIGNABLE_ITEMS.map(item => {
-                  const checked = workItems.includes(item)
-                  const r = itemRates[item] || {}
-                  const isTransport = item === '交通費'
-                  const isAutoItem = item === '準備'
-                  return (
-                    <div key={item} className={[styles.itemRateRow, checked ? styles.itemRateRowActive : ''].join(' ')}>
-                      <label className={styles.itemRateCheck}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleWorkItem(item)}
-                        />
-                        <span className={styles.itemRateName}>
-                          {item}{isAutoItem ? <span className={styles.itemRateTag}>自動</span> : ''}
-                        </span>
-                      </label>
-                      {checked && (
-                        <div className={styles.itemRateInputs}>
-                          {isTransport ? (
-                            <div className={styles.rateRow}>
-                              <input
-                                className={styles.numpadTriggerSm}
-                                type="text"
-                                inputMode="numeric"
-                                value={r.amount}
-                                onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
-                              />
-                              <span className={styles.rateUnit}>円/回</span>
-                            </div>
-                          ) : (
-                            <>
-                              <div className={styles.rateRow}>
-                                <span className={styles.rateRowLabel}>時給</span>
+          {/* 作業項目・時給 */}
+          <div className={styles.userEditSection}>
+            <div className={styles.userEditSectionTitle}>作業項目・時給</div>
+            <div className={styles.workItemTableWrap}>
+              <table className={styles.workItemTable}>
+                <thead>
+                  <tr>
+                    <th className={styles.workItemTh} style={{width:44}}>使用</th>
+                    <th className={styles.workItemTh}>作業項目</th>
+                    <th className={styles.workItemTh} style={{width:140}}>基本時給</th>
+                    <th className={styles.workItemTh} style={{width:110}}>日曜倍率</th>
+                    <th className={styles.workItemTh} style={{width:120}}>日曜時給</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ASSIGNABLE_ITEMS.map(item => {
+                    const checked = workItems.includes(item)
+                    const r = itemRates[item] || {}
+                    const isTransport = item === '交通費'
+                    return (
+                      <tr key={item} className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
+                        <td className={styles.workItemTd}>
+                          <input
+                            type="checkbox"
+                            className={styles.workItemCheckbox}
+                            checked={checked}
+                            onChange={() => toggleWorkItem(item)}
+                          />
+                        </td>
+                        <td className={styles.workItemTd}>
+                          <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{item}</span>
+                        </td>
+                        {isTransport ? (
+                          <>
+                            <td className={styles.workItemTd}>
+                              <div className={styles.workItemInputWrap}>
                                 <input
-                                  className={styles.numpadTriggerSm}
+                                  className={styles.workItemInput}
                                   type="text"
                                   inputMode="numeric"
+                                  placeholder="0"
+                                  value={r.amount}
+                                  disabled={!checked}
+                                  onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
+                                />
+                                <span className={styles.workItemUnit}>円/回</span>
+                              </div>
+                            </td>
+                            <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
+                            <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
+                          </>
+                        ) : (
+                          <>
+                            <td className={styles.workItemTd}>
+                              <div className={styles.workItemInputWrap}>
+                                <input
+                                  className={styles.workItemInput}
+                                  type="text"
+                                  inputMode="numeric"
+                                  placeholder="0"
                                   value={r.normal}
+                                  disabled={!checked}
                                   onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'normal', e.target.value) }}
                                 />
-                                <span className={styles.rateUnit}>円</span>
+                                <span className={styles.workItemUnit}>円</span>
                               </div>
-                              {multipliers[item] != null && (
-                                <div className={styles.rateRow}>
-                                  <span className={styles.rateRowLabel}>日曜</span>
-                                  <span className={styles.rateMultSign}>×</span>
-                                  <input
-                                    className={styles.numpadTriggerXs}
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={multipliers[item] || ''}
-                                    onChange={e => { const v = e.target.value; if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v) }}
-                                  />
-                                  <span className={[styles.numpadTriggerSm, styles.rateInputReadOnly].join(' ')}>
-                                    {r.sunday || '0'}
-                                  </span>
-                                  <span className={styles.rateUnit}>円</span>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+                            </td>
+                            <td className={styles.workItemTd}>
+                              <div className={styles.workItemInputWrap}>
+                                <input
+                                  className={styles.workItemInput}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="1.25"
+                                  value={multipliers[item] || ''}
+                                  disabled={!checked}
+                                  onChange={e => {
+                                    const v = e.target.value
+                                    if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v)
+                                  }}
+                                />
+                                <span className={styles.workItemUnit}>倍</span>
+                              </div>
+                            </td>
+                            <td className={styles.workItemTd}>
+                              <span className={[styles.workItemSundayDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
+                                {r.sunday ? `${Number(r.sunday).toLocaleString()}円` : '—'}
+                              </span>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleSaveItems}>作業項目・時給を保存</button>
+          </div>
+
+          {/* 本日の出勤状態 */}
+          <div className={styles.userEditSection}>
+            <div className={styles.userEditSectionTitle}>本日の出勤状態</div>
+            <div className={styles.userEditStatusRow}>
+              <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
+                {isIn ? '出勤中' : '退勤中'}
+              </span>
+              <button className={styles.userEditStatusChangeBtn} onClick={() => setStep('confirmStatus')}>
+                {isIn ? '退勤中に切り替える' : '出勤中に切り替える'}
+              </button>
             </div>
+          </div>
 
-            <hr className={styles.modalDivider} />
-
-            {/* Status toggle */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>本日の出勤状態</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')} style={{ fontSize: '1rem', padding: '4px 12px' }}>
-                  {isIn ? '出勤中' : '退勤中'}
-                </span>
-                <button
-                  className={styles.toggleTriggerBtn}
-                  style={{ color: isIn ? '#1a73e8' : '#2e7d32' }}
-                  onClick={() => setStep('confirmStatus')}
-                >
-                  {isIn ? '退勤中に切り替える' : '出勤中に切り替える'}
-                </button>
-              </div>
-            </div>
-
-            <hr className={styles.modalDivider} />
-            <button className={styles.dangerToggleBtn} onClick={() => setDangerOpen(o => !o)}>
-              {dangerOpen ? '▼' : '▶'} その他の操作
+          {/* その他の操作 */}
+          <div className={styles.userEditDangerSection}>
+            <button className={styles.userEditDangerToggle} onClick={() => setDangerOpen(o => !o)}>
+              <svg
+                className={[styles.userEditDangerChevron, dangerOpen ? styles.userEditDangerChevronOpen : ''].join(' ')}
+                width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+              その他の操作
             </button>
             {dangerOpen && (
-              <button className={styles.deleteTriggerBtn} style={{ marginTop: 8 }} onClick={() => setStep('confirmDelete')}>
-                このユーザーを削除する
-              </button>
+              <div className={styles.userEditDangerBody}>
+                <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>
+                  このユーザーを削除する
+                </button>
+              </div>
             )}
+          </div>
 
-            <hr className={styles.modalDivider} />
-            <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>
-          </>
-        )}
+        </div>
 
-        {step === 'confirmDelete' && (
-          <>
-            <h3>ユーザー削除の確認</h3>
-            <p className={styles.modalLabel}>{user.name}</p>
-            <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{user.id}</p>
-            <p className={styles.confirmWarn}>
-              このユーザーと全ての打刻記録を完全に削除します。<br />
-              この操作は元に戻せません。
-            </p>
-            <div className={styles.modalActions}>
-              <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
-              <button className={styles.cancelBtn} onClick={() => setStep('main')}>戻る</button>
-            </div>
-          </>
-        )}
-
-        {step === 'confirmStatus' && (
-          <>
-            <h3>状態変更の確認</h3>
-            <p className={styles.modalLabel}>{user.name}</p>
-            <p className={styles.confirmMsg}>
-              <span className={styles.oldTime}>{isIn ? '出勤中' : '退勤中'}</span>
-              {' → '}
-              <span className={styles.newTime}>{isIn ? '退勤中' : '出勤中'}</span>
-              {' に変更します'}
-            </p>
-            <p className={styles.confirmWarn}>この操作は元に戻せません</p>
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleConfirmStatus}>確定する</button>
-              <button className={styles.cancelBtn} onClick={() => setStep('main')}>戻る</button>
-            </div>
-          </>
-        )}
-
-      {numpad && (
-        <NumpadOverlay
-          title={numpad.title}
-          initialValue={
-            numpad.field === 'pin' ? ''
-            : numpad.field === 'multiplier' ? (multipliers[numpad.item] || '')
-            : (itemRates[numpad.item]?.[numpad.field] || '')
-          }
-          maxLength={numpad.maxLength}
-          decimal={!!numpad.decimal}
-          pinMode={!!numpad.pinMode}
-          onConfirm={val => {
-            if (numpad.field === 'pin') {
-              setPin(val)
-            } else if (numpad.field === 'multiplier') {
-              setRate(numpad.item, 'multiplier', val)
-            } else {
-              setRate(numpad.item, numpad.field, val)
-            }
-          }}
-          onClose={() => setNumpad(null)}
-        />
-      )}
+        {/* Footer */}
+        <div className={styles.userEditFooter}>
+          <div className={styles.userEditDirtyMsg}>
+            {isDirty ? '未保存の変更があります' : ''}
+          </div>
+          <div className={styles.userEditFooterBtns}>
+            <button className={styles.userEditCancelBtn} onClick={onClose}>キャンセル</button>
+            <button
+              className={styles.userEditSaveBtn}
+              onClick={handleSaveAll}
+              disabled={!name.trim() || saving || !isDirty}
+            >
+              {saving ? '保存中…' : '変更を保存'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
