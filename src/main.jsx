@@ -15,6 +15,8 @@ function AdminRoute() {
   const [adminPin, setAdminPin] = useState(DEFAULT_ADMIN_PIN)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const [showPin, setShowPin] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [focused, setFocused] = useState(false)
   const inputRef = React.useRef(null)
 
@@ -32,12 +34,24 @@ function AdminRoute() {
   }
 
   function handleChange(e) {
-    const v = e.target.value.replace(/\D/g, '').slice(0, 4)
+    const v = e.target.value
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/\D/g, '')
+      .slice(0, 4)
     setPin(v)
-    setError('')
-    if (v.length === 4) {
-      if (v === adminPin) { unlock() }
-      else { setError('PINが違います'); setTimeout(() => { setPin(''); setError('') }, 800) }
+    if (error) setError('')
+  }
+
+  function handleSubmit() {
+    if (pin.length < 4 || checking) return
+    setChecking(true)
+    if (pin === adminPin) {
+      unlock()
+    } else {
+      setError('PINが正しくありません。もう一度入力してください。')
+      setPin('')
+      setChecking(false)
+      setTimeout(() => inputRef.current?.focus(), 0)
     }
   }
 
@@ -45,6 +59,13 @@ function AdminRoute() {
     try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
     setUnlocked(false)
   }} />
+
+  const hasError = !!error
+  const canSubmit = pin.length === 4 && !checking
+  const borderColor = hasError ? '#dc2626' : focused ? '#2563eb' : '#d1d5db'
+  const inputShadow = focused
+    ? (hasError ? '0 0 0 3px rgba(220,38,38,0.14)' : '0 0 0 3px rgba(37,99,235,0.16)')
+    : 'none'
 
   return (
     <div style={{
@@ -56,69 +77,130 @@ function AdminRoute() {
       <div style={{
         background: '#fff',
         borderRadius: 14,
-        padding: '48px 44px 36px',
-        width: 'min(440px, 92vw)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+        padding: '32px 36px 28px',
+        width: 'min(400px, 92vw)',
         border: '1px solid #dde4ec',
-        boxShadow: '0 4px 32px rgba(30,60,100,0.10)'
+        boxShadow: '0 2px 16px rgba(30,60,100,0.08)'
       }}>
         {/* Lock icon */}
-        <div style={{
-          width: 60, height: 60, borderRadius: 14,
-          background: '#e8f0fb',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 20
-        }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <div style={{ marginBottom: 12, lineHeight: 0 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
 
         {/* Title */}
-        <div style={{ fontWeight: 800, fontSize: '1.45rem', color: '#1a3f6f', marginBottom: 6, letterSpacing: '-0.01em' }}>
+        <div style={{ fontWeight: 800, fontSize: '1.4rem', color: '#111827', marginBottom: 5 }}>
           管理画面ログイン
         </div>
-        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: 28 }}>
+        <div style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 24 }}>
           管理用PINを入力してください
         </div>
 
-        {/* PIN input */}
-        <input
-          ref={inputRef}
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={pin}
-          onChange={handleChange}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          placeholder="●●●●"
+        {/* Label */}
+        <label
+          htmlFor="admin-pin-input"
+          style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}
+        >
+          管理用PIN
+        </label>
+
+        {/* Input + eye toggle */}
+        <div style={{ position: 'relative' }}>
+          <input
+            ref={inputRef}
+            id="admin-pin-input"
+            type={showPin ? 'text' : 'password'}
+            inputMode="numeric"
+            autoComplete="off"
+            value={pin}
+            onChange={handleChange}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); handleSubmit() }
+              else if (e.key === 'Escape') { e.preventDefault(); setPin(''); setError('') }
+            }}
+            placeholder="4桁のPINを入力"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              height: 50,
+              fontSize: '1rem',
+              paddingLeft: 12, paddingRight: 44,
+              border: `1.5px solid ${borderColor}`,
+              borderRadius: 8,
+              outline: 'none',
+              fontFamily: 'inherit',
+              background: '#fff',
+              color: '#111827',
+              boxShadow: inputShadow,
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+            }}
+          />
+          {/* Show / hide toggle */}
+          <button
+            type="button"
+            tabIndex={0}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => setShowPin(v => !v)}
+            aria-label={showPin ? 'PINを隠す' : 'PINを表示'}
+            style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+              color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 4, lineHeight: 0,
+            }}
+          >
+            {showPin ? (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                <path d="m14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            ) : (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            )}
+          </button>
+        </div>
+
+        {/* Error area (reserved height prevents layout shift) */}
+        <div style={{ minHeight: 24, marginTop: 6, marginBottom: 14 }}>
+          {hasError && (
+            <span style={{ fontSize: '0.78rem', color: '#dc2626', fontWeight: 500 }}>
+              {error}
+            </span>
+          )}
+        </div>
+
+        {/* Login button */}
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
           style={{
-            width: '100%', boxSizing: 'border-box',
-            height: 58,
-            textAlign: 'center', fontSize: '1.9rem', letterSpacing: '0.5em',
-            border: error ? '2px solid #dc2626' : focused ? '2px solid #2563eb' : '2px solid #d1d5db',
-            borderRadius: 10, padding: '0 12px',
-            outline: 'none', fontFamily: 'inherit',
-            boxShadow: focused ? '0 0 0 3px rgba(37,99,235,0.18)' : error ? '0 0 0 3px rgba(220,38,38,0.12)' : 'none',
-            transition: 'border-color 0.15s, box-shadow 0.15s'
+            width: '100%',
+            height: 46,
+            background: canSubmit ? '#2563eb' : '#bfdbfe',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontSize: '0.95rem',
+            fontWeight: 700,
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
+            fontFamily: 'inherit',
           }}
-        />
-
-        {/* Fixed-height error area */}
-        <div style={{ height: 22, marginTop: 8, textAlign: 'center' }}>
-          {error && <span style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.875rem' }}>{error}</span>}
-        </div>
-
-        {/* Footer divider */}
-        <div style={{ width: '100%', borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-          <span style={{ fontSize: '0.8rem', color: '#9ca3af', letterSpacing: '0.03em' }}>管理者専用</span>
-        </div>
+          onMouseEnter={e => { if (canSubmit) e.currentTarget.style.background = '#1d4ed8' }}
+          onMouseLeave={e => { if (canSubmit) e.currentTarget.style.background = '#2563eb' }}
+          onFocus={e => { e.currentTarget.style.outline = '2px solid #2563eb'; e.currentTarget.style.outlineOffset = '2px' }}
+          onBlur={e => { e.currentTarget.style.outline = 'none' }}
+        >
+          {checking ? '確認中…' : 'ログイン'}
+        </button>
       </div>
     </div>
   )
