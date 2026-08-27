@@ -1,4 +1,4 @@
-const CACHE = 'qr-kintai-v1';
+const CACHE = 'qr-kintai-v2';
 
 self.addEventListener('install', e => {
   e.waitUntil(
