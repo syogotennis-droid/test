@@ -651,6 +651,58 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
 
 // ─── DayEditModal ─────────────────────────────────────────────────────────────
 
+function parseTimeInput(str) {
+  if (!str) return ''
+  const s = str.trim()
+  const colonMatch = s.match(/^(\d{1,2}):(\d{2})$/)
+  if (colonMatch) {
+    const h = parseInt(colonMatch[1]), m = parseInt(colonMatch[2])
+    if (h <= 23 && m <= 59) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    return ''
+  }
+  const digits = s.replace(/\D/g, '')
+  if (digits.length === 0) return ''
+  if (digits.length <= 2) {
+    const h = parseInt(digits)
+    if (h <= 23) return `${String(h).padStart(2, '0')}:00`
+    return ''
+  }
+  if (digits.length === 3) {
+    const h = parseInt(digits[0]), m = parseInt(digits.slice(1))
+    if (h <= 9 && m <= 59) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    return ''
+  }
+  if (digits.length === 4) {
+    const h = parseInt(digits.slice(0, 2)), m = parseInt(digits.slice(2))
+    if (h <= 23 && m <= 59) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    return ''
+  }
+  return ''
+}
+
+function TimeTextInput({ value, onChange, className, placeholder }) {
+  const [raw, setRaw] = useState(value || '')
+  const [focused, setFocused] = useState(false)
+  useEffect(() => { if (!focused) setRaw(value || '') }, [value, focused])
+  function handleBlur() {
+    setFocused(false)
+    const parsed = parseTimeInput(raw)
+    setRaw(parsed)
+    onChange(parsed)
+  }
+  return (
+    <input
+      type="text"
+      value={raw}
+      onChange={e => setRaw(e.target.value)}
+      onBlur={handleBlur}
+      onFocus={e => { setFocused(true); e.target.select() }}
+      placeholder={placeholder || '--:--'}
+      className={className}
+    />
+  )
+}
+
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 function parseWorkType(wt) {
@@ -680,8 +732,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const [outTime, setOutTime] = useState(outLog?.time?.substring(0, 5) || '')
   const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
-  const [activeTimeField, setActiveTimeField] = useState(null) // 'in' | 'out' | null
-  const [editingWorkItem, setEditingWorkItem] = useState(null)
 
   const workingMinutes = useMemo(() => {
     if (!inTime || !outTime) return null
@@ -695,7 +745,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
 
   function setWorkTime(id, field, val) {
-    setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
+    setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0, ...prev[id], [field]: val } }))
   }
 
   function buildWorkTypeStr() {
@@ -727,86 +777,96 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                 <div className={styles.modalHeaderTitle}>勤務記録の編集</div>
                 <div className={styles.modalHeaderSub}>{dateLabel} ・ {user.name}</div>
               </div>
-              <button className={styles.modalCloseBtn} onClick={onClose}>✕</button>
+              <button className={styles.modalCloseBtn} onClick={onClose} tabIndex={-1}>✕</button>
             </div>
 
             <div className={styles.modalBody}>
               <div className={styles.timeRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>出勤時刻</label>
-                  <input
-                    type="time"
-                    className={styles.numpadTrigger}
+                  <TimeTextInput
                     value={inTime}
-                    onChange={e => setInTime(e.target.value)}
-                    style={{ fontFamily: 'inherit', cursor: 'text' }}
+                    onChange={setInTime}
+                    className={styles.numpadTrigger}
+                    placeholder="--:--"
                   />
                 </div>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>退勤時刻</label>
-                  <input
-                    type="time"
-                    className={styles.numpadTrigger}
+                  <TimeTextInput
                     value={outTime}
-                    onChange={e => setOutTime(e.target.value)}
-                    style={{ fontFamily: 'inherit', cursor: 'text' }}
+                    onChange={setOutTime}
+                    className={styles.numpadTrigger}
+                    placeholder="--:--"
                   />
                 </div>
               </div>
 
-              {outTime && workingMinutes !== null && (
-                <div className={styles.workTimeCard}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  <span>勤務時間 <strong>{fmtMinutes(workingMinutes)}</strong></span>
-                  {totalInputMinutes > 0 && (
-                    <>
-                      <span className={styles.workTimeSep}>|</span>
-                      <span className={totalInputMinutes === workingMinutes ? styles.totalMatch : styles.totalMismatch}>
-                        残り {fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-
               {outTime && (
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>作業内容</label>
-                  <div className={styles.workCards}>
-                    {userWorkItems.map(t => {
-                      const active = workTimes[t] && (workTimes[t].h > 0 || workTimes[t].m > 0)
-                      return (
-                        <div
-                          key={t}
-                          className={[styles.wCard, active ? styles.wCardActive : ''].join(' ')}
-                          onClick={() => {
-                            if (!workTimes[t]) setWorkTimes(prev => ({ ...prev, [t]: { h: 0, m: 0 } }))
-                            setEditingWorkItem(t)
-                          }}
-                        >
-                          {active && (
-                            <button
-                              className={styles.wClearBtn}
-                              onClick={e => { e.stopPropagation(); setWorkTimes(prev => { const c = { ...prev }; delete c[t]; return c }) }}
-                            >×</button>
-                          )}
-                          <div className={styles.wCardLabel}>{t}</div>
-                          {active && <div className={styles.wCardTime}>{fmtMinutes(workTimes[t].h * 60 + workTimes[t].m)}</div>}
+                <>
+                  {workingMinutes !== null && (
+                    <div className={styles.workTimeSummaryBar}>
+                      <div className={styles.wSummaryItem}>
+                        <div className={styles.wSummaryLabel}>勤務時間</div>
+                        <div className={styles.wSummaryValue}>{fmtMinutes(workingMinutes)}</div>
+                      </div>
+                      <div className={styles.wSummarySep} />
+                      <div className={styles.wSummaryItem}>
+                        <div className={styles.wSummaryLabel}>入力済み</div>
+                        <div className={[styles.wSummaryValue, totalInputMinutes > workingMinutes ? styles.wSummaryOver : ''].join(' ')}>
+                          {fmtMinutes(totalInputMinutes)}
                         </div>
-                      )
-                    })}
+                      </div>
+                      <div className={styles.wSummarySep} />
+                      <div className={[styles.wSummaryItem, totalInputMinutes === workingMinutes && totalInputMinutes > 0 ? styles.wSummaryDone : totalInputMinutes > workingMinutes ? styles.wSummaryOver : ''].join(' ')}>
+                        <div className={styles.wSummaryLabel}>残り時間</div>
+                        <div className={styles.wSummaryValue}>{fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}</div>
+                      </div>
+                    </div>
+                  )}
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>作業内容</label>
+                    <div className={styles.workTimeList}>
+                      {userWorkItems.map(t => {
+                        const wt = workTimes[t] || { h: 0, m: 0 }
+                        return (
+                          <div key={t} className={styles.workTimeListRow}>
+                            <span className={styles.workTimeListName}>{t}</span>
+                            <div className={styles.workTimeListInputs}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={wt.h > 0 ? wt.h : ''}
+                                onChange={e => {
+                                  const v = String(e.target.value).replace(/[^\d]/g, '')
+                                  setWorkTime(t, 'h', parseInt(v) || 0)
+                                }}
+                                placeholder="0"
+                                className={styles.workTimeNumInline}
+                              />
+                              <span className={styles.workTimeUnitInline}>時間</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                value={wt.m > 0 ? wt.m : ''}
+                                onChange={e => {
+                                  const v = String(e.target.value).replace(/[^\d]/g, '')
+                                  const n = parseInt(v) || 0
+                                  if (v !== '' && n > 59) return
+                                  setWorkTime(t, 'm', n)
+                                }}
+                                placeholder="0"
+                                className={styles.workTimeNumInline}
+                              />
+                              <span className={styles.workTimeUnitInline}>分</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              {editingWorkItem && (
-                <PcWorkTimeInputModal
-                  item={editingWorkItem}
-                  workTimes={workTimes}
-                  workingMinutes={workingMinutes}
-                  onSetTime={setWorkTime}
-                  onClose={() => setEditingWorkItem(null)}
-                />
+                </>
               )}
 
               {hasExisting && (

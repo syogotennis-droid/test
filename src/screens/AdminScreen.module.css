@@ -628,8 +628,8 @@
 .modalLg {
   background: #fff;
   border-radius: 16px;
-  width: min(820px, 96vw);
-  max-height: 85vh;
+  width: min(960px, 96vw);
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1425,3 +1425,113 @@
 .timeDisplayUnit { font-size: 0.78rem; color: #6b7280; }
 .timeDisplaySep { font-size: 1.8rem; font-weight: 700; color: #9baab8; }
 .workTimeHint { font-size: 0.88rem; color: #6b7280; text-align: center; }
+
+/* ─── Inline work time list (DayEditModal) ─── */
+.workTimeList {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.workTimeListRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  gap: 8px;
+}
+
+.workTimeListName {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 32px;
+}
+
+.workTimeListInputs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.workTimeNumInline {
+  width: 58px;
+  height: 38px;
+  border: 2px solid #dde4ec;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  text-align: center;
+  outline: none;
+  font-family: inherit;
+  background: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.workTimeNumInline::-webkit-inner-spin-button,
+.workTimeNumInline::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.workTimeNumInline:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+}
+
+.workTimeUnitInline {
+  font-size: 0.82rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* ─── Work time summary bar (DayEditModal) ─── */
+.workTimeSummaryBar {
+  display: flex;
+  align-items: stretch;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.wSummaryItem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px;
+}
+
+.wSummaryLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wSummaryValue {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  margin-top: 3px;
+}
+
+.wSummarySep {
+  width: 1px;
+  background: #bfdbfe;
+  flex-shrink: 0;
+}
+
+.wSummaryOver .wSummaryValue { color: #dc2626; }
+.wSummaryDone .wSummaryValue { color: #16a34a; }
