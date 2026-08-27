@@ -1183,6 +1183,8 @@ function KinmuboTab({ today }) {
   const [exporting, setExporting] = useState(false)
   const [preview, setPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [expandedIds, setExpandedIds] = useState(new Set())
+  const [searchQuery, setSearchQuery] = useState('')
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -1194,6 +1196,8 @@ function KinmuboTab({ today }) {
     let cancelled = false
     setPreviewLoading(true)
     setPreview(null)
+    setExpandedIds(new Set())
+    setSearchQuery('')
     const [y, m] = selectedYM.split('-').map(Number)
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
@@ -1242,33 +1246,50 @@ function KinmuboTab({ today }) {
         const weMins = monthlyWeMins[type] || 0
         if (wdMins + weMins === 0) continue
         if (rateObj.sunday) {
-          if (wdMins > 0) rows.push({ label: type, mins: wdMins, rate: Number(rateObj.normal) || 0, pay: Math.round(wdMins / 60 * (Number(rateObj.normal) || 0)) })
-          if (weMins > 0) rows.push({ label: type + '（日曜）', mins: weMins, rate: Number(rateObj.sunday) || 0, pay: Math.round(weMins / 60 * (Number(rateObj.sunday) || 0)) })
+          if (wdMins > 0) rows.push({ label: type, mins: wdMins, days: null, rate: Number(rateObj.normal) || 0, pay: Math.round(wdMins / 60 * (Number(rateObj.normal) || 0)) })
+          if (weMins > 0) rows.push({ label: type + '（日曜）', mins: weMins, days: null, rate: Number(rateObj.sunday) || 0, pay: Math.round(weMins / 60 * (Number(rateObj.sunday) || 0)) })
         } else {
           const totalMins = wdMins + weMins
-          rows.push({ label: type, mins: totalMins, rate: Number(rateObj.normal) || 0, pay: Math.round(totalMins / 60 * (Number(rateObj.normal) || 0)) })
+          rows.push({ label: type, mins: totalMins, days: null, rate: Number(rateObj.normal) || 0, pay: Math.round(totalMins / 60 * (Number(rateObj.normal) || 0)) })
         }
       }
       const transport = Number(itemRates['交通費']?.amount) || 0
       if (transport > 0 && workingDays > 0) {
-        rows.push({ label: `交通費（${workingDays}日）`, mins: null, rate: transport, pay: Math.round(workingDays * transport) })
+        rows.push({ label: '交通費', mins: null, days: workingDays, rate: transport, pay: Math.round(workingDays * transport) })
       }
       if (workingDays > 0 && minWage > 0) {
         const prepMins = workingDays * 10
-        rows.push({ label: '準備時間', mins: prepMins, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
+        rows.push({ label: '準備時間', mins: prepMins, days: null, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
       }
+      const totalWorkMins = rows.reduce((s, r) => s + (r.mins || 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
-      return { user, workingDays, rows, totalPay }
+      return { user, workingDays, totalWorkMins, rows, totalPay }
     })
   }
 
   function fmtMins(mins) {
-    if (mins === null) return ''
+    if (!mins) return ''
     const h = Math.floor(mins / 60), m = mins % 60
+    if (h === 0) return `${m}分`
     return m > 0 ? `${h}時間${m}分` : `${h}時間`
   }
 
+  function fmtTimeOrDays(row) {
+    if (row.mins === null && row.days != null) return `${row.days}日`
+    return fmtMins(row.mins)
+  }
+
+  function toggleExpand(userId) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(userId)) next.delete(userId)
+      else next.add(userId)
+      return next
+    })
+  }
+
   async function handleCreate() {
+    if (exporting) return
     setExporting(true)
     try {
       const [y, m] = selectedYM.split('-').map(Number)
@@ -1277,17 +1298,12 @@ function KinmuboTab({ today }) {
       const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
       const buf = await exportKinmubo({ dateFrom, dateTo })
       const fileName = `出勤簿_${selectedYM}.xlsx`
-
       if (Capacitor.isNativePlatform()) {
         const bytes = new Uint8Array(buf)
         let binary = ''
         for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
         const base64 = btoa(binary)
-        const result = await Filesystem.writeFile({
-          path: fileName,
-          data: base64,
-          directory: Directory.Cache,
-        })
+        const result = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache })
         await Share.share({ title: fileName, url: result.uri })
       } else {
         const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -1306,71 +1322,164 @@ function KinmuboTab({ today }) {
   }
 
   const [displayY, displayM] = selectedYM.split('-').map(Number)
+  const hasData = preview && preview.length > 0
+  const filteredPreview = preview ? preview.filter(p => p.user.name.includes(searchQuery)) : []
+  const totalEmployees = preview ? preview.length : 0
+  const totalWorkingDays = preview ? preview.reduce((s, p) => s + p.workingDays, 0) : 0
+  const totalSalary = preview ? preview.reduce((s, p) => s + p.totalPay, 0) : 0
 
   return (
     <div className={styles.calContent}>
-      <div className={styles.kinmuboPanel}>
-        <p className={styles.kinmuboDesc}>対象月を選択して出勤簿を作成します。<br />担当者ごとにシートが分かれたExcelファイルが出力されます。</p>
+      <div className={styles.kinmuboPage}>
 
-        <div className={styles.monthSelector}>
-          <button className={styles.navBtn} onClick={() => shiftMonth(-1)}>◀</button>
-          <span className={styles.monthLabel}>{displayY}年{displayM}月</span>
-          <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
+        {/* Page header */}
+        <div className={styles.kinmuboPageHeader}>
+          <h2 className={styles.kinmuboPageTitle}>出勤簿作成</h2>
+          <p className={styles.kinmuboPageDesc}>対象月の勤務実績と給与を確認し、Excel形式で出力できます。</p>
         </div>
 
-        <button className={styles.kinmuboCreateBtn} onClick={handleCreate} disabled={exporting}>
-          {exporting ? '作成中...' : '📥 出勤簿を作成'}
-        </button>
-      </div>
-
-      {previewLoading && <div className={styles.empty}>読込中...</div>}
-
-      {!previewLoading && preview && preview.length === 0 && (
-        <div className={styles.empty}>この月の出勤記録はありません。</div>
-      )}
-
-      {!previewLoading && preview && preview.length > 0 && (
-        <div className={styles.kinmuboPreviewWrap}>
-          {preview.map(({ user, workingDays, rows, totalPay }) => (
-            <div key={user.id} className={styles.kinmuboPreviewCard}>
-              <div className={styles.kinmuboPreviewHeader}>
-                <span className={styles.kinmuboPreviewName}>{user.name}</span>
-                <span className={styles.kinmuboPreviewDays}>{workingDays}日出勤</span>
-              </div>
-              {rows.length === 0 ? (
-                <div className={styles.kinmuboPreviewEmpty}>業務時間の入力なし</div>
-              ) : (
-                <table className={styles.kinmuboPreviewTable}>
-                  <thead>
-                    <tr>
-                      <th>業務</th>
-                      <th>時間</th>
-                      <th>時給</th>
-                      <th>給与</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i}>
-                        <td>{r.label}</td>
-                        <td>{fmtMins(r.mins)}</td>
-                        <td>{r.rate > 0 ? r.rate.toLocaleString() + '円' : '—'}</td>
-                        <td className={styles.kinmuboPreviewPayCell}>{r.pay > 0 ? r.pay.toLocaleString() + '円' : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan={3}>合計</td>
-                      <td className={styles.kinmuboPreviewPayCell}>{totalPay.toLocaleString()}円</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
+        {/* Operation card */}
+        <div className={styles.kinmuboOpCard}>
+          <div className={styles.kinmuboOpLeft}>
+            <span className={styles.kinmuboOpLabel}>対象月</span>
+            <div className={styles.monthSelector}>
+              <button className={styles.navBtn} onClick={() => shiftMonth(-1)}>◀</button>
+              <span className={styles.monthLabel}>{displayY}年{displayM}月</span>
+              <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
             </div>
-          ))}
+          </div>
+          <button
+            className={styles.kinmuboExportBtn}
+            onClick={handleCreate}
+            disabled={exporting || previewLoading || !hasData}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {exporting ? '出力中…' : 'Excelを出力'}
+          </button>
         </div>
-      )}
+
+        {/* Summary cards */}
+        {!previewLoading && hasData && (
+          <div className={styles.kinmuboSummaryRow}>
+            <div className={styles.kinmuboSummaryCard}>
+              <div className={styles.kinmuboSummaryLabel}>対象従業員</div>
+              <div className={styles.kinmuboSummaryValue}>{totalEmployees}<span className={styles.kinmuboSummaryUnit}>名</span></div>
+            </div>
+            <div className={styles.kinmuboSummaryCard}>
+              <div className={styles.kinmuboSummaryLabel}>総出勤日数</div>
+              <div className={styles.kinmuboSummaryValue}>{totalWorkingDays}<span className={styles.kinmuboSummaryUnit}>日</span></div>
+            </div>
+            <div className={[styles.kinmuboSummaryCard, styles.kinmuboSummaryCardAccent].join(' ')}>
+              <div className={styles.kinmuboSummaryLabel}>給与合計</div>
+              <div className={[styles.kinmuboSummaryValue, styles.kinmuboSummaryValueAccent].join(' ')}>
+                {totalSalary.toLocaleString()}<span className={styles.kinmuboSummaryUnit}>円</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading */}
+        {previewLoading && <div className={styles.kinmuboLoading}>読み込み中…</div>}
+
+        {/* Empty */}
+        {!previewLoading && preview && !hasData && (
+          <div className={styles.kinmuboEmpty}>{displayY}年{displayM}月の勤務記録はありません。</div>
+        )}
+
+        {/* Employee list */}
+        {!previewLoading && hasData && (
+          <div className={styles.kinmuboListSection}>
+            <div className={styles.kinmuboListControls}>
+              <input
+                type="text"
+                className={styles.kinmuboSearch}
+                placeholder="従業員名で検索"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+              <div className={styles.kinmuboExpandBtns}>
+                <button className={styles.kinmuboExpandBtn} onClick={() => {
+                  setExpandedIds(prev => new Set([...prev, ...filteredPreview.map(p => p.user.id)]))
+                }}>すべて展開</button>
+                <button className={styles.kinmuboExpandBtn} onClick={() => {
+                  const ids = new Set(filteredPreview.map(p => p.user.id))
+                  setExpandedIds(prev => new Set([...prev].filter(id => !ids.has(id))))
+                }}>すべて閉じる</button>
+              </div>
+            </div>
+
+            {filteredPreview.length === 0 && (
+              <div className={styles.kinmuboEmpty}>該当する従業員がいません。</div>
+            )}
+
+            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay }) => {
+              const isOpen = expandedIds.has(user.id)
+              return (
+                <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
+                  <button
+                    className={styles.kinmuboAccordionHeader}
+                    onClick={() => toggleExpand(user.id)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className={styles.kinmuboAccordionName}>{user.name}</span>
+                    <span className={styles.kinmuboAccordionMeta}>
+                      <span className={styles.kinmuboAccordionDays}>{workingDays}日出勤</span>
+                      <span className={styles.kinmuboAccordionTime}>{fmtMins(totalWorkMins)}</span>
+                    </span>
+                    <span className={styles.kinmuboAccordionPay}>{totalPay.toLocaleString()}円</span>
+                    <svg
+                      className={[styles.kinmuboAccordionChevron, isOpen ? styles.kinmuboAccordionChevronOpen : ''].join(' ')}
+                      width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </button>
+
+                  {isOpen && (
+                    <div className={styles.kinmuboAccordionBody}>
+                      {rows.length === 0 ? (
+                        <div className={styles.kinmuboNoData}>業務時間の入力なし</div>
+                      ) : (
+                        <table className={styles.kinmuboDetailTable}>
+                          <thead>
+                            <tr>
+                              <th className={styles.kinmuboDetailTh}>区分</th>
+                              <th className={[styles.kinmuboDetailTh, styles.kinmuboDetailRight].join(' ')}>時間・日数</th>
+                              <th className={[styles.kinmuboDetailTh, styles.kinmuboDetailRight].join(' ')}>単価</th>
+                              <th className={[styles.kinmuboDetailTh, styles.kinmuboDetailRight].join(' ')}>金額</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((r, i) => (
+                              <tr key={i} className={styles.kinmuboDetailRow}>
+                                <td className={styles.kinmuboDetailTd}>{r.label}</td>
+                                <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{fmtTimeOrDays(r)}</td>
+                                <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{r.rate > 0 ? r.rate.toLocaleString() + '円' : '—'}</td>
+                                <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{r.pay > 0 ? r.pay.toLocaleString() + '円' : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td className={styles.kinmuboDetailTd} colSpan={3}>給与合計</td>
+                              <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight, styles.kinmuboDetailTotPay].join(' ')}>{totalPay.toLocaleString()}円</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+      </div>
     </div>
   )
 }

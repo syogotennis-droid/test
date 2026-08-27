@@ -1310,138 +1310,314 @@
 
 .numpadOk:disabled { opacity: 0.4; cursor: default; }
 
-/* ─── KinmuboTab ─── */
-.kinmuboPanel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  padding: 40px 24px;
-}
-
-.kinmuboDesc {
-  font-size: 0.9rem;
-  color: #6b7280;
-  text-align: center;
-  line-height: 1.6;
-}
-
-.monthSelector { display: flex; align-items: center; gap: 20px; }
-
-.monthLabel {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #1a3f6f;
-  min-width: 120px;
-  text-align: center;
-}
-
-.kinmuboNote {
-  font-size: 0.82rem;
-  color: #6b7280;
-  text-align: center;
-  background: #fff8e1;
-  border: 1px solid #ffe082;
-  border-radius: 8px;
-  padding: 8px 14px;
-  line-height: 1.5;
-  max-width: 320px;
-}
-
-.kinmuboCreateBtn {
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 12px;
-  padding: 13px 36px;
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
-}
-
-.kinmuboCreateBtn:disabled { opacity: 0.5; cursor: default; }
-.kinmuboCreateBtn:not(:disabled):hover { background: #1d4ed8; }
-
-.kinmuboPreviewWrap {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 0 28px 28px;
-  max-width: 860px;
+/* ─── KinmuboTab (redesigned) ─── */
+.kinmuboPage {
+  max-width: 1280px;
   margin: 0 auto;
+  padding: 24px 28px 40px;
   width: 100%;
   box-sizing: border-box;
 }
 
-.kinmuboPreviewCard {
+.kinmuboPageHeader { margin-bottom: 20px; }
+
+.kinmuboPageTitle {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  margin: 0 0 4px;
+}
+
+.kinmuboPageDesc {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Operation card */
+.kinmuboOpCard {
+  background: #fff;
+  border: 1px solid #dde4ec;
+  border-radius: 12px;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(30,60,100,0.05);
+}
+
+.kinmuboOpLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.kinmuboOpLabel {
+  font-size: 0.82rem;
+  color: #6b7280;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.monthSelector { display: flex; align-items: center; gap: 12px; }
+
+.monthLabel {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  min-width: 130px;
+  text-align: center;
+}
+
+.kinmuboExportBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 22px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kinmuboExportBtn:disabled { opacity: 0.5; cursor: default; }
+.kinmuboExportBtn:not(:disabled):hover { background: #1d4ed8; }
+
+/* Summary row */
+.kinmuboSummaryRow {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.kinmuboSummaryCard {
+  flex: 1;
+  background: #fff;
+  border: 1px solid #dde4ec;
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 4px rgba(30,60,100,0.05);
+}
+
+.kinmuboSummaryCardAccent {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.kinmuboSummaryLabel {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.kinmuboSummaryValue {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  line-height: 1;
+}
+
+.kinmuboSummaryValueAccent { color: #1d4ed8; }
+
+.kinmuboSummaryUnit {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-left: 3px;
+}
+
+/* State displays */
+.kinmuboLoading {
+  text-align: center;
+  color: #6b7280;
+  padding: 48px 24px;
+  font-size: 0.9rem;
+}
+
+.kinmuboEmpty {
+  text-align: center;
+  color: #6b7280;
+  padding: 40px 24px;
+  font-size: 0.9rem;
+  background: #fff;
+  border: 1px solid #dde4ec;
+  border-radius: 12px;
+}
+
+/* Employee list */
+.kinmuboListSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kinmuboListControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.kinmuboSearch {
+  flex: 1;
+  max-width: 280px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  outline: none;
+  color: #374151;
+  background: #fff;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.kinmuboSearch:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.12);
+}
+
+.kinmuboExpandBtns {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.kinmuboExpandBtn {
+  font-size: 0.8rem;
+  color: #4b5563;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.kinmuboExpandBtn:hover { background: #f3f4f6; }
+
+/* Accordion */
+.kinmuboAccordion {
   background: #fff;
   border: 1px solid #dde4ec;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(30,60,100,0.06);
+  box-shadow: 0 1px 3px rgba(30,60,100,0.05);
 }
 
-.kinmuboPreviewHeader {
+.kinmuboAccordionOpen {
+  border-color: #93c5fd;
+  border-left: 3px solid #2563eb;
+}
+
+.kinmuboAccordionHeader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+  outline: none;
+}
+.kinmuboAccordionHeader:hover { background: #f0f6ff; }
+.kinmuboAccordionHeader:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+
+.kinmuboAccordionName {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #1a3f6f;
+  min-width: 100px;
+}
+
+.kinmuboAccordionMeta {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
-  background: #f0f4f8;
-  border-bottom: 1px solid #dde4ec;
+  flex: 1;
 }
 
-.kinmuboPreviewName {
-  font-weight: 700;
-  font-size: 1rem;
-  color: #1a3f6f;
-}
-
-.kinmuboPreviewDays {
-  font-size: 0.82rem;
+.kinmuboAccordionDays {
+  font-size: 0.8rem;
   color: #6b7280;
-  background: #e2e8f0;
+  background: #f0f4f8;
   border-radius: 20px;
   padding: 2px 10px;
+  white-space: nowrap;
 }
 
-.kinmuboPreviewEmpty {
+.kinmuboAccordionTime {
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.kinmuboAccordionPay {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #1a3f6f;
+  text-align: right;
+  min-width: 100px;
+  margin-right: 4px;
+}
+
+.kinmuboAccordionChevron {
+  color: #9ca3af;
+  flex-shrink: 0;
+  transition: transform 0.18s;
+}
+.kinmuboAccordionChevronOpen { transform: rotate(180deg); }
+
+.kinmuboAccordionBody { border-top: 1px solid #e5e7eb; }
+
+.kinmuboNoData {
   padding: 16px 20px;
   color: #9ca3af;
   font-size: 0.875rem;
 }
 
-.kinmuboPreviewTable {
+/* Detail table */
+.kinmuboDetailTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
-.kinmuboPreviewTable th,
-.kinmuboPreviewTable td {
+.kinmuboDetailTh {
   padding: 9px 16px;
-  text-align: left;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.kinmuboPreviewTable th {
   background: #f8fafc;
   color: #4b5563;
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
 }
 
-.kinmuboPreviewTable tbody tr:last-child td { border-bottom: none; }
+.kinmuboDetailTd {
+  padding: 9px 16px;
+  border-bottom: 1px solid #f0f4f8;
+  color: #374151;
+}
 
-.kinmuboPreviewTable tfoot td {
+.kinmuboDetailRow:last-child .kinmuboDetailTd { border-bottom: none; }
+
+.kinmuboDetailRight { text-align: right; }
+
+.kinmuboDetailTable tfoot .kinmuboDetailTd {
   font-weight: 700;
   color: #1a3f6f;
   background: #eff6ff;
-  border-top: 2px solid #bfdbfe;
+  border-top: 1.5px solid #bfdbfe;
   border-bottom: none;
 }
 
-.kinmuboPreviewPayCell { text-align: right; }
+.kinmuboDetailTotPay { font-size: 0.95rem; }
 
 /* ─── User edit modal ─── */
 .itemRatesList {
