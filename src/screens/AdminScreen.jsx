@@ -220,17 +220,13 @@ function LogsTab({
                 <h3>記録を編集</h3>
                 <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
                 <p className={styles.modalLabel}>{editingLog.date}</p>
-                <button className={styles.numpadTrigger} onClick={() => setShowEditTimeNumpad(true)}>
-                  {editTime || <span className={styles.numpadTriggerPlaceholder}>時刻を選択</span>}
-                </button>
-                {showEditTimeNumpad && (
-                  <TimeNumpadOverlay
-                    title="時刻"
-                    initialValue={editTime}
-                    onConfirm={v => setEditTime(v)}
-                    onClose={() => setShowEditTimeNumpad(false)}
-                  />
-                )}
+                <input
+                  type="time"
+                  className={styles.numpadTrigger}
+                  value={editTime}
+                  onChange={e => setEditTime(e.target.value)}
+                  style={{ fontFamily: 'inherit', cursor: 'text' }}
+                />
                 <div className={styles.modalActions}>
                   <button className={styles.saveBtn} onClick={() => setModalStep('confirmSave')}>時間を変更</button>
                   <button className={styles.cancelBtn} onClick={closeModal}>キャンセル</button>
@@ -544,17 +540,13 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>時刻</label>
-              <button className={styles.numpadTrigger} onClick={() => setShowTimeNumpad(true)}>
-                {time || <span className={styles.numpadTriggerPlaceholder}>時刻を選択</span>}
-              </button>
-              {showTimeNumpad && (
-                <TimeNumpadOverlay
-                  title="時刻"
-                  initialValue={time}
-                  onConfirm={v => setTime(v)}
-                  onClose={() => setShowTimeNumpad(false)}
-                />
-              )}
+              <input
+                type="time"
+                className={styles.numpadTrigger}
+                value={time}
+                onChange={e => setTime(e.target.value)}
+                style={{ fontFamily: 'inherit', cursor: 'text' }}
+              />
             </div>
 
             {logType === '退勤' && (
@@ -724,34 +716,25 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>出勤時刻</label>
-              <button className={styles.numpadTrigger} onClick={() => setActiveTimeField('in')}>
-                {inTime || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
-              </button>
+              <input
+                type="time"
+                className={styles.numpadTrigger}
+                value={inTime}
+                onChange={e => setInTime(e.target.value)}
+                style={{ fontFamily: 'inherit', cursor: 'text' }}
+              />
             </div>
 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>退勤時刻</label>
-              <button className={styles.numpadTrigger} onClick={() => setActiveTimeField('out')}>
-                {outTime || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
-              </button>
+              <input
+                type="time"
+                className={styles.numpadTrigger}
+                value={outTime}
+                onChange={e => setOutTime(e.target.value)}
+                style={{ fontFamily: 'inherit', cursor: 'text' }}
+              />
             </div>
-
-            {activeTimeField === 'in' && (
-              <TimeNumpadOverlay
-                title="出勤時刻"
-                initialValue={inTime}
-                onConfirm={v => setInTime(v)}
-                onClose={() => setActiveTimeField(null)}
-              />
-            )}
-            {activeTimeField === 'out' && (
-              <TimeNumpadOverlay
-                title="退勤時刻"
-                initialValue={outTime}
-                onConfirm={v => setOutTime(v)}
-                onClose={() => setActiveTimeField(null)}
-              />
-            )}
 
             {outTime && (
               <>

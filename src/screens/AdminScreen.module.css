@@ -1109,6 +1109,7 @@
 }
 
 .numpadTrigger:hover { border-color: #9baab8; }
+.numpadTrigger:focus { border-color: #1a5fa8; background: #fff; outline: none; }
 
 .numpadTriggerSm {
   min-width: 72px;
