@@ -15,6 +15,7 @@ function AdminRoute() {
   const [adminPin, setAdminPin] = useState(DEFAULT_ADMIN_PIN)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const [focused, setFocused] = useState(false)
   const inputRef = React.useRef(null)
 
   const isSessionValid = () => {
@@ -43,9 +44,43 @@ function AdminRoute() {
   if (unlocked) return <AdminScreen onBack={() => setUnlocked(false)} />
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: '#f6fbf8' }}>
-      <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px 24px', width: 'min(340px, 92vw)', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}>
-        <div style={{ textAlign: 'center', fontWeight: 800, fontSize: '1.3rem', color: '#1a3f6f' }}>管理画面 — PINを入力</div>
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100dvh',
+      background: 'linear-gradient(160deg, #ffffff 0%, #e8f0f7 100%)',
+      fontFamily: 'inherit'
+    }}>
+      <div style={{
+        background: '#fff',
+        borderRadius: 14,
+        padding: '48px 44px 36px',
+        width: 'min(440px, 92vw)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+        border: '1px solid #dde4ec',
+        boxShadow: '0 4px 32px rgba(30,60,100,0.10)'
+      }}>
+        {/* Lock icon */}
+        <div style={{
+          width: 60, height: 60, borderRadius: 14,
+          background: '#e8f0fb',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: 20
+        }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+
+        {/* Title */}
+        <div style={{ fontWeight: 800, fontSize: '1.45rem', color: '#1a3f6f', marginBottom: 6, letterSpacing: '-0.01em' }}>
+          管理画面ログイン
+        </div>
+        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: 28 }}>
+          管理用PINを入力してください
+        </div>
+
+        {/* PIN input */}
         <input
           ref={inputRef}
           type="password"
@@ -53,10 +88,34 @@ function AdminRoute() {
           maxLength={4}
           value={pin}
           onChange={handleChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           placeholder="●●●●"
-          style={{ textAlign: 'center', fontSize: '1.8rem', letterSpacing: '0.4em', border: '2px solid #d1d5db', borderRadius: 10, padding: '12px', outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            height: 58,
+            textAlign: 'center', fontSize: '1.9rem', letterSpacing: '0.5em',
+            border: error ? '2px solid #dc2626' : focused ? '2px solid #2563eb' : '2px solid #d1d5db',
+            borderRadius: 10, padding: '0 12px',
+            outline: 'none', fontFamily: 'inherit',
+            boxShadow: focused ? '0 0 0 3px rgba(37,99,235,0.18)' : error ? '0 0 0 3px rgba(220,38,38,0.12)' : 'none',
+            transition: 'border-color 0.15s, box-shadow 0.15s'
+          }}
         />
-        {error && <div style={{ textAlign: 'center', color: '#dc2626', fontWeight: 700, fontSize: '0.9rem' }}>{error}</div>}
+
+        {/* Fixed-height error area */}
+        <div style={{ height: 22, marginTop: 8, textAlign: 'center' }}>
+          {error && <span style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.875rem' }}>{error}</span>}
+        </div>
+
+        {/* Footer divider */}
+        <div style={{ width: '100%', borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span style={{ fontSize: '0.8rem', color: '#9ca3af', letterSpacing: '0.03em' }}>管理者専用</span>
+        </div>
       </div>
     </div>
   )
