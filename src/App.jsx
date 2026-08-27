@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { StatusBar, Style } from '@capacitor/status-bar'
 import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
@@ -75,6 +76,7 @@ export default function App() {
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
+    StatusBar.hide().catch(() => {})
     const timer = setTimeout(() => setDbReady(true), 8000)
     initDB()
       .then(() => { clearTimeout(timer); setDbReady(true) })
