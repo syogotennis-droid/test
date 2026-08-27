@@ -41,7 +41,10 @@ function AdminRoute() {
     }
   }
 
-  if (unlocked) return <AdminScreen onBack={() => setUnlocked(false)} />
+  if (unlocked) return <AdminScreen onBack={() => {
+    try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+    setUnlocked(false)
+  }} />
 
   return (
     <div style={{
