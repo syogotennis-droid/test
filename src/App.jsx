@@ -188,7 +188,7 @@ export default function App() {
   }
 
   if (state === STATE.ADMIN) {
-    return <AdminScreen onBack={handleDone} />
+    return <AdminScreen isTablet={true} onBack={handleDone} />
   }
 
   if (state === STATE.CHECK && currentUser) {

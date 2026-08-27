@@ -100,7 +100,7 @@ const SIDEBAR_ITEMS = [
   },
 ]
 
-export default function AdminScreen({ onBack }) {
+export default function AdminScreen({ onBack, isTablet = false }) {
   const [tab, setTab] = useState('calendar')
   const [users, setUsers] = useState([])
   const today = toDateStr(new Date())
@@ -142,9 +142,9 @@ export default function AdminScreen({ onBack }) {
 
       <div className={styles.mainContent}>
         {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('calendar')} />}
-        {tab === 'calendar' && <CalendarTab users={users} today={today} />}
+        {tab === 'calendar' && <CalendarTab users={users} today={today} isTablet={isTablet} />}
         {tab === 'kinmubo' && <KinmuboTab today={today} />}
-        {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} />}
+        {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} isTablet={isTablet} />}
         {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
@@ -397,7 +397,7 @@ function timeDiffStr(t1, t2) {
   return h > 0 ? `${h}h${m > 0 ? m + 'm' : ''}` : `${m}m`
 }
 
-function CalendarTab({ users, today }) {
+function CalendarTab({ users, today, isTablet }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -515,6 +515,7 @@ function CalendarTab({ users, today }) {
           dayLogs={logs.filter(l => l.date === `${year}-${pad(month + 1)}-${pad(selectedDay)}`)}
           onClose={() => setSelectedDay(null)}
           onSaved={() => { setSelectedDay(null); refreshLogs() }}
+          isTablet={isTablet}
         />
       )}
     </div>
@@ -794,7 +795,7 @@ function parseWorkType(wt) {
   return result
 }
 
-function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
+function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTablet }) {
   const pad = n => String(n).padStart(2, '0')
   const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
   const dow = new Date(year, month, day).getDay()
@@ -821,6 +822,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
   const [focusedWorkItem, setFocusedWorkItem] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [editingTimeField, setEditingTimeField] = useState(null) // 'in' | 'out'
+  const [editingWorkItemTablet, setEditingWorkItemTablet] = useState(null)
 
   const inHRef = useRef(null)
   const inMRef = useRef(null)
@@ -919,67 +922,92 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
               <div className={styles.timeRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>出勤時刻</label>
-                  <div className={styles.timeHmRow}>
-                    <input
-                      ref={inHRef}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={2}
-                      value={inH}
-                      onChange={e => handleTimeInput(e.target.value, 23, setInH, inMRef)}
-                      onFocus={e => { if (e.target.value) e.target.select() }}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); inMRef.current?.focus() } }}
-                      placeholder="--"
-                      className={[styles.timeHmNum, inHInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                    />
-                    <span className={styles.timeHmUnit}>時</span>
-                    <input
-                      ref={inMRef}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={2}
-                      value={inM}
-                      onChange={e => handleTimeInput(e.target.value, 59, setInM, outHRef)}
-                      onFocus={e => { if (e.target.value) e.target.select() }}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outHRef.current?.focus() } }}
-                      placeholder="--"
-                      className={[styles.timeHmNum, inMInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                    />
-                    <span className={styles.timeHmUnit}>分</span>
-                  </div>
+                  {isTablet ? (
+                    <button className={styles.numpadTrigger} onClick={() => setEditingTimeField('in')}>
+                      {inTime || '──:──'}
+                    </button>
+                  ) : (
+                    <div className={styles.timeHmRow}>
+                      <input
+                        ref={inHRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={2}
+                        value={inH}
+                        onChange={e => handleTimeInput(e.target.value, 23, setInH, inMRef)}
+                        onFocus={e => { if (e.target.value) e.target.select() }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); inMRef.current?.focus() } }}
+                        placeholder="--"
+                        className={[styles.timeHmNum, inHInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                      />
+                      <span className={styles.timeHmUnit}>時</span>
+                      <input
+                        ref={inMRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={2}
+                        value={inM}
+                        onChange={e => handleTimeInput(e.target.value, 59, setInM, outHRef)}
+                        onFocus={e => { if (e.target.value) e.target.select() }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outHRef.current?.focus() } }}
+                        placeholder="--"
+                        className={[styles.timeHmNum, inMInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                      />
+                      <span className={styles.timeHmUnit}>分</span>
+                    </div>
+                  )}
                 </div>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>退勤時刻</label>
-                  <div className={styles.timeHmRow}>
-                    <input
-                      ref={outHRef}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={2}
-                      value={outH}
-                      onChange={e => handleTimeInput(e.target.value, 23, setOutH, outMRef)}
-                      onFocus={e => { if (e.target.value) e.target.select() }}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outMRef.current?.focus() } }}
-                      placeholder="--"
-                      className={[styles.timeHmNum, outHInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                    />
-                    <span className={styles.timeHmUnit}>時</span>
-                    <input
-                      ref={outMRef}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={2}
-                      value={outM}
-                      onChange={e => handleTimeInput(e.target.value, 59, setOutM, null)}
-                      onFocus={e => { if (e.target.value) e.target.select() }}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault() } }}
-                      placeholder="--"
-                      className={[styles.timeHmNum, outMInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                    />
-                    <span className={styles.timeHmUnit}>分</span>
-                  </div>
+                  {isTablet ? (
+                    <button className={styles.numpadTrigger} onClick={() => setEditingTimeField('out')}>
+                      {outTime || '──:──'}
+                    </button>
+                  ) : (
+                    <div className={styles.timeHmRow}>
+                      <input
+                        ref={outHRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={2}
+                        value={outH}
+                        onChange={e => handleTimeInput(e.target.value, 23, setOutH, outMRef)}
+                        onFocus={e => { if (e.target.value) e.target.select() }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outMRef.current?.focus() } }}
+                        placeholder="--"
+                        className={[styles.timeHmNum, outHInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                      />
+                      <span className={styles.timeHmUnit}>時</span>
+                      <input
+                        ref={outMRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={2}
+                        value={outM}
+                        onChange={e => handleTimeInput(e.target.value, 59, setOutM, null)}
+                        onFocus={e => { if (e.target.value) e.target.select() }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault() } }}
+                        placeholder="--"
+                        className={[styles.timeHmNum, outMInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                      />
+                      <span className={styles.timeHmUnit}>分</span>
+                    </div>
+                  )}
                 </div>
               </div>
+              {isTablet && editingTimeField && (
+                <TimeNumpadOverlay
+                  title={editingTimeField === 'in' ? '出勤時刻' : '退勤時刻'}
+                  initialValue={editingTimeField === 'in' ? inTime : outTime}
+                  onConfirm={val => {
+                    const [h, m] = val.split(':')
+                    if (editingTimeField === 'in') { setInH(String(parseInt(h))); setInM(String(parseInt(m))) }
+                    else { setOutH(String(parseInt(h))); setOutM(String(parseInt(m))) }
+                    setEditingTimeField(null)
+                  }}
+                  onClose={() => setEditingTimeField(null)}
+                />
+              )}
 
               {outTime && (
                 <>
@@ -1018,77 +1046,116 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                   )}
                   <div className={styles.formGroup}>
                     <label className={styles.formLabel}>作業内容</label>
-                    <div className={styles.workTimeList}>
-                      {userWorkItems.map(t => {
-                        const wt = workTimes[t] || { h: 0, m: 0 }
-                        const isFocused = focusedWorkItem === t
-                        const itemMins = wt.h * 60 + wt.m
-                        const otherMins = userWorkItems
-                          .filter(item => item !== t)
-                          .reduce((s, item) => { const w = workTimes[item] || { h: 0, m: 0 }; return s + w.h * 60 + w.m }, 0)
-                        const availForThis = workingMinutes !== null ? Math.max(0, workingMinutes - otherMins) : null
-                        const canFill = workingMinutes !== null && availForThis !== null && availForThis !== itemMins
-                        return (
-                          <div
-                            key={t}
-                            className={[styles.workTimeListRow, isFocused ? styles.workTimeListRowFocused : (wt.h > 0 || wt.m > 0) ? styles.workTimeListRowActive : ''].join(' ')}
-                            onFocus={() => setFocusedWorkItem(t)}
-                            onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusedWorkItem(null) }}
-                          >
-                            <span className={styles.workTimeListName}>{t}</span>
-                            <div className={styles.workTimeListInputs}>
-                              <input
-                                type="number"
-                                min="0"
-                                value={wt.h > 0 ? wt.h : ''}
-                                onChange={e => {
-                                  const v = String(e.target.value).replace(/[^\d]/g, '')
-                                  setWorkTime(t, 'h', parseInt(v) || 0)
+                    {isTablet ? (
+                      <>
+                        <div className={styles.workCards}>
+                          {userWorkItems.map(t => {
+                            const wt = workTimes[t] || { h: 0, m: 0 }
+                            const active = wt.h > 0 || wt.m > 0
+                            return (
+                              <div
+                                key={t}
+                                className={[styles.wCard, active ? styles.wCardActive : ''].join(' ')}
+                                onClick={() => {
+                                  if (!workTimes[t]) setWorkTimes(prev => ({ ...prev, [t]: { h: 0, m: 0 } }))
+                                  setEditingWorkItemTablet(t)
                                 }}
-                                onFocus={e => e.target.select()}
-                                placeholder="0"
-                                className={styles.workTimeNumInline}
-                              />
-                              <span className={styles.workTimeUnitInline}>時間</span>
-                              <input
-                                type="number"
-                                min="0"
-                                max="59"
-                                value={wt.m > 0 ? wt.m : ''}
-                                onChange={e => {
-                                  const v = String(e.target.value).replace(/[^\d]/g, '')
-                                  const n = parseInt(v) || 0
-                                  if (v !== '' && n > 59) return
-                                  setWorkTime(t, 'm', n)
-                                }}
-                                onFocus={e => e.target.select()}
-                                placeholder="0"
-                                className={styles.workTimeNumInline}
-                              />
-                              <span className={styles.workTimeUnitInline}>分</span>
+                              >
+                                {active && (
+                                  <button
+                                    className={styles.wClearBtn}
+                                    onClick={e => { e.stopPropagation(); setWorkTimes(prev => { const c = { ...prev }; delete c[t]; return c }) }}
+                                  >×</button>
+                                )}
+                                <div className={styles.wCardLabel}>{t}</div>
+                                {active && <div className={styles.wCardTime}>{fmtMinutes(wt.h * 60 + wt.m)}</div>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {editingWorkItemTablet && (
+                          <WorkTimeInputModal
+                            item={editingWorkItemTablet}
+                            workTimes={workTimes}
+                            workingMinutes={workingMinutes}
+                            onSetTime={(id, field, val) => setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0, ...prev[id], [field]: val } }))}
+                            onClose={() => setEditingWorkItemTablet(null)}
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <div className={styles.workTimeList}>
+                        {userWorkItems.map(t => {
+                          const wt = workTimes[t] || { h: 0, m: 0 }
+                          const isFocused = focusedWorkItem === t
+                          const itemMins = wt.h * 60 + wt.m
+                          const otherMins = userWorkItems
+                            .filter(item => item !== t)
+                            .reduce((s, item) => { const w = workTimes[item] || { h: 0, m: 0 }; return s + w.h * 60 + w.m }, 0)
+                          const availForThis = workingMinutes !== null ? Math.max(0, workingMinutes - otherMins) : null
+                          const canFill = workingMinutes !== null && availForThis !== null && availForThis !== itemMins
+                          return (
+                            <div
+                              key={t}
+                              className={[styles.workTimeListRow, isFocused ? styles.workTimeListRowFocused : (wt.h > 0 || wt.m > 0) ? styles.workTimeListRowActive : ''].join(' ')}
+                              onFocus={() => setFocusedWorkItem(t)}
+                              onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusedWorkItem(null) }}
+                            >
+                              <span className={styles.workTimeListName}>{t}</span>
+                              <div className={styles.workTimeListInputs}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={wt.h > 0 ? wt.h : ''}
+                                  onChange={e => {
+                                    const v = String(e.target.value).replace(/[^\d]/g, '')
+                                    setWorkTime(t, 'h', parseInt(v) || 0)
+                                  }}
+                                  onFocus={e => e.target.select()}
+                                  placeholder="0"
+                                  className={styles.workTimeNumInline}
+                                />
+                                <span className={styles.workTimeUnitInline}>時間</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={wt.m > 0 ? wt.m : ''}
+                                  onChange={e => {
+                                    const v = String(e.target.value).replace(/[^\d]/g, '')
+                                    const n = parseInt(v) || 0
+                                    if (v !== '' && n > 59) return
+                                    setWorkTime(t, 'm', n)
+                                  }}
+                                  onFocus={e => e.target.select()}
+                                  placeholder="0"
+                                  className={styles.workTimeNumInline}
+                                />
+                                <span className={styles.workTimeUnitInline}>分</span>
+                              </div>
+                              <div className={styles.workTimeListRight}>
+                                {isFocused && canFill && (
+                                  <button
+                                    className={styles.fillRemainingBtn}
+                                    onMouseDown={e => e.preventDefault()}
+                                    onClick={() => fillRemaining(t)}
+                                    tabIndex={-1}
+                                  >
+                                    残りを入力
+                                  </button>
+                                )}
+                                {isFocused && !canFill && workingMinutes !== null && availForThis !== null && (() => {
+                                  if (isExceeded) return <span className={styles.rowHintOver}>{fmtMinutes(totalInputMinutes - workingMinutes)}超過しています</span>
+                                  if (availForThis === itemMins && itemMins > 0) return <span className={styles.rowHintDone}>✓ 入力完了</span>
+                                  if (availForThis === 0 && itemMins === 0) return <span className={styles.rowHint}>割り当て済み</span>
+                                  return null
+                                })()}
+                              </div>
                             </div>
-                            <div className={styles.workTimeListRight}>
-                              {isFocused && canFill && (
-                                <button
-                                  className={styles.fillRemainingBtn}
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={() => fillRemaining(t)}
-                                  tabIndex={-1}
-                                >
-                                  残りを入力
-                                </button>
-                              )}
-                              {isFocused && !canFill && workingMinutes !== null && availForThis !== null && (() => {
-                                if (isExceeded) return <span className={styles.rowHintOver}>{fmtMinutes(totalInputMinutes - workingMinutes)}超過しています</span>
-                                if (availForThis === itemMins && itemMins > 0) return <span className={styles.rowHintDone}>✓ 入力完了</span>
-                                if (availForThis === 0 && itemMins === 0) return <span className={styles.rowHint}>割り当て済み</span>
-                                return null
-                              })()}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -1486,7 +1553,7 @@ function KinmuboTab({ today }) {
 
 // ─── UsersTab ─────────────────────────────────────────────────────────────────
 
-function UsersTab({ users, today, onRefresh }) {
+function UsersTab({ users, today, onRefresh, isTablet }) {
   const [statuses, setStatuses] = useState({})
   const [editingUser, setEditingUser] = useState(null)
   const [qrUser, setQrUser] = useState(null)
@@ -1648,6 +1715,7 @@ function UsersTab({ users, today, onRefresh }) {
           onClose={() => setEditingUser(null)}
           onSaved={handleModalSaved}
           onDeleted={() => { setEditingUser(null); onRefresh() }}
+          isTablet={isTablet}
         />
       )}
     </div>
@@ -2264,7 +2332,7 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
 
 const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当', '休憩', '準備'].includes(p))
 
-function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
+function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [step, setStep] = useState('main')
   const [name, setName] = useState(user.name)
   const [pin, setPin] = useState(user.pin || '')
@@ -2301,6 +2369,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
+  const [numpad, setNumpad] = useState(null)
   const isFirstRender = useRef(true)
 
   useEffect(() => {
@@ -2486,15 +2555,25 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
               </div>
               <div>
                 <label className={styles.userEditLabel}>PINコード</label>
-                <input
-                  className={[styles.userEditInput, pinError ? styles.userEditInputErr : ''].join(' ')}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={4}
-                  placeholder="4桁（未設定も可）"
-                  value={pin}
-                  onChange={handlePinChange}
-                />
+                {isTablet ? (
+                  <button
+                    className={[styles.numpadTrigger, pinError ? styles.userEditInputErr : ''].join(' ')}
+                    onClick={() => setNumpad({ title: 'PINコード', field: 'pin', maxLength: 4, pinMode: true })}
+                    style={{width:'100%', textAlign:'center'}}
+                  >
+                    {pin || <span className={styles.numpadTriggerPlaceholder}>未設定</span>}
+                  </button>
+                ) : (
+                  <input
+                    className={[styles.userEditInput, pinError ? styles.userEditInputErr : ''].join(' ')}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="4桁（未設定も可）"
+                    value={pin}
+                    onChange={handlePinChange}
+                  />
+                )}
                 {pinError
                   ? <div className={styles.userEditErrMsg}>{pinError}</div>
                   : <div className={styles.userEditHintText}>4桁の数字。未設定の場合はPINで打刻できません。</div>
@@ -2539,15 +2618,23 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                           <>
                             <td className={styles.workItemTd}>
                               <div className={styles.workItemInputWrap}>
-                                <input
-                                  className={styles.workItemInput}
-                                  type="text"
-                                  inputMode="numeric"
-                                  placeholder="0"
-                                  value={r.amount}
-                                  disabled={!checked}
-                                  onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
-                                />
+                                {isTablet ? (
+                                  <button
+                                    className={styles.numpadTriggerSm}
+                                    disabled={!checked}
+                                    onClick={() => checked && setNumpad({ title: `${item}（円/回）`, field: 'amount', item, maxLength: 6 })}
+                                  >{r.amount || '0'}</button>
+                                ) : (
+                                  <input
+                                    className={styles.workItemInput}
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    value={r.amount}
+                                    disabled={!checked}
+                                    onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
+                                  />
+                                )}
                                 <span className={styles.workItemUnit}>円/回</span>
                               </div>
                             </td>
@@ -2558,32 +2645,48 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
                           <>
                             <td className={styles.workItemTd}>
                               <div className={styles.workItemInputWrap}>
-                                <input
-                                  className={styles.workItemInput}
-                                  type="text"
-                                  inputMode="numeric"
-                                  placeholder="0"
-                                  value={r.normal}
-                                  disabled={!checked}
-                                  onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'normal', e.target.value) }}
-                                />
+                                {isTablet ? (
+                                  <button
+                                    className={styles.numpadTriggerSm}
+                                    disabled={!checked}
+                                    onClick={() => checked && setNumpad({ title: `${item} 基本時給`, field: 'normal', item, maxLength: 6 })}
+                                  >{r.normal || '0'}</button>
+                                ) : (
+                                  <input
+                                    className={styles.workItemInput}
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    value={r.normal}
+                                    disabled={!checked}
+                                    onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'normal', e.target.value) }}
+                                  />
+                                )}
                                 <span className={styles.workItemUnit}>円</span>
                               </div>
                             </td>
                             <td className={styles.workItemTd}>
                               <div className={styles.workItemInputWrap}>
-                                <input
-                                  className={styles.workItemInput}
-                                  type="text"
-                                  inputMode="decimal"
-                                  placeholder="1.25"
-                                  value={multipliers[item] || ''}
-                                  disabled={!checked}
-                                  onChange={e => {
-                                    const v = e.target.value
-                                    if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v)
-                                  }}
-                                />
+                                {isTablet ? (
+                                  <button
+                                    className={styles.numpadTriggerSm}
+                                    disabled={!checked}
+                                    onClick={() => checked && setNumpad({ title: `${item} 日曜倍率`, field: 'multiplier', item, maxLength: 5, decimal: true })}
+                                  >{multipliers[item] || '—'}</button>
+                                ) : (
+                                  <input
+                                    className={styles.workItemInput}
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="1.25"
+                                    value={multipliers[item] || ''}
+                                    disabled={!checked}
+                                    onChange={e => {
+                                      const v = e.target.value
+                                      if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v)
+                                    }}
+                                  />
+                                )}
                                 <span className={styles.workItemUnit}>倍</span>
                               </div>
                             </td>
@@ -2654,6 +2757,25 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted }) {
           </div>
         </div>
       </div>
+      {isTablet && numpad && (
+        <NumpadOverlay
+          title={numpad.title}
+          initialValue={
+            numpad.field === 'pin' ? ''
+            : numpad.field === 'multiplier' ? (multipliers[numpad.item] || '')
+            : (itemRates[numpad.item]?.[numpad.field] || '')
+          }
+          maxLength={numpad.maxLength}
+          decimal={!!numpad.decimal}
+          pinMode={!!numpad.pinMode}
+          onConfirm={val => {
+            if (numpad.field === 'pin') { setPin(val) }
+            else if (numpad.field === 'multiplier') { setRate(numpad.item, 'multiplier', val) }
+            else { setRate(numpad.item, numpad.field, val) }
+          }}
+          onClose={() => setNumpad(null)}
+        />
+      )}
     </div>
   )
 }
