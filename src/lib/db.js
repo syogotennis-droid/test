@@ -606,13 +606,13 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const hdrCell = (col, rn, text) =>
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
 
-    // 表1ヘッダー: 勤務時間 (A=日付 B=曜日 C=出勤 D=退勤 E=合計 F=休憩 G=勤務時間 H=準備時間)
+    // 表1ヘッダー: 勤務時間 (A=日付 B=曜日 C=出勤 D=退勤 E=休憩 F=勤務時間 G=準備時間 H=合計)
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
       hdrCell('C', T1_HDR, '出勤') + hdrCell('D', T1_HDR, '退勤') +
-      hdrCell('E', T1_HDR, '合計') + hdrCell('F', T1_HDR, '休憩') +
-      hdrCell('G', T1_HDR, '勤務時間') + hdrCell('H', T1_HDR, '準備時間') +
+      hdrCell('E', T1_HDR, '休憩') + hdrCell('F', T1_HDR, '勤務時間') +
+      hdrCell('G', T1_HDR, '準備時間') + hdrCell('H', T1_HDR, '合計') +
       `</row>`
 
     // 表2ヘッダー: 業務別時間
@@ -671,23 +671,23 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           const [h, mi] = outStr.split(':').map(Number)
           t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`)
         } else { t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`) }
-        // E: 合計 = 退勤 - 出勤（休憩未控除）
-        t1c.push(inStr && outStr
-          ? `<c r="E${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1})</f></c>`
-          : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
-        // F: 休憩
+        // E: 休憩
         const breakMins = wi['休憩'] || 0
         t1c.push(breakMins > 0
-          ? `<c r="F${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>`
-          : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
-        // G: 勤務時間 = 合計 - 休憩
+          ? `<c r="E${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>`
+          : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
+        // F: 勤務時間 = 退勤 - 出勤 - 休憩
         t1c.push(inStr && outStr
-          ? `<c r="G${r1}" s="${S.hours[dt]}"><f>E${r1}-F${r1}</f></c>`
-          : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
-        // H: 準備時間 = 前後5分 = 10分 (出勤 or 退勤がある日のみ)
+          ? `<c r="F${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1}-E${r1})</f></c>`
+          : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
+        // G: 準備時間 = 前後5分 = 10分 (出勤 or 退勤がある日のみ)
         const hasAttendance = (inStr || outStr)
         t1c.push(hasAttendance
-          ? `<c r="H${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>`
+          ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>`
+          : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
+        // H: 合計 = 勤務時間 + 準備時間
+        t1c.push(hasAttendance
+          ? `<c r="H${r1}" s="${S.hours[dt]}"><f>F${r1}+G${r1}</f></c>`
           : `<c r="H${r1}" s="${S.hours[dt]}"/>`)
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
 
