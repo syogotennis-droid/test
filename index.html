@@ -4,26 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#1a73e8" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>QR勤怠システム</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif; }
     </style>
     <script>
-      // 古いService Workerを強制削除（PWA無効化対応）
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(regs) {
-          if (regs.length > 0) {
-            var p = [];
-            regs.forEach(function(r) { p.push(r.unregister()); });
-            Promise.all(p).then(function() {
-              return caches.keys();
-            }).then(function(keys) {
-              return Promise.all(keys.map(function(k) { return caches.delete(k); }));
-            }).then(function() {
-              location.reload();
-            });
-          }
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js');
         });
       }
     </script>
