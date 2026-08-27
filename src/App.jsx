@@ -24,13 +24,22 @@ const ADMIN_TAP_TIMEOUT = 3000
 function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const inputRef = React.useRef(null)
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫']
+
+  React.useEffect(() => { inputRef.current?.focus() }, [])
+
   function press(k) {
     if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
     if (k === '') return
     if (pin.length >= 4) return
-    setPin(p => p + k)
+    const next = pin + k
+    setPin(next)
     setError('')
+    if (next.length === 4) {
+      if (next === adminPin) { onSuccess() }
+      else { setError('PINが違います'); setPin('') }
+    }
   }
   function confirm() {
     if (pin.length !== 4) { setError('4桁で入力してください'); return }
@@ -41,11 +50,24 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
       <div style={{background:'#fff',borderRadius:20,padding:'28px 24px 24px',width:'min(340px,92vw)',display:'flex',flexDirection:'column',gap:16}}>
         <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理画面 — PINを入力</div>
-        <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
-          {Array.from({length:4}).map((_,i) => (
-            <span key={i} style={{width:12,height:12,borderRadius:'50%',border:'2px solid #9baab8',background:i<pin.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
-          ))}
-        </div>
+        <input
+          ref={inputRef}
+          type="password"
+          inputMode="numeric"
+          maxLength={4}
+          value={pin}
+          onChange={e => {
+            const v = e.target.value.replace(/\D/g, '').slice(0, 4)
+            setPin(v)
+            setError('')
+            if (v.length === 4) {
+              if (v === adminPin) { onSuccess() }
+              else { setError('PINが違います'); setPin('') }
+            }
+          }}
+          onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+          style={{textAlign:'center',fontSize:'1.5rem',letterSpacing:'0.5em',border:'2px solid #d1d5db',borderRadius:10,padding:'10px',outline:'none',fontFamily:'inherit'}}
+        />
         {error && <div style={{textAlign:'center',color:'#dc2626',fontWeight:700,fontSize:'0.9rem'}}>{error}</div>}
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
           {keys.map((k,i) => (
