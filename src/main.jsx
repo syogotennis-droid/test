@@ -58,6 +58,11 @@ function AdminRoute() {
   if (unlocked) return <AdminScreen onBack={() => {
     try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
     setUnlocked(false)
+    setPin('')
+    setError('')
+    setChecking(false)
+    setShowPin(false)
+    setFocused(false)
   }} />
 
   const hasError = !!error
