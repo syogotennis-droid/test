@@ -133,11 +133,12 @@
   padding: 6px 12px 8px;
   gap: 6px;
   scrollbar-width: thin;
-  scrollbar-color: #dde4ec transparent;
+  scrollbar-color: #c8d5e4 transparent;
 }
 
-.userTabsWrap::-webkit-scrollbar { height: 4px; }
-.userTabsWrap::-webkit-scrollbar-thumb { background: #dde4ec; border-radius: 2px; }
+.userTabsWrap::-webkit-scrollbar { height: 3px; }
+.userTabsWrap::-webkit-scrollbar-thumb { background: #c8d5e4; border-radius: 2px; }
+.userTabsWrap::-webkit-scrollbar-track { background: transparent; }
 
 /* ─── User tabs (LogsTab / legacy CalendarTab) ─── */
 .userTabs {
@@ -296,11 +297,11 @@
 }
 
 .calIn {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: #fff;
-  background: #2e7d32;
+  background: #388e3c;
   border-radius: 3px;
-  padding: 1px 3px;
+  padding: 1px 5px;
   font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
@@ -309,11 +310,11 @@
 }
 
 .calOut {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: #fff;
   background: #c62828;
   border-radius: 3px;
-  padding: 1px 3px;
+  padding: 1px 5px;
   font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
@@ -904,7 +905,7 @@
 .wCard:hover { border-color: #93c5fd; background: #f0f6ff; }
 .wCard:active { transform: scale(0.97); }
 
-.wCardActive { border-color: #2563eb; background: #eff6ff; }
+/* wCardActive defined below with blue solid bg */
 
 .wCardLabel {
   font-size: 0.88rem;
@@ -1259,6 +1260,142 @@
 .rateUnit { font-size: 0.85rem; color: #6b7280; white-space: nowrap; }
 
 .rateInputReadOnly { background: #e9ecef; color: #6b7280; cursor: not-allowed; pointer-events: none; }
+
+/* ─── Work card active: blue bg + white text ─── */
+.wCardActive {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.wCardActive .wCardLabel { color: #fff; }
+.wCardActive .wCardTime { color: rgba(255,255,255,0.85); }
+.wCardActive .wClearBtn { background: rgba(255,255,255,0.22); color: #fff; }
+.wCardActive:hover { background: #1d4ed8; border-color: #1d4ed8; }
+
+/* ─── Modal footer hint ─── */
+.modalSaveHint {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  flex: 1;
+}
+
+/* ─── PC work time input modal ─── */
+.pcWorkTimeBox {
+  background: #fff;
+  border-radius: 16px;
+  width: min(520px, 92vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 40px rgba(30,60,100,0.18);
+  overflow-y: auto;
+}
+
+.pcWorkTimeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pcWorkTimeTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #1a3f6f;
+}
+
+.pcWorkTimeRemaining {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  color: #1a3f6f;
+}
+
+.pcWorkTimeInputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pcWorkTimeNum {
+  width: 88px;
+  height: 52px;
+  border: 2px solid #dde4ec;
+  border-radius: 10px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  text-align: center;
+  outline: none;
+  font-family: inherit;
+  background: #f8fafc;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.pcWorkTimeNum::-webkit-inner-spin-button,
+.pcWorkTimeNum::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pcWorkTimeNum:focus {
+  border-color: #2563eb;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+}
+
+.pcWorkTimeUnit {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.pcWorkTimeError {
+  min-height: 18px;
+  font-size: 0.82rem;
+  color: #dc2626;
+  font-weight: 600;
+  margin-top: -8px;
+}
+
+.pcWorkTimeQuick {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pcQuickBtn {
+  padding: 5px 12px;
+  border: 1px solid #dde4ec;
+  border-radius: 16px;
+  background: #f8fafc;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.pcQuickBtn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.pcQuickBtn:disabled { opacity: 0.38; cursor: default; }
+
+.pcWorkTimeActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
 
 /* ─── Misc / legacy ─── */
 .filters { display: flex; gap: 8px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #dde4ec; flex-shrink: 0; flex-wrap: wrap; align-items: flex-end; }

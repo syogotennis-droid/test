@@ -605,7 +605,7 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
                   </div>
                 </div>
                 {editingWorkItem && (
-                  <WorkTimeInputModal
+                  <PcWorkTimeInputModal
                     item={editingWorkItem}
                     workTimes={workTimes}
                     workingMinutes={workingMinutes}
@@ -800,7 +800,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
               )}
 
               {editingWorkItem && (
-                <WorkTimeInputModal
+                <PcWorkTimeInputModal
                   item={editingWorkItem}
                   workTimes={workTimes}
                   workingMinutes={workingMinutes}
@@ -818,6 +818,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
             </div>
 
             <div className={styles.modalFooter}>
+              {!inTime && !outTime && <span className={styles.modalSaveHint}>出勤または退勤時刻を入力してください</span>}
               <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
               <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!inTime && !outTime}>保存する</button>
             </div>
@@ -1238,6 +1239,146 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
         <div className={styles.numpadActions}>
           <button className={styles.numpadCancel} onClick={onClose}>キャンセル</button>
           {!pinMode && <button className={styles.numpadOk} onClick={() => { onConfirm(val); onClose() }}>OK</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── PcWorkTimeInputModal (PC専用: 時間・分を直接入力) ──────────────────────────
+
+function PcWorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClose }) {
+  const initial = workTimes[item] || { h: 0, m: 0 }
+  const hasExisting = initial.h > 0 || initial.m > 0
+  const [h, setH] = useState(hasExisting ? String(initial.h) : '')
+  const [m, setM] = useState(hasExisting ? String(initial.m) : '')
+  const [error, setError] = useState('')
+  const hourRef = useRef(null)
+  const minRef = useRef(null)
+
+  useEffect(() => { hourRef.current?.focus() }, [])
+
+  const otherMins = Object.keys(workTimes)
+    .filter(id => id !== item && workTimes[id] && (workTimes[id].h > 0 || workTimes[id].m > 0))
+    .reduce((sum, id) => sum + workTimes[id].h * 60 + workTimes[id].m, 0)
+  const remaining = workingMinutes != null ? workingMinutes - otherMins : null
+
+  const hv = parseInt(h) || 0
+  const mv = parseInt(m) || 0
+  const totalMins = hv * 60 + mv
+  const canSubmit = totalMins > 0 && (remaining == null || totalMins <= remaining)
+
+  function toHalf(v) {
+    return v.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+  }
+
+  function handleHChange(e) {
+    setH(toHalf(e.target.value).replace(/\D/g, ''))
+    setError('')
+  }
+
+  function handleMChange(e) {
+    const raw = toHalf(e.target.value).replace(/\D/g, '')
+    if (raw !== '' && parseInt(raw) > 59) { setError('分は0〜59で入力してください'); return }
+    setM(raw)
+    setError('')
+  }
+
+  function validate() {
+    if (totalMins === 0) { setError('0分は登録できません'); return false }
+    if (remaining != null && totalMins > remaining) {
+      setError(`残り勤務時間（${fmtMinutes(remaining)}）を超えています`)
+      return false
+    }
+    return true
+  }
+
+  function handleConfirm() {
+    if (!validate()) return
+    onSetTime(item, 'h', hv)
+    onSetTime(item, 'm', mv)
+    onClose()
+  }
+
+  function setQuick(mins) {
+    setH(String(Math.floor(mins / 60)))
+    setM(String(mins % 60))
+    setError('')
+  }
+
+  const quickOptions = [
+    { label: '30分', mins: 30 },
+    { label: '1時間', mins: 60 },
+    { label: '2時間', mins: 120 },
+    ...(remaining != null ? [{ label: '残りすべて', mins: remaining }] : []),
+  ]
+
+  return (
+    <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
+      <div className={styles.pcWorkTimeBox} onClick={e => e.stopPropagation()}>
+        <div className={styles.pcWorkTimeHeader}>
+          <div className={styles.pcWorkTimeTitle}>{item}</div>
+          <button className={styles.modalCloseBtn} onClick={onClose} tabIndex={-1}>✕</button>
+        </div>
+
+        {remaining != null && (
+          <div className={styles.pcWorkTimeRemaining}>
+            残り時間：<strong>{fmtMinutes(remaining)}</strong>
+          </div>
+        )}
+
+        <div className={styles.pcWorkTimeInputRow}>
+          <input
+            ref={hourRef}
+            type="number"
+            min="0"
+            value={h}
+            onChange={handleHChange}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); minRef.current?.focus() }
+              else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+            }}
+            placeholder="0"
+            className={styles.pcWorkTimeNum}
+          />
+          <span className={styles.pcWorkTimeUnit}>時間</span>
+          <input
+            ref={minRef}
+            type="number"
+            min="0"
+            max="59"
+            value={m}
+            onChange={handleMChange}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); handleConfirm() }
+              else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+            }}
+            placeholder="0"
+            className={styles.pcWorkTimeNum}
+          />
+          <span className={styles.pcWorkTimeUnit}>分</span>
+        </div>
+
+        <div className={styles.pcWorkTimeError}>{error}</div>
+
+        <div className={styles.pcWorkTimeQuick}>
+          {quickOptions.map(opt => {
+            const disabled = remaining != null && opt.mins > remaining
+            return (
+              <button
+                key={opt.label}
+                className={styles.pcQuickBtn}
+                onClick={() => { if (!disabled) setQuick(opt.mins) }}
+                disabled={disabled}
+                tabIndex={-1}
+              >{opt.label}</button>
+            )
+          })}
+        </div>
+
+        <div className={styles.pcWorkTimeActions}>
+          <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+          <button className={styles.saveBtn} onClick={handleConfirm} disabled={!canSubmit}>登録する</button>
         </div>
       </div>
     </div>
