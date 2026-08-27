@@ -19,6 +19,8 @@ const STATE = {
 }
 
 const ADMIN_TAP_COUNT = 1
+const ADMIN_SESSION_KEY = 'adminSessionExpiry'
+const ADMIN_SESSION_DURATION = 30 * 60 * 1000 // 30分
 const ADMIN_TAP_TIMEOUT = 3000
 
 function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
@@ -184,6 +186,13 @@ export default function App() {
     setAdminTaps(newCount)
     if (newCount >= ADMIN_TAP_COUNT) {
       setAdminTaps(0)
+      try {
+        const expiry = localStorage.getItem(ADMIN_SESSION_KEY)
+        if (expiry && Date.now() < Number(expiry)) {
+          setState(STATE.ADMIN)
+          return
+        }
+      } catch {}
       setAdminPinMode(true)
       return
     }
@@ -259,7 +268,11 @@ export default function App() {
       {adminPinMode && (
         <AdminPinOverlay
           adminPin={currentAdminPin}
-          onSuccess={() => { setAdminPinMode(false); setState(STATE.ADMIN) }}
+          onSuccess={() => {
+            try { localStorage.setItem(ADMIN_SESSION_KEY, String(Date.now() + ADMIN_SESSION_DURATION)) } catch {}
+            setAdminPinMode(false)
+            setState(STATE.ADMIN)
+          }}
           onClose={() => { setAdminPinMode(false); setAdminTaps(0) }}
         />
       )}
