@@ -188,7 +188,10 @@ export default function App() {
   }
 
   if (state === STATE.ADMIN) {
-    return <AdminScreen isTablet={true} onBack={handleDone} />
+    return <AdminScreen isTablet={true} onBack={() => {
+      try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+      handleDone()
+    }} />
   }
 
   if (state === STATE.CHECK && currentUser) {
