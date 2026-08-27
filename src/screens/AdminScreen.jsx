@@ -746,6 +746,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const [outM, setOutM] = useState(initOut.m)
   const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
+  const [focusedWorkItem, setFocusedWorkItem] = useState(null)
 
   const inHRef = useRef(null)
   const inMRef = useRef(null)
@@ -787,6 +788,20 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
 
   const userWorkItems = useMemo(() => getWorkItemsForUser(user?.workItems), [user])
   const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
+
+  const remainingMinutes = workingMinutes !== null ? workingMinutes - totalInputMinutes : null
+  const isExceeded = workingMinutes !== null && totalInputMinutes > workingMinutes
+  const isComplete = workingMinutes !== null && totalInputMinutes === workingMinutes && totalInputMinutes > 0
+  const progressPct = workingMinutes !== null && workingMinutes > 0 ? Math.min(100, Math.round(totalInputMinutes / workingMinutes * 100)) : 0
+
+  function fillRemaining(t) {
+    if (workingMinutes === null) return
+    const otherMins = userWorkItems
+      .filter(item => item !== t)
+      .reduce((s, item) => { const w = workTimes[item] || { h: 0, m: 0 }; return s + w.h * 60 + w.m }, 0)
+    const rem = Math.max(0, workingMinutes - otherMins)
+    setWorkTimes(prev => ({ ...prev, [t]: { h: Math.floor(rem / 60), m: rem % 60 } }))
+  }
 
   function setWorkTime(id, field, val) {
     setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0, ...prev[id], [field]: val } }))
@@ -893,23 +908,36 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
               {outTime && (
                 <>
                   {workingMinutes !== null && (
-                    <div className={styles.workTimeSummaryBar}>
-                      <div className={styles.wSummaryItem}>
-                        <div className={styles.wSummaryLabel}>勤務時間</div>
-                        <div className={styles.wSummaryValue}>{fmtMinutes(workingMinutes)}</div>
-                      </div>
-                      <div className={styles.wSummarySep} />
-                      <div className={styles.wSummaryItem}>
-                        <div className={styles.wSummaryLabel}>入力済み</div>
-                        <div className={[styles.wSummaryValue, totalInputMinutes > workingMinutes ? styles.wSummaryOver : ''].join(' ')}>
-                          {fmtMinutes(totalInputMinutes)}
+                    <div className={styles.timeSummaryWrap}>
+                      <div className={styles.timeSummaryCards}>
+                        <div className={styles.tscWork}>
+                          <div className={styles.tscLabel}>勤務時間</div>
+                          <div className={styles.tscValue}>{fmtMinutes(workingMinutes)}</div>
+                        </div>
+                        <div className={styles.tscInput}>
+                          <div className={styles.tscLabel}>入力済み</div>
+                          <div className={[styles.tscValue, isExceeded ? styles.tscValueOver : ''].join(' ')}>
+                            {fmtMinutes(totalInputMinutes)}
+                          </div>
+                        </div>
+                        <div className={[styles.tscRemain, isComplete ? styles.tscRemainDone : isExceeded ? styles.tscRemainOver : ''].join(' ')}>
+                          <div className={styles.tscLabelLight}>{isExceeded ? '超過' : '残り時間'}</div>
+                          <div className={[styles.tscValueLight, isExceeded ? styles.tscValueOver : ''].join(' ')}>
+                            {isExceeded ? fmtMinutes(totalInputMinutes - workingMinutes) : fmtMinutes(remainingMinutes)}
+                          </div>
                         </div>
                       </div>
-                      <div className={styles.wSummarySep} />
-                      <div className={[styles.wSummaryItem, totalInputMinutes === workingMinutes && totalInputMinutes > 0 ? styles.wSummaryDone : totalInputMinutes > workingMinutes ? styles.wSummaryOver : ''].join(' ')}>
-                        <div className={styles.wSummaryLabel}>残り時間</div>
-                        <div className={styles.wSummaryValue}>{fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}</div>
+                      <div className={styles.tscProgress}>
+                        <div
+                          className={[styles.tscProgressFill, isComplete ? styles.tscProgressDone : isExceeded ? styles.tscProgressOver : ''].join(' ')}
+                          style={{ width: `${progressPct}%` }}
+                        />
                       </div>
+                      {(isComplete || isExceeded) && (
+                        <div className={[styles.tscMsg, isComplete ? styles.tscMsgDone : styles.tscMsgOver].join(' ')}>
+                          {isComplete ? '作業時間の入力が完了しました' : `勤務時間を${fmtMinutes(totalInputMinutes - workingMinutes)}超過しています`}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className={styles.formGroup}>
@@ -917,9 +945,20 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                     <div className={styles.workTimeList}>
                       {userWorkItems.map(t => {
                         const wt = workTimes[t] || { h: 0, m: 0 }
-                        const hasTime = wt.h > 0 || wt.m > 0
+                        const isFocused = focusedWorkItem === t
+                        const itemMins = wt.h * 60 + wt.m
+                        const otherMins = userWorkItems
+                          .filter(item => item !== t)
+                          .reduce((s, item) => { const w = workTimes[item] || { h: 0, m: 0 }; return s + w.h * 60 + w.m }, 0)
+                        const availForThis = workingMinutes !== null ? Math.max(0, workingMinutes - otherMins) : null
+                        const canFill = workingMinutes !== null && availForThis !== null && availForThis !== itemMins
                         return (
-                          <div key={t} className={[styles.workTimeListRow, hasTime ? styles.workTimeListRowActive : ''].join(' ')}>
+                          <div
+                            key={t}
+                            className={[styles.workTimeListRow, isFocused ? styles.workTimeListRowFocused : (wt.h > 0 || wt.m > 0) ? styles.workTimeListRowActive : ''].join(' ')}
+                            onFocus={() => setFocusedWorkItem(t)}
+                            onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusedWorkItem(null) }}
+                          >
                             <span className={styles.workTimeListName}>{t}</span>
                             <div className={styles.workTimeListInputs}>
                               <input
@@ -952,6 +991,23 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                               />
                               <span className={styles.workTimeUnitInline}>分</span>
                             </div>
+                            <div className={styles.workTimeListRight}>
+                              {isFocused && canFill && (
+                                <button
+                                  className={styles.fillRemainingBtn}
+                                  onMouseDown={e => e.preventDefault()}
+                                  onClick={() => fillRemaining(t)}
+                                  tabIndex={-1}
+                                >
+                                  残りを入力
+                                </button>
+                              )}
+                              {isFocused && !canFill && workingMinutes !== null && availForThis !== null && (
+                                <span className={[styles.rowHint, isExceeded ? styles.rowHintOver : isComplete ? styles.rowHintDone : ''].join(' ')}>
+                                  {availForThis === 0 ? '割り当て済み' : `あと${fmtMinutes(availForThis - itemMins)}入力できます`}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
@@ -970,8 +1026,13 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
 
             <div className={styles.modalFooter}>
               {!inTime && !outTime && <span className={styles.modalSaveHint}>出勤または退勤時刻を入力してください</span>}
+              {(inTime || outTime) && workingMinutes !== null && (
+                <span className={[styles.footerStatus, isComplete ? styles.footerStatusDone : isExceeded ? styles.footerStatusOver : ''].join(' ')}>
+                  {isExceeded ? `超過 ${fmtMinutes(totalInputMinutes - workingMinutes)}` : isComplete ? '入力完了' : remainingMinutes !== null ? `残り ${fmtMinutes(remainingMinutes)}` : ''}
+                </span>
+              )}
               <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
-              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!inTime && !outTime}>保存する</button>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={(!inTime && !outTime) || isExceeded}>保存する</button>
             </div>
           </>
         )}
