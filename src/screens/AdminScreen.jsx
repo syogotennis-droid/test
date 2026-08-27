@@ -363,6 +363,7 @@ function getCalendarDays(year, month) {
   const days = []
   for (let i = 0; i < firstDay; i++) days.push(null)
   for (let d = 1; d <= daysInMonth; d++) days.push(d)
+  while (days.length % 7 !== 0) days.push(null) // 末尾を7の倍数に揃える
   return days
 }
 
@@ -428,6 +429,8 @@ function CalendarTab({ users, today }) {
   }
 
   const days = getCalendarDays(year, month)
+  const weekCount = days.length / 7
+  const rowH = weekCount >= 6 ? 86 : 100
   const dayMap = buildDayMap(logs, year, month)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
   const todayDay = now.getDate()
@@ -473,7 +476,7 @@ function CalendarTab({ users, today }) {
         {loading ? (
           <div className={styles.empty}>読込中...</div>
         ) : (
-          <div className={styles.calGrid}>
+          <div className={styles.calGrid} style={{ gridTemplateRows: `auto repeat(${weekCount}, ${rowH}px)` }}>
             {CAL_DAY_LABELS.map((d, i) => (
               <div key={d} className={[styles.calDayLabel, i === 0 ? styles.calSun : i === 6 ? styles.calSat : ''].join(' ')}>{d}</div>
             ))}
