@@ -58,9 +58,14 @@ export default function AdminScreen({ onBack }) {
   return (
     <div className={styles.screen}>
       <div className={styles.header}>
-        <button className={styles.backBtn} onClick={onBack}>←</button>
-        <h2>管理画面</h2>
-        <div />
+        <div className={styles.headerBrand}>
+          <span className={styles.headerTitle}>QR勤怠管理</span>
+          <span className={styles.headerSub}>管理画面</span>
+        </div>
+        <button className={styles.backBtn} onClick={onBack}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          打刻画面へ戻る
+        </button>
       </div>
 
       <div className={styles.tabs}>
@@ -374,50 +379,56 @@ function CalendarTab({ users, today }) {
 
   return (
     <div className={styles.content}>
-      <div className={styles.userTabs}>
-        {users.map(u => (
-          <button key={u.id} className={[styles.userTab, selectedUser?.id === u.id ? styles.activeUserTab : ''].join(' ')} onClick={() => setSelectedUser(u)}>
-            {u.name}
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.calMonthNav}>
-        <button className={styles.navBtn} onClick={prevMonth}>◀</button>
-        <span className={styles.navDate}>{year}年{month + 1}月</span>
-        <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
-      </div>
-
-      {loading ? (
-        <div className={styles.empty}>読込中...</div>
-      ) : (
-        <div className={styles.calGrid}>
-          {CAL_DAY_LABELS.map((d, i) => (
-            <div key={d} className={[styles.calDayLabel, i === 0 ? styles.calSun : i === 6 ? styles.calSat : ''].join(' ')}>{d}</div>
+      {/* 職員選択 */}
+      <div className={styles.calSection}>
+        <div className={styles.calSectionLabel}>職員を選択</div>
+        <div className={styles.userTabsWrap}>
+          {users.map(u => (
+            <button key={u.id} className={[styles.userTab, selectedUser?.id === u.id ? styles.activeUserTab : ''].join(' ')} onClick={() => setSelectedUser(u)}>
+              {u.name}
+            </button>
           ))}
-          {days.map((d, i) => {
-            if (!d) return <div key={`pad-${i}`} className={styles.calEmpty} />
-            const entry = dayMap[d]
-            const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-            const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-            const worked = !!inTime
-            const needsAlert = !!inTime && !!outTime && !entry?.hasWorkItems
-            const dow = new Date(year, month, d).getDay()
-            return (
-              <div
-                key={d}
-                className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}
-                onClick={() => setSelectedDay(d)}
-              >
-                <div className={styles.calDayNum}>{d}</div>
-                {worked && <div className={styles.calIn}>出 {inTime}</div>}
-                {worked && outTime && <div className={styles.calSpacer} />}
-                {outTime && <div className={styles.calOut}>退 {outTime}</div>}
-              </div>
-            )
-          })}
         </div>
-      )}
+      </div>
+
+      {/* カレンダーカード */}
+      <div className={styles.calCard}>
+        <div className={styles.calMonthNav}>
+          <button className={styles.navBtn} onClick={prevMonth}>◀</button>
+          <span className={styles.navDate}>{year}年{month + 1}月</span>
+          <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
+        </div>
+
+        {loading ? (
+          <div className={styles.empty}>読込中...</div>
+        ) : (
+          <div className={styles.calGrid}>
+            {CAL_DAY_LABELS.map((d, i) => (
+              <div key={d} className={[styles.calDayLabel, i === 0 ? styles.calSun : i === 6 ? styles.calSat : ''].join(' ')}>{d}</div>
+            ))}
+            {days.map((d, i) => {
+              if (!d) return <div key={`pad-${i}`} className={styles.calEmpty} />
+              const entry = dayMap[d]
+              const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
+              const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+              const worked = !!inTime
+              const needsAlert = !!inTime && !!outTime && !entry?.hasWorkItems
+              const dow = new Date(year, month, d).getDay()
+              return (
+                <div
+                  key={d}
+                  className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}
+                  onClick={() => setSelectedDay(d)}
+                >
+                  <div className={styles.calDayNum}>{d}</div>
+                  {worked && <div className={styles.calIn}>出勤 {inTime}</div>}
+                  {outTime && <div className={styles.calOut}>退勤 {outTime}</div>}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {selectedDay !== null && selectedUser && (
         <DayEditModal
@@ -708,49 +719,57 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+      <div className={styles.modalLg} onClick={e => e.stopPropagation()}>
         {step === 'form' && (
           <>
-            <h3>{dateLabel}</h3>
-            <p className={styles.modalLabel}>{user.name}</p>
-
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>出勤時刻</label>
-              <input
-                type="time"
-                className={styles.numpadTrigger}
-                value={inTime}
-                onChange={e => setInTime(e.target.value)}
-                style={{ fontFamily: 'inherit', cursor: 'text' }}
-              />
+            <div className={styles.modalHeader}>
+              <div>
+                <div className={styles.modalHeaderTitle}>勤務記録の編集</div>
+                <div className={styles.modalHeaderSub}>{dateLabel} ・ {user.name}</div>
+              </div>
+              <button className={styles.modalCloseBtn} onClick={onClose}>✕</button>
             </div>
 
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>退勤時刻</label>
-              <input
-                type="time"
-                className={styles.numpadTrigger}
-                value={outTime}
-                onChange={e => setOutTime(e.target.value)}
-                style={{ fontFamily: 'inherit', cursor: 'text' }}
-              />
-            </div>
+            <div className={styles.modalBody}>
+              <div className={styles.timeRow}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>出勤時刻</label>
+                  <input
+                    type="time"
+                    className={styles.numpadTrigger}
+                    value={inTime}
+                    onChange={e => setInTime(e.target.value)}
+                    style={{ fontFamily: 'inherit', cursor: 'text' }}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>退勤時刻</label>
+                  <input
+                    type="time"
+                    className={styles.numpadTrigger}
+                    value={outTime}
+                    onChange={e => setOutTime(e.target.value)}
+                    style={{ fontFamily: 'inherit', cursor: 'text' }}
+                  />
+                </div>
+              </div>
 
-            {outTime && (
-              <>
-                {workingMinutes !== null && (
-                  <div className={styles.workTimeBanner}>
-                    <span>勤務 <strong>{fmtMinutes(workingMinutes)}</strong></span>
-                    {totalInputMinutes > 0 && (
-                      <>
-                        <span className={styles.workTimeBannerSep}>|</span>
-                        <span className={totalInputMinutes === workingMinutes ? styles.totalMatch : styles.totalMismatch}>
-                          残り {fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
+              {outTime && workingMinutes !== null && (
+                <div className={styles.workTimeCard}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span>勤務時間 <strong>{fmtMinutes(workingMinutes)}</strong></span>
+                  {totalInputMinutes > 0 && (
+                    <>
+                      <span className={styles.workTimeSep}>|</span>
+                      <span className={totalInputMinutes === workingMinutes ? styles.totalMatch : styles.totalMismatch}>
+                        残り {fmtMinutes(Math.max(0, workingMinutes - totalInputMinutes))}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {outTime && (
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>作業内容</label>
                   <div className={styles.workCards}>
@@ -778,58 +797,67 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                     })}
                   </div>
                 </div>
-                {editingWorkItem && (
-                  <WorkTimeInputModal
-                    item={editingWorkItem}
-                    workTimes={workTimes}
-                    workingMinutes={workingMinutes}
-                    onSetTime={setWorkTime}
-                    onClose={() => setEditingWorkItem(null)}
-                  />
-                )}
-              </>
-            )}
+              )}
 
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!inTime && !outTime}>保存する</button>
-              <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+              {editingWorkItem && (
+                <WorkTimeInputModal
+                  item={editingWorkItem}
+                  workTimes={workTimes}
+                  workingMinutes={workingMinutes}
+                  onSetTime={setWorkTime}
+                  onClose={() => setEditingWorkItem(null)}
+                />
+              )}
+
+              {hasExisting && (
+                <>
+                  <hr className={styles.modalDivider} />
+                  <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>この日の記録を削除する</button>
+                </>
+              )}
             </div>
 
-            {hasExisting && (
-              <>
-                <hr className={styles.modalDivider} />
-                <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>この日の記録を削除する</button>
-              </>
-            )}
+            <div className={styles.modalFooter}>
+              <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!inTime && !outTime}>保存する</button>
+            </div>
           </>
         )}
 
         {step === 'confirm' && (
           <>
-            <h3>保存内容の確認</h3>
-            <div className={styles.confirmTable}>
-              <div className={styles.confirmRow}><span>担当者</span><strong>{user.name}</strong></div>
-              <div className={styles.confirmRow}><span>日付</span><strong>{dateLabel}</strong></div>
-              {inTime && <div className={styles.confirmRow}><span>出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
-              {outTime && <div className={styles.confirmRow}><span>退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
-              {buildWorkTypeStr() && <div className={styles.confirmRow}><span>作業</span><strong>{buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return m ? `${t} ${fmtMinutes(Number(m))}` : t }).join(' / ')}</strong></div>}
+            <div className={styles.modalHeader}>
+              <div className={styles.modalHeaderTitle}>保存内容の確認</div>
             </div>
-            {hasExisting && <p className={styles.confirmWarn}>既存の記録を上書きします</p>}
-            <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={handleConfirm}>確定する</button>
+            <div className={styles.modalBody}>
+              <div className={styles.confirmTable}>
+                <div className={styles.confirmRow}><span>担当者</span><strong>{user.name}</strong></div>
+                <div className={styles.confirmRow}><span>日付</span><strong>{dateLabel}</strong></div>
+                {inTime && <div className={styles.confirmRow}><span>出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
+                {outTime && <div className={styles.confirmRow}><span>退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
+                {buildWorkTypeStr() && <div className={styles.confirmRow}><span>作業</span><strong>{buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return m ? `${t} ${fmtMinutes(Number(m))}` : t }).join(' / ')}</strong></div>}
+              </div>
+              {hasExisting && <p className={styles.confirmWarn}>既存の記録を上書きします</p>}
+            </div>
+            <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
+              <button className={styles.saveBtn} onClick={handleConfirm}>確定する</button>
             </div>
           </>
         )}
 
         {step === 'confirmDelete' && (
           <>
-            <h3>削除の確認</h3>
-            <p className={styles.modalLabel}>{dateLabel} の記録をすべて削除します</p>
-            <p className={styles.confirmWarn}>この操作は元に戻せません</p>
-            <div className={styles.modalActions}>
-              <button className={styles.realDeleteBtn} onClick={handleDelete}>削除する</button>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalHeaderTitle}>削除の確認</div>
+            </div>
+            <div className={styles.modalBody}>
+              <p className={styles.modalLabel}>{dateLabel} の記録をすべて削除します</p>
+              <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+            </div>
+            <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
+              <button className={styles.realDeleteBtn} onClick={handleDelete}>削除する</button>
             </div>
           </>
         )}
