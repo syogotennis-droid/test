@@ -747,6 +747,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
   const [focusedWorkItem, setFocusedWorkItem] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   const inHRef = useRef(null)
   const inMRef = useRef(null)
@@ -815,6 +816,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   }
 
   async function handleConfirm() {
+    if (saving) return
+    setSaving(true)
     for (const log of dayLogs) await deleteLog(log.id)
     if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
     if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: buildWorkTypeStr() })
@@ -851,9 +854,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                       maxLength={2}
                       value={inH}
                       onChange={e => handleTimeInput(e.target.value, 23, setInH, inMRef)}
-                      onFocus={e => e.target.select()}
+                      onFocus={e => { if (e.target.value) e.target.select() }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); inMRef.current?.focus() } }}
-                      placeholder="0"
+                      placeholder="--"
                       className={[styles.timeHmNum, inHInvalid ? styles.timeHmNumErr : ''].join(' ')}
                     />
                     <span className={styles.timeHmUnit}>時</span>
@@ -864,9 +867,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                       maxLength={2}
                       value={inM}
                       onChange={e => handleTimeInput(e.target.value, 59, setInM, outHRef)}
-                      onFocus={e => e.target.select()}
+                      onFocus={e => { if (e.target.value) e.target.select() }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outHRef.current?.focus() } }}
-                      placeholder="00"
+                      placeholder="--"
                       className={[styles.timeHmNum, inMInvalid ? styles.timeHmNumErr : ''].join(' ')}
                     />
                     <span className={styles.timeHmUnit}>分</span>
@@ -882,9 +885,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                       maxLength={2}
                       value={outH}
                       onChange={e => handleTimeInput(e.target.value, 23, setOutH, outMRef)}
-                      onFocus={e => e.target.select()}
+                      onFocus={e => { if (e.target.value) e.target.select() }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outMRef.current?.focus() } }}
-                      placeholder="0"
+                      placeholder="--"
                       className={[styles.timeHmNum, outHInvalid ? styles.timeHmNumErr : ''].join(' ')}
                     />
                     <span className={styles.timeHmUnit}>時</span>
@@ -895,9 +898,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                       maxLength={2}
                       value={outM}
                       onChange={e => handleTimeInput(e.target.value, 59, setOutM, null)}
-                      onFocus={e => e.target.select()}
+                      onFocus={e => { if (e.target.value) e.target.select() }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault() } }}
-                      placeholder="00"
+                      placeholder="--"
                       className={[styles.timeHmNum, outMInvalid ? styles.timeHmNumErr : ''].join(' ')}
                     />
                     <span className={styles.timeHmUnit}>分</span>
@@ -1002,11 +1005,12 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                                   残りを入力
                                 </button>
                               )}
-                              {isFocused && !canFill && workingMinutes !== null && availForThis !== null && (
-                                <span className={[styles.rowHint, isExceeded ? styles.rowHintOver : isComplete ? styles.rowHintDone : ''].join(' ')}>
-                                  {availForThis === 0 ? '割り当て済み' : `あと${fmtMinutes(availForThis - itemMins)}入力できます`}
-                                </span>
-                              )}
+                              {isFocused && !canFill && workingMinutes !== null && availForThis !== null && (() => {
+                                if (isExceeded) return <span className={styles.rowHintOver}>{fmtMinutes(totalInputMinutes - workingMinutes)}超過しています</span>
+                                if (availForThis === itemMins && itemMins > 0) return <span className={styles.rowHintDone}>✓ 入力完了</span>
+                                if (availForThis === 0 && itemMins === 0) return <span className={styles.rowHint}>割り当て済み</span>
+                                return null
+                              })()}
                             </div>
                           </div>
                         )
@@ -1048,13 +1052,32 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                 <div className={styles.confirmRow}><span>日付</span><strong>{dateLabel}</strong></div>
                 {inTime && <div className={styles.confirmRow}><span>出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
                 {outTime && <div className={styles.confirmRow}><span>退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
-                {buildWorkTypeStr() && <div className={styles.confirmRow}><span>作業</span><strong>{buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return m ? `${t} ${fmtMinutes(Number(m))}` : t }).join(' / ')}</strong></div>}
+                {workingMinutes !== null && <div className={styles.confirmRow}><span>勤務時間</span><strong>{fmtMinutes(workingMinutes)}</strong></div>}
+                {buildWorkTypeStr() && (() => {
+                  const items = buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return { name: t, mins: m ? Number(m) : 0 } })
+                  return (
+                    <>
+                      {items.map(({ name, mins }) => (
+                        <div key={name} className={styles.confirmRow}>
+                          <span>{name}</span>
+                          <strong>{fmtMinutes(mins)}</strong>
+                        </div>
+                      ))}
+                      {items.length > 1 && (
+                        <div className={styles.confirmRow}>
+                          <span>作業合計</span>
+                          <strong>{fmtMinutes(items.reduce((s, i) => s + i.mins, 0))}</strong>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </div>
               {hasExisting && <p className={styles.confirmWarn}>既存の記録を上書きします</p>}
             </div>
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
-              <button className={styles.saveBtn} onClick={handleConfirm}>確定する</button>
+              <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中...' : '確定する'}</button>
             </div>
           </>
         )}

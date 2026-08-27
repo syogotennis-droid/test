@@ -296,7 +296,7 @@
 .calDayLabel.calSun { color: #c62828; background: #fdf4f4; }
 .calDayLabel.calSat { color: #1565c0; background: #f0f4ff; }
 
-.calEmpty { background: #f2f4f6; }
+.calEmpty { background: #f3f6f9; }
 
 .calCell {
   background: #fff;
@@ -1650,21 +1650,28 @@
   margin-bottom: 8px;
 }
 
-.tscWork, .tscInput, .tscRemain {
+.tscWork, .tscInput {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 10px 6px 8px;
   border-radius: 10px;
-  border: 1.5px solid #bfdbfe;
-  background: #eff6ff;
+  border: 1.5px solid #dde4ec;
+  background: #f0f4f8;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .tscRemain {
-  border-color: #c8d3dc;
-  background: #f8fafc;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  border: 1.5px solid #60a5fa;
+  background: #eff6ff;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .tscRemainDone {
@@ -1689,7 +1696,7 @@
 .tscLabelLight {
   font-size: 0.68rem;
   font-weight: 700;
-  color: #9ca3af;
+  color: #6b7280;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-bottom: 4px;
@@ -1698,16 +1705,19 @@
 .tscValue {
   font-size: 1.05rem;
   font-weight: 800;
-  color: #1a3f6f;
+  color: #374151;
   line-height: 1.1;
 }
 
 .tscValueLight {
   font-size: 1.05rem;
   font-weight: 800;
-  color: #374151;
+  color: #1d4ed8;
   line-height: 1.1;
 }
+
+.tscRemainDone .tscValueLight { color: #16a34a; }
+.tscRemainOver .tscValueLight { color: #dc2626; }
 
 .tscValueOver {
   color: #dc2626;
