@@ -1178,14 +1178,94 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
 // ─── KinmuboTab ───────────────────────────────────────────────────────────────
 
 function KinmuboTab({ today }) {
-  const currentYM = today.substring(0, 7) // "YYYY-MM"
+  const currentYM = today.substring(0, 7)
   const [selectedYM, setSelectedYM] = useState(currentYM)
   const [exporting, setExporting] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
     const d = new Date(y, m - 1 + delta, 1)
     setSelectedYM(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    setPreviewLoading(true)
+    setPreview(null)
+    const [y, m] = selectedYM.split('-').map(Number)
+    const dateFrom = `${selectedYM}-01`
+    const lastDay = new Date(y, m, 0).getDate()
+    const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage()])
+      .then(([logs, users, minWage]) => {
+        if (cancelled) return
+        setPreview(buildPreview(logs, users, minWage))
+        setPreviewLoading(false)
+      })
+      .catch(() => { if (!cancelled) setPreviewLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedYM])
+
+  function buildPreview(logs, users, minWage) {
+    const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
+    const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
+    return userEntries.map(user => {
+      const userLogs = logs.filter(l => l.user_id === user.id)
+      const itemRates = user.itemRates || {}
+      const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
+      const byDate = {}
+      sortedLogs.forEach(log => {
+        if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {} }
+        if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
+        else if (log.log_type === '退勤') {
+          byDate[log.date].outs.push(log.time || '')
+          const items = getWorkItems(log)
+          if (Object.keys(items).length > 0) byDate[log.date].workItems = { ...items }
+        }
+      })
+      const monthlyWdMins = {}, monthlyWeMins = {}
+      Object.entries(byDate).forEach(([dateStr, entry]) => {
+        const [yr, mo, d] = dateStr.split('-').map(Number)
+        const isWe = new Date(yr, mo - 1, d).getDay() === 0
+        Object.entries(entry.workItems).forEach(([t, mm]) => {
+          if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + mm
+          else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + mm
+        })
+      })
+      const workingDays = Object.values(byDate).filter(e => e.ins.length > 0 || e.outs.length > 0).length
+      const rows = []
+      for (const type of (user.workItems || []).filter(t => !EXCL.has(t))) {
+        const rateObj = itemRates[type] || {}
+        const wdMins = monthlyWdMins[type] || 0
+        const weMins = monthlyWeMins[type] || 0
+        if (wdMins + weMins === 0) continue
+        if (rateObj.sunday) {
+          if (wdMins > 0) rows.push({ label: type, mins: wdMins, rate: Number(rateObj.normal) || 0, pay: Math.round(wdMins / 60 * (Number(rateObj.normal) || 0)) })
+          if (weMins > 0) rows.push({ label: type + '（日曜）', mins: weMins, rate: Number(rateObj.sunday) || 0, pay: Math.round(weMins / 60 * (Number(rateObj.sunday) || 0)) })
+        } else {
+          const totalMins = wdMins + weMins
+          rows.push({ label: type, mins: totalMins, rate: Number(rateObj.normal) || 0, pay: Math.round(totalMins / 60 * (Number(rateObj.normal) || 0)) })
+        }
+      }
+      const transport = Number(itemRates['交通費']?.amount) || 0
+      if (transport > 0 && workingDays > 0) {
+        rows.push({ label: `交通費（${workingDays}日）`, mins: null, rate: transport, pay: Math.round(workingDays * transport) })
+      }
+      if (workingDays > 0 && minWage > 0) {
+        const prepMins = workingDays * 10
+        rows.push({ label: '準備時間', mins: prepMins, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
+      }
+      const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
+      return { user, workingDays, rows, totalPay }
+    })
+  }
+
+  function fmtMins(mins) {
+    if (mins === null) return ''
+    const h = Math.floor(mins / 60), m = mins % 60
+    return m > 0 ? `${h}時間${m}分` : `${h}時間`
   }
 
   async function handleCreate() {
@@ -1228,7 +1308,7 @@ function KinmuboTab({ today }) {
   const [displayY, displayM] = selectedYM.split('-').map(Number)
 
   return (
-    <div className={styles.content}>
+    <div className={styles.calContent}>
       <div className={styles.kinmuboPanel}>
         <p className={styles.kinmuboDesc}>対象月を選択して出勤簿を作成します。<br />担当者ごとにシートが分かれたExcelファイルが出力されます。</p>
 
@@ -1242,6 +1322,55 @@ function KinmuboTab({ today }) {
           {exporting ? '作成中...' : '📥 出勤簿を作成'}
         </button>
       </div>
+
+      {previewLoading && <div className={styles.empty}>読込中...</div>}
+
+      {!previewLoading && preview && preview.length === 0 && (
+        <div className={styles.empty}>この月の出勤記録はありません。</div>
+      )}
+
+      {!previewLoading && preview && preview.length > 0 && (
+        <div className={styles.kinmuboPreviewWrap}>
+          {preview.map(({ user, workingDays, rows, totalPay }) => (
+            <div key={user.id} className={styles.kinmuboPreviewCard}>
+              <div className={styles.kinmuboPreviewHeader}>
+                <span className={styles.kinmuboPreviewName}>{user.name}</span>
+                <span className={styles.kinmuboPreviewDays}>{workingDays}日出勤</span>
+              </div>
+              {rows.length === 0 ? (
+                <div className={styles.kinmuboPreviewEmpty}>業務時間の入力なし</div>
+              ) : (
+                <table className={styles.kinmuboPreviewTable}>
+                  <thead>
+                    <tr>
+                      <th>業務</th>
+                      <th>時間</th>
+                      <th>時給</th>
+                      <th>給与</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i}>
+                        <td>{r.label}</td>
+                        <td>{fmtMins(r.mins)}</td>
+                        <td>{r.rate > 0 ? r.rate.toLocaleString() + '円' : '—'}</td>
+                        <td className={styles.kinmuboPreviewPayCell}>{r.pay > 0 ? r.pay.toLocaleString() + '円' : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3}>合計</td>
+                      <td className={styles.kinmuboPreviewPayCell}>{totalPay.toLocaleString()}円</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -1363,6 +1363,86 @@
 .kinmuboCreateBtn:disabled { opacity: 0.5; cursor: default; }
 .kinmuboCreateBtn:not(:disabled):hover { background: #1d4ed8; }
 
+.kinmuboPreviewWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 28px 28px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.kinmuboPreviewCard {
+  background: #fff;
+  border: 1px solid #dde4ec;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(30,60,100,0.06);
+}
+
+.kinmuboPreviewHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #f0f4f8;
+  border-bottom: 1px solid #dde4ec;
+}
+
+.kinmuboPreviewName {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #1a3f6f;
+}
+
+.kinmuboPreviewDays {
+  font-size: 0.82rem;
+  color: #6b7280;
+  background: #e2e8f0;
+  border-radius: 20px;
+  padding: 2px 10px;
+}
+
+.kinmuboPreviewEmpty {
+  padding: 16px 20px;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.kinmuboPreviewTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.kinmuboPreviewTable th,
+.kinmuboPreviewTable td {
+  padding: 9px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.kinmuboPreviewTable th {
+  background: #f8fafc;
+  color: #4b5563;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.kinmuboPreviewTable tbody tr:last-child td { border-bottom: none; }
+
+.kinmuboPreviewTable tfoot td {
+  font-weight: 700;
+  color: #1a3f6f;
+  background: #eff6ff;
+  border-top: 2px solid #bfdbfe;
+  border-bottom: none;
+}
+
+.kinmuboPreviewPayCell { text-align: right; }
+
 /* ─── User edit modal ─── */
 .itemRatesList {
   display: flex;
