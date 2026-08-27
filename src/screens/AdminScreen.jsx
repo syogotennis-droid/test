@@ -45,6 +45,9 @@ function toDateStr(d) {
   return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
 }
 
+function toHalf(s) {
+  return String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+}
 
 export default function AdminScreen({ onBack }) {
   const [tab, setTab] = useState('calendar')
@@ -57,23 +60,17 @@ export default function AdminScreen({ onBack }) {
 
   return (
     <div className={styles.screen}>
-      <div className={styles.header}>
-        <div className={styles.headerBrand}>
-          <span className={styles.headerTitle}>QR勤怠管理</span>
-          <span className={styles.headerSub}>管理画面</span>
-        </div>
-        <button className={styles.backBtn} onClick={onBack}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          打刻画面へ戻る
-        </button>
-      </div>
-
       <div className={styles.tabs}>
         <button className={[styles.tab, tab === 'calendar' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('calendar')}>記録一覧</button>
         <button className={[styles.tab, tab === 'kinmubo' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('kinmubo')}>出勤簿作成</button>
         <button className={[styles.tab, tab === 'users' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('users')}>ユーザー管理</button>
         <button className={[styles.tab, tab === 'qr' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('qr')}>QR印刷</button>
         <button className={[styles.tab, tab === 'settings' ? styles.activeTab : ''].join(' ')} onClick={() => setTab('settings')}>設定</button>
+        <div className={styles.tabsSpacer} />
+        <button className={styles.tabsBackBtn} onClick={onBack}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          打刻画面へ戻る
+        </button>
       </div>
 
       {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('calendar')} />}
@@ -364,6 +361,9 @@ function CalendarTab({ users, today }) {
   const days = getCalendarDays(year, month)
   const dayMap = buildDayMap(logs, year, month)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
+  const todayDay = now.getDate()
+  const todayYear = now.getFullYear()
+  const todayMonth = now.getMonth()
 
   function prevMonth() {
     if (month === 0) { setYear(y => y - 1); setMonth(11) }
@@ -394,9 +394,11 @@ function CalendarTab({ users, today }) {
       {/* カレンダーカード */}
       <div className={styles.calCard}>
         <div className={styles.calMonthNav}>
-          <button className={styles.navBtn} onClick={prevMonth}>◀</button>
-          <span className={styles.navDate}>{year}年{month + 1}月</span>
-          <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
+          <div className={styles.calMonthGroup}>
+            <button className={styles.navBtn} onClick={prevMonth}>◀</button>
+            <span className={styles.navDate}>{year}年{month + 1}月</span>
+            <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
+          </div>
         </div>
 
         {loading ? (
@@ -414,13 +416,14 @@ function CalendarTab({ users, today }) {
               const worked = !!inTime
               const needsAlert = !!inTime && !!outTime && !entry?.hasWorkItems
               const dow = new Date(year, month, d).getDay()
+              const isToday = d === todayDay && year === todayYear && month === todayMonth
               return (
                 <div
                   key={d}
-                  className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : ''].join(' ')}
+                  className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : '', isToday ? styles.calTodayCell : ''].join(' ')}
                   onClick={() => setSelectedDay(d)}
                 >
-                  <div className={styles.calDayNum}>{d}</div>
+                  <div className={[styles.calDayNum, isToday ? styles.calDayNumToday : ''].join(' ')}>{d}</div>
                   {worked && <div className={styles.calIn}>出勤 {inTime}</div>}
                   {outTime && <div className={styles.calOut}>退勤 {outTime}</div>}
                 </div>
@@ -728,10 +731,51 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
   const outLog = dayLogs.find(l => l.log_type === '退勤')
   const hasExisting = dayLogs.length > 0
 
-  const [inTime, setInTime] = useState(inLog?.time?.substring(0, 5) || '')
-  const [outTime, setOutTime] = useState(outLog?.time?.substring(0, 5) || '')
+  function initHM(timeStr) {
+    if (!timeStr) return { h: '', m: '' }
+    const [hStr, mStr] = timeStr.split(':')
+    const hv = parseInt(hStr), mv = parseInt(mStr)
+    return { h: isNaN(hv) ? '' : String(hv), m: isNaN(mv) ? '' : String(mv) }
+  }
+  const initIn = initHM(inLog?.time?.substring(0, 5))
+  const initOut = initHM(outLog?.time?.substring(0, 5))
+
+  const [inH, setInH] = useState(initIn.h)
+  const [inM, setInM] = useState(initIn.m)
+  const [outH, setOutH] = useState(initOut.h)
+  const [outM, setOutM] = useState(initOut.m)
   const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
   const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
+
+  const inHRef = useRef(null)
+  const inMRef = useRef(null)
+  const outHRef = useRef(null)
+  const outMRef = useRef(null)
+
+  useEffect(() => { setTimeout(() => inHRef.current?.focus(), 60) }, [])
+
+  function hmToTimeStr(h, m) {
+    if (h === '') return ''
+    const hv = parseInt(h)
+    if (isNaN(hv) || hv < 0 || hv > 23) return ''
+    const mv = parseInt(m) || 0
+    if (mv < 0 || mv > 59) return ''
+    return `${String(hv).padStart(2, '0')}:${String(mv).padStart(2, '0')}`
+  }
+
+  function handleTimeInput(val, max, setter, nextRef) {
+    const v = toHalf(String(val)).replace(/\D/g, '').slice(0, 2)
+    setter(v)
+    if (v.length === 2 && parseInt(v) <= max) nextRef?.current?.focus()
+  }
+
+  const inTime = hmToTimeStr(inH, inM)
+  const outTime = hmToTimeStr(outH, outM)
+
+  const inHInvalid = inH !== '' && (isNaN(parseInt(inH)) || parseInt(inH) > 23)
+  const inMInvalid = inM !== '' && parseInt(inM) > 59
+  const outHInvalid = outH !== '' && (isNaN(parseInt(outH)) || parseInt(outH) > 23)
+  const outMInvalid = outM !== '' && parseInt(outM) > 59
 
   const workingMinutes = useMemo(() => {
     if (!inTime || !outTime) return null
@@ -784,21 +828,65 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
               <div className={styles.timeRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>出勤時刻</label>
-                  <TimeTextInput
-                    value={inTime}
-                    onChange={setInTime}
-                    className={styles.numpadTrigger}
-                    placeholder="--:--"
-                  />
+                  <div className={styles.timeHmRow}>
+                    <input
+                      ref={inHRef}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
+                      value={inH}
+                      onChange={e => handleTimeInput(e.target.value, 23, setInH, inMRef)}
+                      onFocus={e => e.target.select()}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); inMRef.current?.focus() } }}
+                      placeholder="0"
+                      className={[styles.timeHmNum, inHInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                    />
+                    <span className={styles.timeHmUnit}>時</span>
+                    <input
+                      ref={inMRef}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
+                      value={inM}
+                      onChange={e => handleTimeInput(e.target.value, 59, setInM, outHRef)}
+                      onFocus={e => e.target.select()}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outHRef.current?.focus() } }}
+                      placeholder="00"
+                      className={[styles.timeHmNum, inMInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                    />
+                    <span className={styles.timeHmUnit}>分</span>
+                  </div>
                 </div>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>退勤時刻</label>
-                  <TimeTextInput
-                    value={outTime}
-                    onChange={setOutTime}
-                    className={styles.numpadTrigger}
-                    placeholder="--:--"
-                  />
+                  <div className={styles.timeHmRow}>
+                    <input
+                      ref={outHRef}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
+                      value={outH}
+                      onChange={e => handleTimeInput(e.target.value, 23, setOutH, outMRef)}
+                      onFocus={e => e.target.select()}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outMRef.current?.focus() } }}
+                      placeholder="0"
+                      className={[styles.timeHmNum, outHInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                    />
+                    <span className={styles.timeHmUnit}>時</span>
+                    <input
+                      ref={outMRef}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={2}
+                      value={outM}
+                      onChange={e => handleTimeInput(e.target.value, 59, setOutM, null)}
+                      onFocus={e => e.target.select()}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault() } }}
+                      placeholder="00"
+                      className={[styles.timeHmNum, outMInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                    />
+                    <span className={styles.timeHmUnit}>分</span>
+                  </div>
                 </div>
               </div>
 
@@ -829,8 +917,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                     <div className={styles.workTimeList}>
                       {userWorkItems.map(t => {
                         const wt = workTimes[t] || { h: 0, m: 0 }
+                        const hasTime = wt.h > 0 || wt.m > 0
                         return (
-                          <div key={t} className={styles.workTimeListRow}>
+                          <div key={t} className={[styles.workTimeListRow, hasTime ? styles.workTimeListRowActive : ''].join(' ')}>
                             <span className={styles.workTimeListName}>{t}</span>
                             <div className={styles.workTimeListInputs}>
                               <input
@@ -841,6 +930,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                                   const v = String(e.target.value).replace(/[^\d]/g, '')
                                   setWorkTime(t, 'h', parseInt(v) || 0)
                                 }}
+                                onFocus={e => e.target.select()}
                                 placeholder="0"
                                 className={styles.workTimeNumInline}
                               />
@@ -856,6 +946,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved }) {
                                   if (v !== '' && n > 59) return
                                   setWorkTime(t, 'm', n)
                                 }}
+                                onFocus={e => e.target.select()}
                                 placeholder="0"
                                 className={styles.workTimeNumInline}
                               />

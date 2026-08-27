@@ -66,16 +66,44 @@
 /* ─── Tab nav ─── */
 .tabs {
   display: flex;
+  align-items: center;
   background: #fff;
   border-bottom: 1px solid #dde4ec;
   flex-shrink: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding: 0 20px;
+  padding: 0 0 0 20px;
+  box-shadow: 0 1px 4px rgba(30,60,100,0.06);
 }
 
 .tabs::-webkit-scrollbar { display: none; }
+
+.tabsSpacer { flex: 1; min-width: 8px; }
+
+.tabsBackBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  border-left: 1px solid #dde4ec;
+  padding: 0 20px;
+  height: 46px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #4b5563;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tabsBackBtn:hover {
+  background: #f0f4fa;
+  color: #2563eb;
+}
 
 .tab {
   flex-shrink: 0;
@@ -189,11 +217,11 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin: 16px;
+  margin: 12px 28px;
   background: #fff;
-  border-radius: 14px;
-  border: 1px solid #dde4ec;
-  box-shadow: 0 2px 12px rgba(30,60,100,0.07);
+  border-radius: 12px;
+  border: 1px solid #c8d3dc;
+  box-shadow: 0 1px 6px rgba(30,60,100,0.06);
   overflow: hidden;
   min-height: 0;
 }
@@ -202,19 +230,25 @@
 .calMonthNav {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid #edf2f7;
+  justify-content: center;
+  padding: 9px 16px;
+  border-bottom: 1px solid #dde4ec;
   flex-shrink: 0;
   background: #f8fafc;
 }
 
+.calMonthGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .navBtn {
   background: #fff;
-  border: 1px solid #dde4ec;
-  border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 0.95rem;
+  border: 1px solid #c8d3dc;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 0.88rem;
   cursor: pointer;
   color: #374151;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -232,10 +266,10 @@
 }
 
 .navDate {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 800;
   color: #1a3f6f;
-  min-width: 120px;
+  min-width: 110px;
   text-align: center;
 }
 
@@ -245,28 +279,28 @@
   grid-template-columns: repeat(7, 1fr);
   grid-auto-rows: minmax(0, 1fr);
   gap: 1px;
-  background: #edf2f7;
+  background: #b8c5d0;
   flex: 1;
   min-height: 0;
 }
 
 .calDayLabel {
-  background: #f0f4fa;
+  background: #ecf0f5;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  color: #6b7280;
-  padding: 6px 0;
+  color: #4b5563;
+  padding: 5px 0;
 }
 
-.calDayLabel.calSun { color: #e53935; background: #fff5f5; }
-.calDayLabel.calSat { color: #1976d2; background: #f0f4ff; }
+.calDayLabel.calSun { color: #c62828; background: #fdf4f4; }
+.calDayLabel.calSat { color: #1565c0; background: #f0f4ff; }
 
-.calEmpty { background: #f8fafc; }
+.calEmpty { background: #f2f4f6; }
 
 .calCell {
   background: #fff;
-  padding: 3px 4px;
+  padding: 4px 6px 5px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -276,50 +310,66 @@
   transition: background 0.12s;
 }
 
-.calCell:hover { background: #f0f6ff; }
+.calCell:hover { background: #eef4ff; }
 
-.calCell.calWorked { background: #f0faf5; }
-.calCell.calAlert  { background: #fee2e2; }
-.calCell.calSunCell { background: #fefafa; }
-.calCell.calSatCell { background: #fafafe; }
-.calCell.calWorked.calSunCell { background: #f0faf5; }
-.calCell.calWorked.calSatCell { background: #f0faf5; }
+.calCell.calWorked { background: #f5fbf7; }
+.calCell.calAlert  { background: #fff0f0; }
+.calCell.calSunCell { background: #fffafa; }
+.calCell.calSatCell { background: #fafbff; }
+.calCell.calWorked.calSunCell { background: #f5fbf7; }
+.calCell.calWorked.calSatCell { background: #f5fbf7; }
+.calCell.calTodayCell { background: #f0f6ff; }
 
-.calCell.calSunCell .calDayNum { color: #e53935; }
-.calCell.calSatCell .calDayNum { color: #1976d2; }
+.calCell.calSunCell .calDayNum { color: #c62828; }
+.calCell.calSatCell .calDayNum { color: #1565c0; }
 
 .calDayNum {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 700;
-  color: #374151;
+  color: #1f2937;
   line-height: 1.3;
   flex-shrink: 0;
 }
 
+.calDayNumToday {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: #2563eb;
+  color: #fff !important;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
 .calIn {
-  font-size: 0.6rem;
-  color: #fff;
-  background: #388e3c;
+  font-size: 0.68rem;
+  color: #166534;
+  background: #dcfce7;
   border-radius: 3px;
   padding: 1px 5px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin: 0 -1px;
 }
 
 .calOut {
-  font-size: 0.6rem;
-  color: #fff;
-  background: #c62828;
+  font-size: 0.68rem;
+  color: #991b1b;
+  background: #fee2e2;
   border-radius: 3px;
   padding: 1px 5px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin: 0 -1px;
 }
 
 .calSpacer { height: 0; }
@@ -1426,6 +1476,46 @@
 .timeDisplaySep { font-size: 1.8rem; font-weight: 700; color: #9baab8; }
 .workTimeHint { font-size: 0.88rem; color: #6b7280; text-align: center; }
 
+/* ─── Split time inputs (h/m) ─── */
+.timeHmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeHmNum {
+  width: 70px;
+  height: 50px;
+  border: 2px solid #c8d3dc;
+  border-radius: 10px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  text-align: center;
+  outline: none;
+  font-family: inherit;
+  background: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.timeHmNum:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+}
+
+.timeHmNumErr {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.12) !important;
+}
+
+.timeHmUnit {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #374151;
+  white-space: nowrap;
+}
+
 /* ─── Inline work time list (DayEditModal) ─── */
 .workTimeList {
   display: grid;
@@ -1437,11 +1527,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 9px 12px 9px 10px;
   background: #f8fafc;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #dde4ec;
+  border-left: 3px solid transparent;
   gap: 8px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.workTimeListRowActive {
+  background: #f0f7ff;
+  border-color: #bfdbfe;
+  border-left-color: #2563eb;
 }
 
 .workTimeListName {
@@ -1460,11 +1558,11 @@
 }
 
 .workTimeNumInline {
-  width: 58px;
-  height: 38px;
-  border: 2px solid #dde4ec;
+  width: 62px;
+  height: 42px;
+  border: 2px solid #c8d3dc;
   border-radius: 8px;
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: #1a3f6f;
   text-align: center;
