@@ -378,7 +378,7 @@ function CalendarTab({ users, today }) {
   const pad = n => String(n).padStart(2, '0')
 
   return (
-    <div className={styles.content}>
+    <div className={styles.calContent}>
       {/* 職員選択 */}
       <div className={styles.calSection}>
         <div className={styles.calSectionLabel}>職員を選択</div>

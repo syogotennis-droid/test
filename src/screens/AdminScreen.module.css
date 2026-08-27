@@ -139,6 +139,13 @@
   overflow: hidden;
 }
 
+.calContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
 /* ─── User selection section (CalendarTab) ─── */
 .calSection {
   background: #fff;
@@ -214,16 +221,16 @@
 
 /* ─── Calendar card ─── */
 .calCard {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  margin: 12px 28px;
+  width: calc(100% - 56px);
+  max-width: 1400px;
+  margin: 12px auto 20px;
   background: #fff;
   border-radius: 12px;
   border: 1px solid #c8d3dc;
   box-shadow: 0 1px 6px rgba(30,60,100,0.06);
   overflow: hidden;
-  min-height: 0;
 }
 
 /* ─── Calendar nav bar ─── */
@@ -277,11 +284,10 @@
 .calGrid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  grid-auto-rows: minmax(0, 1fr);
+  grid-template-rows: auto;
+  grid-auto-rows: 100px;
   gap: 1px;
   background: #b8c5d0;
-  flex: 1;
-  min-height: 0;
 }
 
 .calDayLabel {
