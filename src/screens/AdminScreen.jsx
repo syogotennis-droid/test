@@ -1176,6 +1176,14 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
     }
   }
 
+  function handleChange(e) {
+    const raw = e.target.value
+    const pattern = decimal ? /^[\d.]*$/ : /^\d*$/
+    if (!pattern.test(raw)) return
+    if (decimal && (raw.match(/\./g) || []).length > 1) return
+    if (raw.length <= maxLength) setVal(raw)
+  }
+
   const inputRef = useRef(null)
   useEffect(() => { inputRef.current?.focus() }, [])
 
@@ -1195,18 +1203,15 @@ function NumpadOverlay({ title, initialValue = '', maxLength = 10, decimal = fal
           <input
             ref={inputRef}
             type="text"
-            inputMode="none"
-            readOnly
+            inputMode={decimal ? 'decimal' : 'numeric'}
             value={val}
+            onChange={handleChange}
             onKeyDown={e => {
-              if (/^\d$/.test(e.key)) { e.preventDefault(); pressKey(e.key) }
-              else if (e.key === '.' && decimal) { e.preventDefault(); pressKey('.') }
-              else if (e.key === 'Backspace') { e.preventDefault(); pressKey('⌫') }
-              else if (e.key === 'Enter') { e.preventDefault(); onConfirm(val); onClose() }
+              if (e.key === 'Enter') { e.preventDefault(); onConfirm(val); onClose() }
               else if (e.key === 'Escape') { e.preventDefault(); onClose() }
             }}
             className={styles.numpadDisplay}
-            style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box', cursor: 'default', caretColor: 'transparent' }}
+            style={{ border: 'none', outline: 'none', width: '100%', boxSizing: 'border-box' }}
           />
         )}
         <div className={styles.numpadGrid} onMouseDown={e => e.preventDefault()}>
