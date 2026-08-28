@@ -430,8 +430,6 @@ function CalendarTab({ users, today, isTablet }) {
 
   const days = getCalendarDays(year, month)
   const weekCount = days.length / 7
-  const rowH = weekCount >= 6 ? 86 : 100
-  const gridH = rowH * weekCount + 28 + (weekCount + 1)
   const dayMap = buildDayMap(logs, year, month)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
   const todayDay = now.getDate()
@@ -477,7 +475,7 @@ function CalendarTab({ users, today, isTablet }) {
         {loading ? (
           <div className={styles.empty}>読込中...</div>
         ) : (
-          <div className={styles.calGrid} style={{ height: `${gridH}px`, gridTemplateRows: `auto repeat(${weekCount}, minmax(0, 1fr))` }}>
+          <div className={styles.calGrid} style={{ gridTemplateRows: `auto repeat(${weekCount}, clamp(82px, 10vh, 115px))` }}>
             {CAL_DAY_LABELS.map((d, i) => (
               <div key={d} className={[styles.calDayLabel, i === 0 ? styles.calSun : i === 6 ? styles.calSat : ''].join(' ')}>{d}</div>
             ))}
