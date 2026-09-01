@@ -1423,6 +1423,40 @@ function KinmuboTab({ today }) {
   const totalWorkingDays = preview ? preview.reduce((s, p) => s + p.workingDays, 0) : 0
   const totalSalary = preview ? preview.reduce((s, p) => s + p.totalPay, 0) : 0
 
+  const globalSummary = useMemo(() => {
+    if (!preview || preview.length === 0) return null
+    let totalClockMins = 0
+    const typeMap = {}
+    for (const { user, rows, byDate } of preview) {
+      for (const [ds, entry] of Object.entries(byDate)) {
+        const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
+        const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
+        if (!inStr && !outStr) continue
+        const key = `${user.id}_${ds}`
+        const editedIn = approvedEdits[key]?.inMins
+        const editedOut = approvedEdits[key]?.outMins
+        const inApprMins = editedIn ?? (entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
+        const outApprMins = editedOut ?? (entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
+        if (inApprMins !== null && outApprMins !== null) {
+          totalClockMins += Math.max(0, outApprMins - inApprMins)
+        }
+      }
+      for (const row of rows) {
+        if (row.mins === null || row.label === '準備時間') continue
+        if (!typeMap[row.label]) typeMap[row.label] = { mins: 0, pay: 0 }
+        typeMap[row.label].mins += row.mins
+        typeMap[row.label].pay += row.pay
+      }
+    }
+    const totalTypeMins = Object.values(typeMap).reduce((s, v) => s + v.mins, 0)
+    const shortfallMins = Math.max(0, totalClockMins - totalTypeMins)
+    return {
+      totalClockMins,
+      shortfallMins,
+      types: Object.entries(typeMap).map(([label, v]) => ({ label, mins: v.mins, pay: v.pay }))
+    }
+  }, [preview, approvedEdits])
+
   return (
     <div className={styles.calContent}>
       <div className={styles.kinmuboPage}>
@@ -1483,6 +1517,46 @@ function KinmuboTab({ today }) {
         {/* Empty */}
         {!previewLoading && preview && !hasData && (
           <div className={styles.kinmuboEmpty}>{displayY}年{displayM}月の勤務記録はありません。</div>
+        )}
+
+        {/* Global work type summary */}
+        {!previewLoading && hasData && globalSummary && globalSummary.types.length > 0 && (
+          <div className={styles.kinmuboGlobalSummary}>
+            <div className={styles.kinmuboGlobalSummaryTitle}>業務別集計</div>
+            <div className={styles.kinmuboGlobalTableWrap}>
+              <table className={styles.kinmuboGlobalTable}>
+                <thead>
+                  <tr>
+                    <th className={styles.kinmuboGlobalTh}>単価種別</th>
+                    <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>勤務時間</th>
+                    <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>時間合計</th>
+                    <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>不足時間</th>
+                    <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>金額合計</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalSummary.types.map(({ label, mins, pay }) => (
+                    <tr key={label} className={styles.kinmuboGlobalRow}>
+                      <td className={styles.kinmuboGlobalTd}>{label}</td>
+                      <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.totalClockMins)}</td>
+                      <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(mins)}</td>
+                      <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.shortfallMins)}</td>
+                      <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum, styles.kinmuboGlobalTdPay].join(' ')}>{pay.toLocaleString()}円</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className={styles.kinmuboGlobalTotRow}>
+                    <td className={styles.kinmuboGlobalTotTd}>合計</td>
+                    <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.totalClockMins)}</td>
+                    <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.types.reduce((s, t) => s + t.mins, 0))}</td>
+                    <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.shortfallMins)}</td>
+                    <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum, styles.kinmuboGlobalTdPay].join(' ')}>{globalSummary.types.reduce((s, t) => s + t.pay, 0).toLocaleString()}円</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
         )}
 
         {/* Employee list */}

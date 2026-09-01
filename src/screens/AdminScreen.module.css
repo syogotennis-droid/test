@@ -2864,3 +2864,80 @@
   font-size: 0.82rem;
   margin: 0 4px;
 }
+
+/* ─── KinmuboTab global work-type summary ─── */
+.kinmuboGlobalSummary {
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+
+.kinmuboGlobalSummaryTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.kinmuboGlobalTableWrap {
+  overflow-x: auto;
+}
+
+.kinmuboGlobalTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  min-width: 440px;
+}
+
+.kinmuboGlobalTh {
+  background: #1a3f6f;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 7px 10px;
+  border: 1px solid #1a3f6f;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.kinmuboGlobalThNum {
+  text-align: right;
+}
+
+.kinmuboGlobalRow:nth-child(even) { background: #f8fafc; }
+
+.kinmuboGlobalTd {
+  padding: 6px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.kinmuboGlobalTdNum {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.kinmuboGlobalTdPay {
+  font-weight: 700;
+  color: #1a3f6f;
+}
+
+.kinmuboGlobalTotRow {
+  background: #f0f4f8;
+}
+
+.kinmuboGlobalTotTd {
+  padding: 7px 10px;
+  font-weight: 700;
+  color: #1e293b;
+  border-top: 2px solid #cbd5e1;
+  white-space: nowrap;
+  text-align: left;
+}

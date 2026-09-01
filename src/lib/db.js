@@ -552,6 +552,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const enc = new TextEncoder()
   const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
   const sheetXmls = []
+  const summaryData = { totalClockMins: 0, types: {} }
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -597,6 +598,32 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     // Count working days (出勤 or 退勤 exists that day) for 前後5分 min-wage calc
     const workingDays = Object.values(byDate).filter(e => e.ins.length > 0 || e.outs.length > 0).length
+
+    // Accumulate global summary data
+    for (const entry of Object.values(byDate)) {
+      const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
+      const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
+      const inApprStr = entry.inApproved || (inStr ? roundUp15str(inStr) : '')
+      const outApprStr = entry.outApproved || (outStr ? roundDown15str(outStr) : '')
+      if (inApprStr && outApprStr) {
+        const [ih, im] = inApprStr.split(':').map(Number)
+        const [oh, om] = outApprStr.split(':').map(Number)
+        summaryData.totalClockMins += Math.max(0, (oh * 60 + om) - (ih * 60 + im))
+      }
+    }
+    for (const type of workTypes) {
+      const rateObj = itemRates[type] || {}
+      const normalRate = Number(rateObj.normal) || 0
+      const sundayRate = Number(rateObj.sunday) || 0
+      const hasSunday = !!(rateObj.sunday)
+      const wdMins = monthlyWdMins[type] || 0
+      const weMins = monthlyWeMins[type] || 0
+      if (!summaryData.types[type]) summaryData.types[type] = { mins: 0, pay: 0 }
+      summaryData.types[type].mins += wdMins + weMins
+      summaryData.types[type].pay += hasSunday
+        ? Math.round(wdMins / 60 * normalRate) + Math.round(weMins / 60 * sundayRate)
+        : Math.round((wdMins + weMins) / 60 * normalRate)
+    }
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
     let ci = 2
@@ -917,6 +944,46 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     )
   }
 
+  // Build "集計" summary sheet (inserted as sheet1)
+  {
+    const WB_NS_S = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    const WB_REL_S = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    const shdrCell = (col, rn, text) =>
+      `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
+    const summaryTypeEntries = Object.entries(summaryData.types)
+    const totalTypeMins = summaryTypeEntries.reduce((s, [, v]) => s + v.mins, 0)
+    const shortfallMins = Math.max(0, summaryData.totalClockMins - totalTypeMins)
+    const totalTypePay = summaryTypeEntries.reduce((s, [, v]) => s + v.pay, 0)
+    let sumRows = ''
+    sumRows += `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 業務別集計')}</t></is></c></row>`
+    sumRows += `<row r="2" ht="36">${shdrCell('A', 2, '単価種別')}${shdrCell('B', 2, '勤務時間')}${shdrCell('C', 2, '時間合計')}${shdrCell('D', 2, '不足時間')}${shdrCell('E', 2, '金額合計')}</row>`
+    let sr = 3
+    for (const [label, v] of summaryTypeEntries) {
+      sumRows += `<row r="${sr}">` +
+        `<c r="A${sr}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(label)}</t></is></c>` +
+        `<c r="B${sr}" s="${S.tot_hrs}"><v>${summaryData.totalClockMins / 1440}</v></c>` +
+        `<c r="C${sr}" s="${S.tot_hrs}"><v>${v.mins / 1440}</v></c>` +
+        `<c r="D${sr}" s="${S.tot_hrs}"><v>${shortfallMins / 1440}</v></c>` +
+        `<c r="E${sr}" s="${S.tot_pay}"><v>${v.pay}</v></c>` +
+        `</row>`
+      sr++
+    }
+    sumRows += `<row r="${sr}">` +
+      `<c r="A${sr}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
+      `<c r="B${sr}" s="${S.tot_hrs}"><v>${summaryData.totalClockMins / 1440}</v></c>` +
+      `<c r="C${sr}" s="${S.tot_hrs}"><v>${totalTypeMins / 1440}</v></c>` +
+      `<c r="D${sr}" s="${S.tot_hrs}"><v>${shortfallMins / 1440}</v></c>` +
+      `<c r="E${sr}" s="${S.tot_pay}"><v>${totalTypePay}</v></c>` +
+      `</row>`
+    const summarySheetXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<worksheet xmlns="${WB_NS_S}" xmlns:r="${WB_REL_S}">` +
+      `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
+      `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="5" width="14" customWidth="1"/></cols>` +
+      `<sheetData>${sumRows}</sheetData></worksheet>`
+    sheetXmls.unshift(summarySheetXml)
+  }
+
   // Build XLSX package from scratch (no template needed)
   const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
   const WB_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -924,9 +991,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const WS_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
   const N = userEntries.length
 
-  const sheetEls = userEntries.map((u, i) =>
-    `<sheet name="${esc(u.name.substring(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`
-  ).join('')
+  // sheet1 = 集計, sheet2..N+1 = user sheets
+  const sheetEls =
+    `<sheet name="集計" sheetId="1" r:id="rId1"/>` +
+    userEntries.map((u, i) =>
+      `<sheet name="${esc(u.name.substring(0, 31))}" sheetId="${i + 2}" r:id="rId${i + 2}"/>`
+    ).join('')
   const wbXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<workbook xmlns="${WB_NS}" xmlns:r="${WB_REL}">` +
@@ -938,11 +1008,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const wbRels =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<Relationships xmlns="${PKG_REL}">` +
+    `<Relationship Id="rId1" Type="${WB_REL}/worksheet" Target="worksheets/sheet1.xml"/>` +
     userEntries.map((_, i) =>
-      `<Relationship Id="rId${i + 1}" Type="${WB_REL}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`
+      `<Relationship Id="rId${i + 2}" Type="${WB_REL}/worksheet" Target="worksheets/sheet${i + 2}.xml"/>`
     ).join('') +
-    `<Relationship Id="rId${N + 1}" Type="${WB_REL}/styles" Target="styles.xml"/>` +
-    `<Relationship Id="rId${N + 2}" Type="${WB_REL}/sharedStrings" Target="sharedStrings.xml"/>` +
+    `<Relationship Id="rId${N + 2}" Type="${WB_REL}/styles" Target="styles.xml"/>` +
+    `<Relationship Id="rId${N + 3}" Type="${WB_REL}/sharedStrings" Target="sharedStrings.xml"/>` +
     `</Relationships>`
 
   const ctXml =
@@ -953,7 +1024,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
     `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
     `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` +
-    userEntries.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="${WS_CT}"/>`).join('') +
+    `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="${WS_CT}"/>` +
+    userEntries.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 2}.xml" ContentType="${WS_CT}"/>`).join('') +
     `</Types>`
 
   const relsXml =
