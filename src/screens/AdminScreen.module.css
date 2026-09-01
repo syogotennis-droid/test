@@ -811,6 +811,16 @@
   box-shadow: 0 8px 40px rgba(30,60,100,0.18);
 }
 
+.modalSm {
+  background: #fff;
+  border-radius: 14px;
+  width: min(380px, 94vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(30,60,100,0.18);
+}
+
 .modalHeader {
   display: flex;
   align-items: flex-start;
@@ -3017,3 +3027,67 @@
   white-space: nowrap;
   text-align: left;
 }
+
+/* Rate history UI */
+.rateHistoryRow { background: #f8fafc; }
+.rateHistoryCell { padding: 6px 12px 8px 0; }
+
+.rateHistoryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.rateHistoryEntry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  padding: 2px 6px 2px 8px;
+  font-size: 0.78rem;
+}
+
+.rateHistoryDate {
+  color: #0369a1;
+  font-weight: 600;
+}
+
+.rateHistoryVal {
+  color: #0c4a6e;
+}
+
+.rateHistoryDel {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0 2px;
+  line-height: 1;
+}
+.rateHistoryDel:hover { color: #b91c1c; }
+
+.addRateHistoryBtn {
+  background: none;
+  border: 1px dashed #94a3b8;
+  border-radius: 6px;
+  color: #475569;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 3px 10px;
+}
+.addRateHistoryBtn:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+
+.dateInput {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  width: 100%;
+  outline: none;
+  color: #1e293b;
+}
+.dateInput:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }

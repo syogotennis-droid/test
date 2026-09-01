@@ -7,7 +7,7 @@ import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, setApprovedTime, setFirstLastWork, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
-  getWorkItems
+  getWorkItems, getRatesForDate
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -1397,44 +1397,98 @@ function KinmuboTab({ today }) {
       })
       const workingDays = Object.values(byDate).filter(e => e.sessions.length > 0).length
 
-      // Compute approved-time cuts per type
-      const typeCutWd = {}, typeCutWe = {}
+
+      // Build daily type minutes split for rate-history-aware pay calculation
+      const dailyTypeMinsSplit = {}
+      const dailyCutSplit = {}
       Object.entries(byDate).forEach(([dateStr, entry]) => {
-        const [yr, mo, dNum] = dateStr.split('-').map(Number)
-        const isWe = new Date(yr, mo - 1, dNum).getDay() === 0
+        const [yr2, mo2, d2] = dateStr.split('-').map(Number)
+        const isWe2 = new Date(yr2, mo2 - 1, d2).getDay() === 0
         entry.sessions.forEach(session => {
-          const inStr = session.inLog?.time?.substring(0, 5) || ''
-          const outStr = session.outLog?.time?.substring(0, 5) || ''
-          if (!inStr && !outStr) return
-          const inApprMins = session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null
-          const outApprMins = session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null
-          const actualInMins = inStr ? timeStrToMinsK(inStr) : null
-          const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
-          const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
-          const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
-          if (startCut > 0 && session.firstWork) {
-            if (isWe) typeCutWe[session.firstWork] = (typeCutWe[session.firstWork] || 0) + startCut
-            else typeCutWd[session.firstWork] = (typeCutWd[session.firstWork] || 0) + startCut
+          Object.entries(session.workItems).forEach(([t, mm]) => {
+            if (!dailyTypeMinsSplit[dateStr]) dailyTypeMinsSplit[dateStr] = {}
+            if (!dailyTypeMinsSplit[dateStr][t]) dailyTypeMinsSplit[dateStr][t] = { wd: 0, we: 0 }
+            if (isWe2) dailyTypeMinsSplit[dateStr][t].we += mm
+            else dailyTypeMinsSplit[dateStr][t].wd += mm
+          })
+        })
+      })
+      Object.entries(byDate).forEach(([dateStr, entry]) => {
+        const [yr2, mo2, d2] = dateStr.split('-').map(Number)
+        const isWe2 = new Date(yr2, mo2 - 1, d2).getDay() === 0
+        entry.sessions.forEach(session => {
+          const inStr2 = session.inLog?.time?.substring(0, 5) || ''
+          const outStr2 = session.outLog?.time?.substring(0, 5) || ''
+          if (!inStr2 && !outStr2) return
+          const inAppr2 = session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr2 ? roundUp15K(timeStrToMinsK(inStr2)) : null
+          const outAppr2 = session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr2 ? roundDown15K(timeStrToMinsK(outStr2)) : null
+          const actIn2 = inStr2 ? timeStrToMinsK(inStr2) : null
+          const actOut2 = outStr2 ? timeStrToMinsK(outStr2) : null
+          const sCut = (inAppr2 != null && actIn2 != null) ? Math.max(0, inAppr2 - actIn2) : 0
+          const eCut = (outAppr2 != null && actOut2 != null) ? Math.max(0, actOut2 - outAppr2) : 0
+          const addCut = (type, mins) => {
+            if (!type || mins <= 0) return
+            if (!dailyCutSplit[dateStr]) dailyCutSplit[dateStr] = {}
+            if (!dailyCutSplit[dateStr][type]) dailyCutSplit[dateStr][type] = { wd: 0, we: 0 }
+            if (isWe2) dailyCutSplit[dateStr][type].we += mins
+            else dailyCutSplit[dateStr][type].wd += mins
           }
-          if (endCut > 0 && session.lastWork) {
-            if (isWe) typeCutWe[session.lastWork] = (typeCutWe[session.lastWork] || 0) + endCut
-            else typeCutWd[session.lastWork] = (typeCutWd[session.lastWork] || 0) + endCut
-          }
+          addCut(session.firstWork, sCut)
+          addCut(session.lastWork, eCut)
         })
       })
 
+      // Build pay rows per type, per rate period
       const rows = []
+      const [ymY, ymM] = Object.keys(byDate)[0]?.split('-').map(Number) || [new Date().getFullYear(), new Date().getMonth() + 1]
       for (const type of (user.workItems || []).filter(t => !EXCL.has(t))) {
         const rateObj = itemRates[type] || {}
-        const wdMins = Math.max(0, (monthlyWdMins[type] || 0) - (typeCutWd[type] || 0))
-        const weMins = Math.max(0, (monthlyWeMins[type] || 0) - (typeCutWe[type] || 0))
-        if (wdMins + weMins === 0) continue
-        if (rateObj.sunday) {
-          if (wdMins > 0) rows.push({ label: type, mins: wdMins, days: null, rate: Number(rateObj.normal) || 0, pay: Math.round(wdMins / 60 * (Number(rateObj.normal) || 0)) })
-          if (weMins > 0) rows.push({ label: type + '（日曜）', mins: weMins, days: null, rate: Number(rateObj.sunday) || 0, pay: Math.round(weMins / 60 * (Number(rateObj.sunday) || 0)) })
+        const hasSunday = !!(rateObj.sunday)
+        // Build rate periods for this month
+        const history = rateObj?.rateHistory
+        let periods
+        if (!history || history.length === 0) {
+          const monthDates = Object.keys(byDate).sort()
+          const fromDate = monthDates[0] || `${ymY}-01-01`
+          const toDate = monthDates[monthDates.length - 1] || fromDate
+          periods = [{ fromDate, toDate, normal: Number(rateObj.normal) || 0, sunday: Number(rateObj.sunday) || 0 }]
         } else {
-          const totalMins = wdMins + weMins
-          rows.push({ label: type, mins: totalMins, days: null, rate: Number(rateObj.normal) || 0, pay: Math.round(totalMins / 60 * (Number(rateObj.normal) || 0)) })
+          const sorted = [...history].sort((a, b) => { if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+          const allDates = Object.keys(byDate).sort()
+          const monthStart = allDates[0] || `${ymY}-${String(ymM).padStart(2,'0')}-01`
+          const monthEnd = allDates[allDates.length - 1] || monthStart
+          const defR = { normal: Number(rateObj.normal) || 0, sunday: Number(rateObj.sunday) || 0 }
+          const base = sorted.filter(e => !e.from || e.from <= monthStart).pop() || sorted[0]
+          const inMonth = sorted.filter(e => e.from && e.from > monthStart && e.from <= monthEnd)
+          periods = []
+          let cFrom = monthStart, cN = Number(base?.normal) || defR.normal, cS = Number(base?.sunday) || defR.sunday
+          for (const e of inMonth) {
+            const prev = new Date(e.from); prev.setDate(prev.getDate() - 1)
+            const prevStr = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}-${String(prev.getDate()).padStart(2,'0')}`
+            if (prevStr >= cFrom) periods.push({ fromDate: cFrom, toDate: prevStr, normal: cN, sunday: cS })
+            cFrom = e.from; cN = Number(e.normal) || 0; cS = Number(e.sunday) || 0
+          }
+          periods.push({ fromDate: cFrom, toDate: monthEnd, normal: cN, sunday: cS })
+        }
+        const multiPeriod = periods.length > 1
+        for (const period of periods) {
+          const { fromDate, toDate, normal: normalRate, sunday: sundayRate } = period
+          let wdM = 0, weM = 0, cutWd = 0, cutWe = 0
+          Object.entries(dailyTypeMinsSplit).forEach(([ds, tm]) => {
+            if (ds >= fromDate && ds <= toDate && tm[type]) { wdM += tm[type].wd; weM += tm[type].we }
+          })
+          Object.entries(dailyCutSplit).forEach(([ds, tm]) => {
+            if (ds >= fromDate && ds <= toDate && tm[type]) { cutWd += tm[type].wd; cutWe += tm[type].we }
+          })
+          const adjWd = Math.max(0, wdM - cutWd), adjWe = Math.max(0, weM - cutWe)
+          const rangeLabel = multiPeriod ? `（${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}）` : ''
+          if (hasSunday) {
+            if (adjWd > 0) rows.push({ label: type + rangeLabel, mins: adjWd, days: null, rate: normalRate, pay: Math.round(adjWd / 60 * normalRate) })
+            if (adjWe > 0) rows.push({ label: type + rangeLabel + '（日曜）', mins: adjWe, days: null, rate: sundayRate, pay: Math.round(adjWe / 60 * sundayRate) })
+          } else {
+            const adj = adjWd + adjWe
+            if (adj > 0) rows.push({ label: type + rangeLabel, mins: adj, days: null, rate: normalRate, pay: Math.round(adj / 60 * normalRate) })
+          }
         }
       }
       const transport = Number(itemRates['交通費']?.amount) || 0
@@ -2680,6 +2734,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     })
     return m
   })
+  const [rateHistory, setRateHistory] = useState(() => {
+    const h = {}
+    ASSIGNABLE_ITEMS.forEach(item => { h[item] = user.itemRates?.[item]?.rateHistory || [] })
+    return h
+  })
+  const [rateHistoryOpen, setRateHistoryOpen] = useState({}) // { item: bool }
+  const [addRateForm, setAddRateForm] = useState(null) // { item, date, normal, sunday }
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -2689,7 +2750,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setIsDirty(true)
-  }, [name, pin, workItems, itemRates, multipliers])
+  }, [name, pin, workItems, itemRates, multipliers, rateHistory])
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -2737,10 +2798,58 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
         if (r.normal !== '') entry.normal = Number(r.normal)
         if (r.sunday !== '') entry.sunday = Number(r.sunday)
         if (multipliers[item] != null) entry.multiplier = Number(multipliers[item])
+        const hist = rateHistory[item] || []
+        if (hist.length > 0) entry.rateHistory = hist
         if (Object.keys(entry).length > 0) result[item] = entry
       }
     })
     return result
+  }
+
+  function openAddRateForm(item) {
+    const today = new Date()
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+    const r = itemRates[item] || {}
+    setAddRateForm({ item, date: dateStr, normal: r.normal || '', sunday: r.sunday || '' })
+  }
+
+  function commitAddRate() {
+    if (!addRateForm) return
+    const { item, date, normal, sunday } = addRateForm
+    if (!date || !normal) return
+    const newEntry = { from: date, normal: Number(normal) }
+    if (sunday !== '' && sunday != null) newEntry.sunday = Number(sunday)
+    setRateHistory(prev => {
+      const existing = prev[item] || []
+      // Initialize history with current rate if this is the first change
+      let base = existing
+      if (base.length === 0) {
+        const r = itemRates[item] || {}
+        const firstEntry = { from: null }
+        if (r.normal !== '') firstEntry.normal = Number(r.normal)
+        if (r.sunday !== '') firstEntry.sunday = Number(r.sunday)
+        base = [firstEntry]
+      }
+      const filtered = base.filter(e => e.from !== date)
+      return { ...prev, [item]: [...filtered, newEntry].sort((a, b) => { if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) }) }
+    })
+    // Update current rate inputs to the new rate
+    setItemRates(prev => {
+      const updated = { ...prev, [item]: { ...prev[item], normal, sunday: sunday || prev[item]?.sunday || '' } }
+      return updated
+    })
+    if (sunday !== '' && sunday != null && itemRates[item]?.normal && Number(itemRates[item].normal) > 0) {
+      setMultipliers(prev => ({ ...prev, [item]: String(Math.round(Number(sunday) / Number(normal) * 100) / 100) }))
+    }
+    setAddRateForm(null)
+  }
+
+  function deleteRateHistoryEntry(item, idx) {
+    setRateHistory(prev => {
+      const updated = (prev[item] || []).filter((_, i) => i !== idx)
+      // If deleting all history, reset to original normal/sunday
+      return { ...prev, [item]: updated }
+    })
   }
 
   async function handleSaveAll() {
@@ -2916,7 +3025,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     const r = itemRates[item] || {}
                     const isTransport = item === '交通費'
                     return (
-                      <tr key={item} className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
+                      <React.Fragment key={item}>
+                      <tr className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
                         <td className={styles.workItemTd}>
                           <input
                             type="checkbox"
@@ -3012,12 +3122,91 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                           </>
                         )}
                       </tr>
+                      {checked && !isTransport && (
+                        <tr className={styles.rateHistoryRow}>
+                          <td />
+                          <td colSpan={4} className={styles.rateHistoryCell}>
+                            {(rateHistory[item] || []).length > 0 && (
+                              <div className={styles.rateHistoryList}>
+                                {[...(rateHistory[item] || [])].sort((a, b) => {
+                                  if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from)
+                                }).map((e, idx, arr) => (
+                                  <span key={idx} className={styles.rateHistoryEntry}>
+                                    <span className={styles.rateHistoryDate}>{e.from ? e.from : '当初'}</span>
+                                    <span className={styles.rateHistoryVal}>{Number(e.normal).toLocaleString()}円{e.sunday ? `／日曜${Number(e.sunday).toLocaleString()}円` : ''}</span>
+                                    <button className={styles.rateHistoryDel} onClick={() => deleteRateHistoryEntry(item, (rateHistory[item] || []).indexOf(e))}>✕</button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <button className={styles.addRateHistoryBtn} onClick={() => openAddRateForm(item)}>
+                              ＋ 日付から時給を変更
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     )
                   })}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* 時給変更入力フォーム */}
+          {addRateForm && (
+            <div className={styles.modalOverlay} onClick={() => setAddRateForm(null)}>
+              <div className={styles.modalSm} onClick={e => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <div className={styles.modalHeaderTitle}>{addRateForm.item} 時給変更</div>
+                  <button className={styles.modalCloseBtn} onClick={() => setAddRateForm(null)} tabIndex={-1}>✕</button>
+                </div>
+                <div className={styles.modalBody}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>変更日</label>
+                    <input
+                      type="date"
+                      className={styles.dateInput}
+                      value={addRateForm.date}
+                      onChange={e => setAddRateForm(f => ({ ...f, date: e.target.value }))}
+                    />
+                  </div>
+                  <div className={styles.formGroup} style={{ marginTop: 12 }}>
+                    <label className={styles.formLabel}>基本時給（円）</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className={styles.dateInput}
+                      placeholder="例: 1600"
+                      value={addRateForm.normal}
+                      onChange={e => {
+                        const v = e.target.value.replace(/[^\d]/g, '')
+                        const sunday = multipliers[addRateForm.item] && v ? String(Math.round(Number(v) * Number(multipliers[addRateForm.item]))) : addRateForm.sunday
+                        setAddRateForm(f => ({ ...f, normal: v, sunday }))
+                      }}
+                    />
+                  </div>
+                  {itemRates[addRateForm.item]?.sunday != null && itemRates[addRateForm.item]?.sunday !== '' && (
+                    <div className={styles.formGroup} style={{ marginTop: 12 }}>
+                      <label className={styles.formLabel}>日曜時給（円）</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className={styles.dateInput}
+                        placeholder="例: 1760"
+                        value={addRateForm.sunday || ''}
+                        onChange={e => setAddRateForm(f => ({ ...f, sunday: e.target.value.replace(/[^\d]/g, '') }))}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className={styles.modalFooter}>
+                  <button className={styles.cancelBtn} onClick={() => setAddRateForm(null)}>キャンセル</button>
+                  <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.date || !addRateForm.normal}>追加</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 本日の出勤状態 */}
           <div className={styles.userEditSection}>
