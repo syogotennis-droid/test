@@ -5,7 +5,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
+  updateLogTime, saveLog, saveLogManual, setApprovedTime, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
   getWorkItems
 } from '../lib/db'
@@ -1336,6 +1336,17 @@ function KinmuboTab({ today }) {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [approvedEdits, setApprovedEdits] = useState({})
+
+  function timeStrToMinsK(s) {
+    const [h, m] = s.split(':').map(Number)
+    return h * 60 + m
+  }
+  function minsToTimeStrK(m) {
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+  }
+  function roundUp15K(tot) { const rem = tot % 15; return rem === 0 ? tot : tot + (15 - rem) }
+  function roundDown15K(tot) { return Math.floor(tot / 15) * 15 }
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -1349,6 +1360,7 @@ function KinmuboTab({ today }) {
     setPreview(null)
     setExpandedIds(new Set())
     setSearchQuery('')
+    setApprovedEdits({})
     const [y, m] = selectedYM.split('-').map(Number)
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
@@ -1372,10 +1384,17 @@ function KinmuboTab({ today }) {
       const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
       const byDate = {}
       sortedLogs.forEach(log => {
-        if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {} }
-        if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
-        else if (log.log_type === '退勤') {
+        if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inLogId: null, outLogId: null, inApproved: null, outApproved: null }
+        if (log.log_type === '出勤') {
+          byDate[log.date].ins.push(log.time || '')
+          if (!byDate[log.date].inLogId) {
+            byDate[log.date].inLogId = log.id
+            byDate[log.date].inApproved = log.approved_time?.substring(0, 5) || null
+          }
+        } else if (log.log_type === '退勤') {
           byDate[log.date].outs.push(log.time || '')
+          byDate[log.date].outLogId = log.id
+          byDate[log.date].outApproved = log.approved_time?.substring(0, 5) || null
           const items = getWorkItems(log)
           if (Object.keys(items).length > 0) byDate[log.date].workItems = { ...items }
         }
@@ -1414,7 +1433,7 @@ function KinmuboTab({ today }) {
       }
       const totalWorkMins = rows.reduce((s, r) => s + (r.mins || 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
-      return { user, workingDays, totalWorkMins, rows, totalPay }
+      return { user, workingDays, totalWorkMins, rows, totalPay, byDate }
     })
   }
 
@@ -1437,6 +1456,17 @@ function KinmuboTab({ today }) {
       else next.add(userId)
       return next
     })
+  }
+
+  async function handleApprovedChange(userId, dateStr, type, newMins, logId) {
+    const key = `${userId}_${dateStr}`
+    setApprovedEdits(prev => ({
+      ...prev,
+      [key]: { ...prev[key], [type === 'in' ? 'inMins' : 'outMins']: newMins }
+    }))
+    if (logId) {
+      try { await setApprovedTime(logId, minsToTimeStrK(newMins)) } catch {}
+    }
   }
 
   async function handleCreate() {
@@ -1567,7 +1597,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当する従業員がいません。</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay }) => {
+            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay, byDate }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -1592,6 +1622,65 @@ function KinmuboTab({ today }) {
 
                   {isOpen && (
                     <div className={styles.kinmuboAccordionBody}>
+                      {/* Daily punch & approved time table */}
+                      {Object.keys(byDate).sort().some(ds => byDate[ds].ins.length > 0 || byDate[ds].outs.length > 0) && (
+                        <div className={styles.kinmuboDailySection}>
+                          <div className={styles.kinmuboDailySectionTitle}>打刻・承認時間</div>
+                          <table className={styles.kinmuboDailyTable}>
+                            <thead>
+                              <tr>
+                                <th className={styles.kinmuboDailyTh}>日付</th>
+                                <th className={styles.kinmuboDailyTh}>打刻時間</th>
+                                <th className={styles.kinmuboDailyTh}>承認時間</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Object.keys(byDate).sort().filter(ds => {
+                                const e = byDate[ds]
+                                return e.ins.length > 0 || e.outs.length > 0
+                              }).map(ds => {
+                                const [y, mo, d] = ds.split('-').map(Number)
+                                const dow = new Date(y, mo - 1, d).getDay()
+                                const dowLabel = ['日','月','火','水','木','金','土'][dow]
+                                const isSun = dow === 0, isSat = dow === 6
+                                const entry = byDate[ds]
+                                const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
+                                const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
+                                const key = `${user.id}_${ds}`
+                                const editedIn = approvedEdits[key]?.inMins
+                                const editedOut = approvedEdits[key]?.outMins
+                                const inApprMins = editedIn ?? (entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
+                                const outApprMins = editedOut ?? (entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
+                                return (
+                                  <tr key={ds} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].join(' ')}>
+                                    <td className={styles.kinmuboDailyTd}>{mo}/{d}（{dowLabel}）</td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {inStr && outStr ? `${inStr} ～ ${outStr}` : inStr || outStr || '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTdAppr}>
+                                      {inStr && (
+                                        <span className={styles.apprCtrl}>
+                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'in', Math.max(0, (inApprMins ?? 0) - 15), entry.inLogId)}>−</button>
+                                          <span className={styles.apprTimeVal}>{inApprMins !== null ? minsToTimeStrK(inApprMins) : '—'}</span>
+                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'in', (inApprMins ?? 0) + 15, entry.inLogId)}>+</button>
+                                        </span>
+                                      )}
+                                      {inStr && outStr && <span className={styles.apprSep}>〜</span>}
+                                      {outStr && (
+                                        <span className={styles.apprCtrl}>
+                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'out', Math.max(0, (outApprMins ?? 0) - 15), entry.outLogId)}>−</button>
+                                          <span className={styles.apprTimeVal}>{outApprMins !== null ? minsToTimeStrK(outApprMins) : '—'}</span>
+                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'out', (outApprMins ?? 0) + 15, entry.outLogId)}>+</button>
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                       {rows.length === 0 ? (
                         <div className={styles.kinmuboNoData}>業務時間の入力なし</div>
                       ) : (

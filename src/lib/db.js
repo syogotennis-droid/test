@@ -378,6 +378,10 @@ export async function saveLogManual({ userId, workType, logType, date, time, app
   await addDoc(logsCol, docData)
 }
 
+export async function setApprovedTime(logId, approvedTime) {
+  await updateDoc(doc(db, 'logs', logId), { approved_time: approvedTime })
+}
+
 export async function updateLogTime(id, timeStr) {
   const d = await getDoc(doc(db, 'logs', id))
   if (!d.exists()) return
@@ -533,6 +537,20 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
   const minWage = await getMinWage()
 
+  function roundUp15str(t) {
+    if (!t) return ''
+    const [h, m] = t.split(':').map(Number)
+    const tot = h * 60 + m, rem = tot % 15
+    const r = rem === 0 ? tot : tot + (15 - rem)
+    return `${String(Math.floor(r / 60)).padStart(2, '0')}:${String(r % 60).padStart(2, '0')}`
+  }
+  function roundDown15str(t) {
+    if (!t) return ''
+    const [h, m] = t.split(':').map(Number)
+    const r = Math.floor((h * 60 + m) / 15) * 15
+    return `${String(Math.floor(r / 60)).padStart(2, '0')}:${String(r % 60).padStart(2, '0')}`
+  }
+
   const enc = new TextEncoder()
   const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
   const sheetXmls = []
@@ -546,10 +564,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
     const byDate = {}
     sortedLogs.forEach(log => {
-      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {} }
-      if (log.log_type === '出勤') byDate[log.date].ins.push(log.time || '')
-      else if (log.log_type === '退勤') {
+      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inApproved: null, outApproved: null }
+      if (log.log_type === '出勤') {
+        byDate[log.date].ins.push(log.time || '')
+        if (!byDate[log.date].inApproved && log.approved_time)
+          byDate[log.date].inApproved = log.approved_time.substring(0, 5)
+      } else if (log.log_type === '退勤') {
         byDate[log.date].outs.push(log.time || '')
+        if (log.approved_time) byDate[log.date].outApproved = log.approved_time.substring(0, 5)
         const items = getWorkItems(log)
         if (Object.keys(items).length > 0) {
           byDate[log.date].workItems = { ...items }  // replace entirely; last 退勤 wins
@@ -608,13 +630,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const hdrCell = (col, rn, text) =>
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
 
-    // 表1ヘッダー: 勤務時間 (A=日付 B=曜日 C=出勤 D=退勤 E=休憩 F=勤務時間 G=準備時間 H=合計)
+    // 表1ヘッダー: 勤務時間 (A=日付 B=曜日 C=出勤 D=退勤 E=休憩 F=勤務時間 G=準備時間 H=合計 I=出勤承認 J=退勤承認 K=承認勤務時間)
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
       hdrCell('C', T1_HDR, '出勤') + hdrCell('D', T1_HDR, '退勤') +
       hdrCell('E', T1_HDR, '休憩') + hdrCell('F', T1_HDR, '勤務時間') +
       hdrCell('G', T1_HDR, '準備時間') + hdrCell('H', T1_HDR, '合計') +
+      hdrCell('I', T1_HDR, '出勤（承認）') + hdrCell('J', T1_HDR, '退勤（承認）') +
+      hdrCell('K', T1_HDR, '承認勤務時間') +
       `</row>`
 
     // 表2ヘッダー: 業務別時間
@@ -649,6 +673,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           `<c r="C${r1}" s="${S.time.wd}"/>` + `<c r="D${r1}" s="${S.time.wd}"/>` +
           `<c r="E${r1}" s="${S.hours.wd}"/>` + `<c r="F${r1}" s="${S.hours.wd}"/>` +
           `<c r="G${r1}" s="${S.hours.wd}"/>` + `<c r="H${r1}" s="${S.hours.wd}"/>` +
+          `<c r="I${r1}" s="${S.time.wd}"/>` + `<c r="J${r1}" s="${S.time.wd}"/>` +
+          `<c r="K${r1}" s="${S.hours.wd}"/>` +
           `</row>`)
         const t2e = [`<c r="A${r2}" s="${S.date.wd}"/>`, `<c r="B${r2}" s="${S.dow.wd}"/>`]
         for (const col of allTypeCols) t2e.push(`<c r="${col}${r2}" s="${S.hours.wd}"/>`)
@@ -691,6 +717,20 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         t1c.push(hasAttendance
           ? `<c r="H${r1}" s="${S.hours[dt]}"><f>F${r1}+G${r1}</f></c>`
           : `<c r="H${r1}" s="${S.hours[dt]}"/>`)
+        // I: 出勤（承認）, J: 退勤（承認）, K: 承認勤務時間
+        const approvedInStr = entry?.inApproved || (inStr ? roundUp15str(inStr) : '')
+        const approvedOutStr = entry?.outApproved || (outStr ? roundDown15str(outStr) : '')
+        if (approvedInStr) {
+          const [ah, am] = approvedInStr.split(':').map(Number)
+          t1c.push(`<c r="I${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`)
+        } else { t1c.push(`<c r="I${r1}" s="${S.time[dt]}"/>`) }
+        if (approvedOutStr) {
+          const [ah, am] = approvedOutStr.split(':').map(Number)
+          t1c.push(`<c r="J${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`)
+        } else { t1c.push(`<c r="J${r1}" s="${S.time[dt]}"/>`) }
+        t1c.push(approvedInStr && approvedOutStr
+          ? `<c r="K${r1}" s="${S.hours[dt]}"><f>MAX(0,J${r1}-I${r1}-E${r1})</f></c>`
+          : `<c r="K${r1}" s="${S.hours[dt]}"/>`)
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
 
         // 表2行
@@ -726,7 +766,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     }
 
-    // 表1合計行 (E=合計 F=休憩 G=準備時間 H=勤務合計)
+    // 表1合計行 (E=休憩 F=勤務時間 G=準備時間 H=合計 K=承認勤務時間)
     const t1Tot =
       `<row r="${T1_TOT}">` +
       `<c r="A${T1_TOT}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
@@ -735,6 +775,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="F${T1_TOT}" s="${S.tot_hrs}"><f>SUM(F${T1_DATA}:F${T1_DATA_END})</f></c>` +
       `<c r="G${T1_TOT}" s="${S.tot_hrs}"><f>SUM(G${T1_DATA}:G${T1_DATA_END})</f></c>` +
       `<c r="H${T1_TOT}" s="${S.tot_hrs}"><f>SUM(H${T1_DATA}:H${T1_DATA_END})</f></c>` +
+      `<c r="I${T1_TOT}" s="${S.tot_lbl}"/><c r="J${T1_TOT}" s="${S.tot_lbl}"/>` +
+      `<c r="K${T1_TOT}" s="${S.tot_hrs}"><f>SUM(K${T1_DATA}:K${T1_DATA_END})</f></c>` +
       `</row>`
 
     // 表2合計行
@@ -860,7 +902,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
     // ci now equals Excel 1-based col number of typeTotalCol (last T2 column)
-    const maxColIdx = Math.max(8, ci) // 8 = col H (last T1 column)
+    const maxColIdx = Math.max(11, ci) // 11 = col K (last T1 column with 承認)
     const colsXml =
       `<cols>` +
       `<col min="1" max="1" width="13" customWidth="1"/>` +
