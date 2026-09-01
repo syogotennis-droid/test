@@ -1300,56 +1300,63 @@ function KinmuboTab({ today }) {
       const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
       const byDate = {}
       sortedLogs.forEach(log => {
-        if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inLogId: null, outLogId: null, inApproved: null, outApproved: null, firstWork: null, lastWork: null }
+        if (!byDate[log.date]) byDate[log.date] = { pendingIn: null, sessions: [] }
         if (log.log_type === '出勤') {
-          byDate[log.date].ins.push(log.time || '')
-          if (!byDate[log.date].inLogId) {
-            byDate[log.date].inLogId = log.id
-            byDate[log.date].inApproved = log.approved_time?.substring(0, 5) || null
-          }
+          byDate[log.date].pendingIn = log
         } else if (log.log_type === '退勤') {
-          byDate[log.date].outs.push(log.time || '')
-          byDate[log.date].outLogId = log.id
-          byDate[log.date].outApproved = log.approved_time?.substring(0, 5) || null
-          byDate[log.date].firstWork = log.first_work || null
-          byDate[log.date].lastWork = log.last_work || null
-          const items = getWorkItems(log)
-          if (Object.keys(items).length > 0) byDate[log.date].workItems = { ...items }
+          byDate[log.date].sessions.push({
+            inLog: byDate[log.date].pendingIn,
+            outLog: log,
+            workItems: getWorkItems(log),
+            firstWork: log.first_work || null,
+            lastWork: log.last_work || null,
+          })
+          byDate[log.date].pendingIn = null
+        }
+      })
+      Object.values(byDate).forEach(entry => {
+        if (entry.pendingIn) {
+          entry.sessions.push({ inLog: entry.pendingIn, outLog: null, workItems: {}, firstWork: null, lastWork: null })
+          entry.pendingIn = null
         }
       })
       const monthlyWdMins = {}, monthlyWeMins = {}
       Object.entries(byDate).forEach(([dateStr, entry]) => {
         const [yr, mo, d] = dateStr.split('-').map(Number)
         const isWe = new Date(yr, mo - 1, d).getDay() === 0
-        Object.entries(entry.workItems).forEach(([t, mm]) => {
-          if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + mm
-          else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + mm
+        entry.sessions.forEach(session => {
+          Object.entries(session.workItems).forEach(([t, mm]) => {
+            if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + mm
+            else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + mm
+          })
         })
       })
-      const workingDays = Object.values(byDate).filter(e => e.ins.length > 0 || e.outs.length > 0).length
+      const workingDays = Object.values(byDate).filter(e => e.sessions.length > 0).length
 
       // Compute approved-time cuts per type
       const typeCutWd = {}, typeCutWe = {}
       Object.entries(byDate).forEach(([dateStr, entry]) => {
-        const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
-        const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
-        if (!inStr && !outStr) return
-        const inApprMins = entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null
-        const outApprMins = entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null
-        const actualInMins = inStr ? timeStrToMinsK(inStr) : null
-        const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
-        const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
-        const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
         const [yr, mo, dNum] = dateStr.split('-').map(Number)
         const isWe = new Date(yr, mo - 1, dNum).getDay() === 0
-        if (startCut > 0 && entry.firstWork) {
-          if (isWe) typeCutWe[entry.firstWork] = (typeCutWe[entry.firstWork] || 0) + startCut
-          else typeCutWd[entry.firstWork] = (typeCutWd[entry.firstWork] || 0) + startCut
-        }
-        if (endCut > 0 && entry.lastWork) {
-          if (isWe) typeCutWe[entry.lastWork] = (typeCutWe[entry.lastWork] || 0) + endCut
-          else typeCutWd[entry.lastWork] = (typeCutWd[entry.lastWork] || 0) + endCut
-        }
+        entry.sessions.forEach(session => {
+          const inStr = session.inLog?.time?.substring(0, 5) || ''
+          const outStr = session.outLog?.time?.substring(0, 5) || ''
+          if (!inStr && !outStr) return
+          const inApprMins = session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null
+          const outApprMins = session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null
+          const actualInMins = inStr ? timeStrToMinsK(inStr) : null
+          const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
+          const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
+          const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
+          if (startCut > 0 && session.firstWork) {
+            if (isWe) typeCutWe[session.firstWork] = (typeCutWe[session.firstWork] || 0) + startCut
+            else typeCutWd[session.firstWork] = (typeCutWd[session.firstWork] || 0) + startCut
+          }
+          if (endCut > 0 && session.lastWork) {
+            if (isWe) typeCutWe[session.lastWork] = (typeCutWe[session.lastWork] || 0) + endCut
+            else typeCutWd[session.lastWork] = (typeCutWd[session.lastWork] || 0) + endCut
+          }
+        })
       })
 
       const rows = []
@@ -1401,28 +1408,24 @@ function KinmuboTab({ today }) {
     })
   }
 
-  async function handleApprovedChange(userId, dateStr, type, newMins, logId) {
-    const key = `${userId}_${dateStr}`
-    setApprovedEdits(prev => ({
-      ...prev,
-      [key]: { ...prev[key], [type === 'in' ? 'inMins' : 'outMins']: newMins }
-    }))
+  async function handleApprovedChange(logId, newMins) {
+    setApprovedEdits(prev => ({ ...prev, [logId]: newMins }))
     if (logId) {
       try { await setApprovedTime(logId, minsToTimeStrK(newMins)) } catch {}
     }
   }
 
-  async function handleBoundaryChange(userId, dateStr, field, value, logId) {
-    const key = `${userId}_${dateStr}`
+  async function handleBoundaryChange(outLogId, field, value) {
     setWorkBoundaryEdits(prev => ({
       ...prev,
-      [key]: { ...prev[key], [field]: value }
+      [outLogId]: { ...prev[outLogId], [field]: value }
     }))
-    if (logId) {
+    if (outLogId) {
       try {
-        const fw = field === 'firstWork' ? value : (workBoundaryEdits[key]?.firstWork ?? null)
-        const lw = field === 'lastWork' ? value : (workBoundaryEdits[key]?.lastWork ?? null)
-        await setFirstLastWork(logId, fw, lw)
+        const cur = workBoundaryEdits[outLogId] || {}
+        const fw = field === 'firstWork' ? value : (cur.firstWork ?? null)
+        const lw = field === 'lastWork' ? value : (cur.lastWork ?? null)
+        await setFirstLastWork(outLogId, fw, lw)
       } catch {}
     }
   }
@@ -1471,18 +1474,21 @@ function KinmuboTab({ today }) {
     if (!preview || preview.length === 0) return null
     let totalClockMins = 0
     const typeMap = {}
-    for (const { user, rows, byDate } of preview) {
-      for (const [ds, entry] of Object.entries(byDate)) {
-        const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
-        const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
-        if (!inStr && !outStr) continue
-        const key = `${user.id}_${ds}`
-        const editedIn = approvedEdits[key]?.inMins
-        const editedOut = approvedEdits[key]?.outMins
-        const inApprMins = editedIn ?? (entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
-        const outApprMins = editedOut ?? (entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
-        if (inApprMins !== null && outApprMins !== null) {
-          totalClockMins += Math.max(0, outApprMins - inApprMins)
+    for (const { rows, byDate } of preview) {
+      for (const entry of Object.values(byDate)) {
+        for (const session of entry.sessions) {
+          const inStr = session.inLog?.time?.substring(0, 5) || ''
+          const outStr = session.outLog?.time?.substring(0, 5) || ''
+          if (!inStr && !outStr) continue
+          const inLogId = session.inLog?.id
+          const outLogId = session.outLog?.id
+          const editedIn = inLogId ? approvedEdits[inLogId] : undefined
+          const editedOut = outLogId ? approvedEdits[outLogId] : undefined
+          const inApprMins = editedIn ?? (session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
+          const outApprMins = editedOut ?? (session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
+          if (inApprMins !== null && outApprMins !== null) {
+            totalClockMins += Math.max(0, outApprMins - inApprMins)
+          }
         }
       }
       for (const row of rows) {
@@ -1649,7 +1655,7 @@ function KinmuboTab({ today }) {
                   {isOpen && (
                     <div className={styles.kinmuboAccordionBody}>
                       {/* Daily punch & approved time table */}
-                      {Object.keys(byDate).sort().some(ds => byDate[ds].ins.length > 0 || byDate[ds].outs.length > 0) && (
+                      {Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0) && (
                         <div className={styles.kinmuboDailySection}>
                           <div className={styles.kinmuboDailySectionTitle}>打刻・承認時間</div>
                           <table className={styles.kinmuboDailyTable}>
@@ -1663,90 +1669,90 @@ function KinmuboTab({ today }) {
                               </tr>
                             </thead>
                             <tbody>
-                              {Object.keys(byDate).sort().filter(ds => {
-                                const e = byDate[ds]
-                                return e.ins.length > 0 || e.outs.length > 0
-                              }).map(ds => {
+                              {Object.keys(byDate).sort().filter(ds => byDate[ds].sessions.length > 0).map(ds => {
                                 const [y, mo, d] = ds.split('-').map(Number)
                                 const dow = new Date(y, mo - 1, d).getDay()
                                 const dowLabel = ['日','月','火','水','木','金','土'][dow]
                                 const isSun = dow === 0, isSat = dow === 6
                                 const entry = byDate[ds]
-                                const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
-                                const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
-                                const key = `${user.id}_${ds}`
-                                const editedIn = approvedEdits[key]?.inMins
-                                const editedOut = approvedEdits[key]?.outMins
-                                const inApprMins = editedIn ?? (entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
-                                const outApprMins = editedOut ?? (entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
-                                const actualInMins = inStr ? timeStrToMinsK(inStr) : null
-                                const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
-                                const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
-                                const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
-                                const boundEdit = workBoundaryEdits[key] || {}
-                                const resolvedFirst = boundEdit.firstWork ?? entry.firstWork
-                                const resolvedLast = boundEdit.lastWork ?? entry.lastWork
-                                const workTypeOptions = Object.keys(entry.workItems).filter(t => !new Set(['休憩']).has(t) && entry.workItems[t] > 0)
-                                const showBoundary = workTypeOptions.length >= 1 && entry.outLogId
-                                return (
-                                  <tr key={ds} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].join(' ')}>
-                                    <td className={styles.kinmuboDailyTd}>{mo}/{d}（{dowLabel}）</td>
-                                    <td className={styles.kinmuboDailyTd}>
-                                      {inStr && outStr ? `${inStr} ～ ${outStr}` : inStr || outStr || '—'}
-                                    </td>
-                                    <td className={styles.kinmuboDailyTdAppr}>
-                                      {inStr && (
-                                        <span className={styles.apprCtrl}>
-                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'in', Math.max(0, (inApprMins ?? 0) - 15), entry.inLogId)}>−</button>
-                                          <span className={styles.apprTimeVal}>{inApprMins !== null ? minsToTimeStrK(inApprMins) : '—'}</span>
-                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'in', (inApprMins ?? 0) + 15, entry.inLogId)}>+</button>
-                                        </span>
-                                      )}
-                                      {inStr && outStr && <span className={styles.apprSep}>〜</span>}
-                                      {outStr && (
-                                        <span className={styles.apprCtrl}>
-                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'out', Math.max(0, (outApprMins ?? 0) - 15), entry.outLogId)}>−</button>
-                                          <span className={styles.apprTimeVal}>{outApprMins !== null ? minsToTimeStrK(outApprMins) : '—'}</span>
-                                          <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'out', (outApprMins ?? 0) + 15, entry.outLogId)}>+</button>
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className={styles.kinmuboDailyTd}>
-                                      {showBoundary ? (
-                                        <div className={styles.boundarySelectWrap}>
-                                          <select
-                                            className={styles.boundarySelect}
-                                            value={resolvedFirst || ''}
-                                            onChange={e => handleBoundaryChange(user.id, ds, 'firstWork', e.target.value || null, entry.outLogId)}
-                                          >
-                                            <option value="">—</option>
-                                            {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                                          </select>
-                                          {startCut > 0 && resolvedFirst && (
-                                            <span className={styles.cutBadge}>−{fmtMins(startCut)}</span>
-                                          )}
-                                        </div>
-                                      ) : '—'}
-                                    </td>
-                                    <td className={styles.kinmuboDailyTd}>
-                                      {showBoundary ? (
-                                        <div className={styles.boundarySelectWrap}>
-                                          <select
-                                            className={styles.boundarySelect}
-                                            value={resolvedLast || ''}
-                                            onChange={e => handleBoundaryChange(user.id, ds, 'lastWork', e.target.value || null, entry.outLogId)}
-                                          >
-                                            <option value="">—</option>
-                                            {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                                          </select>
-                                          {endCut > 0 && resolvedLast && (
-                                            <span className={styles.cutBadge}>−{fmtMins(endCut)}</span>
-                                          )}
-                                        </div>
-                                      ) : '—'}
-                                    </td>
-                                  </tr>
-                                )
+                                return entry.sessions.map((session, si) => {
+                                  const inStr = session.inLog?.time?.substring(0, 5) || ''
+                                  const outStr = session.outLog?.time?.substring(0, 5) || ''
+                                  const inLogId = session.inLog?.id
+                                  const outLogId = session.outLog?.id
+                                  const editedIn = inLogId ? approvedEdits[inLogId] : undefined
+                                  const editedOut = outLogId ? approvedEdits[outLogId] : undefined
+                                  const inApprMins = editedIn ?? (session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
+                                  const outApprMins = editedOut ?? (session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
+                                  const actualInMins = inStr ? timeStrToMinsK(inStr) : null
+                                  const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
+                                  const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
+                                  const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
+                                  const boundEdit = outLogId ? (workBoundaryEdits[outLogId] || {}) : {}
+                                  const resolvedFirst = boundEdit.firstWork ?? session.firstWork
+                                  const resolvedLast = boundEdit.lastWork ?? session.lastWork
+                                  const workTypeOptions = Object.keys(session.workItems).filter(t => !new Set(['休憩']).has(t) && session.workItems[t] > 0)
+                                  const showBoundary = workTypeOptions.length >= 1 && outLogId
+                                  return (
+                                    <tr key={`${ds}-${si}`} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].join(' ')}>
+                                      <td className={styles.kinmuboDailyTd}>{si === 0 ? `${mo}/${d}（${dowLabel}）` : ''}</td>
+                                      <td className={styles.kinmuboDailyTd}>
+                                        {inStr && outStr ? `${inStr} ～ ${outStr}` : inStr || outStr || '—'}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTdAppr}>
+                                        {inStr && (
+                                          <span className={styles.apprCtrl}>
+                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, Math.max(0, (inApprMins ?? 0) - 15))}>−</button>
+                                            <span className={styles.apprTimeVal}>{inApprMins !== null ? minsToTimeStrK(inApprMins) : '—'}</span>
+                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, (inApprMins ?? 0) + 15)}>+</button>
+                                          </span>
+                                        )}
+                                        {inStr && outStr && <span className={styles.apprSep}>〜</span>}
+                                        {outStr && (
+                                          <span className={styles.apprCtrl}>
+                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, Math.max(0, (outApprMins ?? 0) - 15))}>−</button>
+                                            <span className={styles.apprTimeVal}>{outApprMins !== null ? minsToTimeStrK(outApprMins) : '—'}</span>
+                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, (outApprMins ?? 0) + 15)}>+</button>
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTd}>
+                                        {showBoundary ? (
+                                          <div className={styles.boundarySelectWrap}>
+                                            <select
+                                              className={styles.boundarySelect}
+                                              value={resolvedFirst || ''}
+                                              onChange={e => handleBoundaryChange(outLogId, 'firstWork', e.target.value || null)}
+                                            >
+                                              <option value="">—</option>
+                                              {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                            {startCut > 0 && resolvedFirst && (
+                                              <span className={styles.cutBadge}>−{fmtMins(startCut)}</span>
+                                            )}
+                                          </div>
+                                        ) : '—'}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTd}>
+                                        {showBoundary ? (
+                                          <div className={styles.boundarySelectWrap}>
+                                            <select
+                                              className={styles.boundarySelect}
+                                              value={resolvedLast || ''}
+                                              onChange={e => handleBoundaryChange(outLogId, 'lastWork', e.target.value || null)}
+                                            >
+                                              <option value="">—</option>
+                                              {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                            {endCut > 0 && resolvedLast && (
+                                              <span className={styles.cutBadge}>−{fmtMins(endCut)}</span>
+                                            )}
+                                          </div>
+                                        ) : '—'}
+                                      </td>
+                                    </tr>
+                                  )
+                                })
                               })}
                             </tbody>
                           </table>

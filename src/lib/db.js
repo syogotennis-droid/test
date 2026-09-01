@@ -689,15 +689,23 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       typeColMap[t].hasSunday ? [typeColMap[t].wd, typeColMap[t].su] : [typeColMap[t].wd]
     )
 
-    // Row layout (fixed):
-    // [表1: 勤務時間]   row4 hdr, 5-35 data, 36 tot, 37 blank
-    // [表2: 業務別時間] row38 hdr, 39-69 data, 70 tot, 71 blank
-    // [表3: 給与明細]   row72 hdr, 73+ rows
-    const T1_HDR = 4, T1_DATA = 5, T1_TOT = 36
-    const T2_HDR = 38, T2_DATA = 39, T2_TOT = 70
-    const T3_HDR = 72
-    const T1_DATA_END = T1_DATA + lastDay - 1
-    const T2_DATA_END = T2_DATA + lastDay - 1
+    // Row layout: dynamic — one row per session (multiple per day if multi-session)
+    const T1_HDR = 4, T1_DATA = 5
+    // Build per-day session list
+    const dayRows = []
+    for (let d = 1; d <= lastDay; d++) {
+      const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
+      const entry = byDate[dateStr]
+      dayRows.push({ d, dateStr, sessions: entry?.sessions || [] })
+    }
+    const totalDataRows = dayRows.reduce((s, dr) => s + Math.max(1, dr.sessions.length), 0)
+    const T1_TOT = T1_DATA + totalDataRows
+    const T2_HDR = T1_TOT + 2
+    const T2_DATA = T2_HDR + 1
+    const T2_TOT = T2_DATA + totalDataRows
+    const T3_HDR = T2_TOT + 2
+    const T1_DATA_END = T1_TOT - 1
+    const T2_DATA_END = T2_TOT - 1
 
     const row1 = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿')}</t></is></c></row>`
     const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
@@ -705,7 +713,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const hdrCell = (col, rn, text) =>
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
 
-    // 表1ヘッダー: 勤務時間 (A=日付 B=曜日 C=出勤 D=退勤 E=休憩 F=勤務時間 G=準備時間 H=合計 I=出勤承認 J=退勤承認 K=承認勤務時間)
+    // 表1ヘッダー
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
@@ -716,7 +724,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       hdrCell('K', T1_HDR, '承認勤務時間') +
       `</row>`
 
-    // 表2ヘッダー: 業務別時間
+    // 表2ヘッダー
     const t2HdrCells = [hdrCell('A', T2_HDR, '日付'), hdrCell('B', T2_HDR, '曜日')]
     for (const type of workTypes) {
       const { wd, su, hasSunday } = typeColMap[type]
@@ -732,113 +740,92 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     t2HdrCells.push(hdrCell(typeTotalCol, T2_HDR, '時間計'))
     const t2Hdr = `<row r="${T2_HDR}" ht="42">${t2HdrCells.join('')}</row>`
 
-    // データ行（表1・表2同時に生成）
+    // データ行（1セッション=1行、同日複数行あり）
     const t1Rows = [], t2Rows = []
-    for (let d = 1; d <= 31; d++) {
-      const r1 = T1_DATA + d - 1
-      const r2 = T2_DATA + d - 1
-      const isValid = d <= lastDay
-      const dow = isValid ? new Date(ym_y, ym_m - 1, d).getDay() : 1
+    let r1 = T1_DATA, r2 = T2_DATA
+    for (const dr of dayRows) {
+      const { d, sessions } = dr
+      const dow = new Date(ym_y, ym_m - 1, d).getDay()
       const isSat = dow === 6, isSun = dow === 0
       const dt = isSun ? 'su' : (isSat ? 'sa' : 'wd')
+      const sessionsToShow = sessions.length > 0 ? sessions : [null]
 
-      if (!isValid) {
-        t1Rows.push(`<row r="${r1}">` +
-          `<c r="A${r1}" s="${S.date.wd}"/>` + `<c r="B${r1}" s="${S.dow.wd}"/>` +
-          `<c r="C${r1}" s="${S.time.wd}"/>` + `<c r="D${r1}" s="${S.time.wd}"/>` +
-          `<c r="E${r1}" s="${S.hours.wd}"/>` + `<c r="F${r1}" s="${S.hours.wd}"/>` +
-          `<c r="G${r1}" s="${S.hours.wd}"/>` + `<c r="H${r1}" s="${S.hours.wd}"/>` +
-          `<c r="I${r1}" s="${S.time.wd}"/>` + `<c r="J${r1}" s="${S.time.wd}"/>` +
-          `<c r="K${r1}" s="${S.hours.wd}"/>` +
-          `</row>`)
-        const t2e = [`<c r="A${r2}" s="${S.date.wd}"/>`, `<c r="B${r2}" s="${S.dow.wd}"/>`]
-        for (const col of allTypeCols) t2e.push(`<c r="${col}${r2}" s="${S.hours.wd}"/>`)
-        t2e.push(`<c r="${typeTotalCol}${r2}" s="${S.hours.wd}"/>`)
-        t2Rows.push(`<row r="${r2}">${t2e.join('')}</row>`)
-      } else {
-        const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
-        const entry = byDate[dateStr]
-        const inStr = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-        const outStr = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-        const wi = entry?.workItems || {}
+      sessionsToShow.forEach((session, si) => {
+        const isFirst = si === 0
+        const t1c = [], t2c = []
 
-        // 表1行 (A=日付 B=曜日 C=出勤 D=退勤 E=合計 F=休憩 G=準備時間 H=勤務合計)
-        const t1c = []
-        t1c.push(`<c r="A${r1}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
-        t1c.push(`<c r="B${r1}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
-        if (inStr) {
-          const [h, mi] = inStr.split(':').map(Number)
-          t1c.push(`<c r="C${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`)
-        } else { t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`) }
-        if (outStr) {
-          const [h, mi] = outStr.split(':').map(Number)
-          t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`)
-        } else { t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`) }
-        // E: 休憩
-        const breakMins = wi['休憩'] || 0
-        t1c.push(breakMins > 0
-          ? `<c r="E${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>`
-          : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
-        // F: 勤務時間 = 退勤 - 出勤 - 休憩
-        t1c.push(inStr && outStr
-          ? `<c r="F${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1}-E${r1})</f></c>`
-          : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
-        // G: 準備時間 = 前後5分 = 10分 (出勤 or 退勤がある日のみ)
-        const hasAttendance = (inStr || outStr)
-        t1c.push(hasAttendance
-          ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>`
-          : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
-        // H: 合計 = 勤務時間 + 準備時間
-        t1c.push(hasAttendance
-          ? `<c r="H${r1}" s="${S.hours[dt]}"><f>F${r1}+G${r1}</f></c>`
-          : `<c r="H${r1}" s="${S.hours[dt]}"/>`)
-        // I: 出勤（承認）, J: 退勤（承認）, K: 承認勤務時間
-        const approvedInStr = entry?.inApproved || (inStr ? roundUp15str(inStr) : '')
-        const approvedOutStr = entry?.outApproved || (outStr ? roundDown15str(outStr) : '')
-        if (approvedInStr) {
-          const [ah, am] = approvedInStr.split(':').map(Number)
-          t1c.push(`<c r="I${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`)
-        } else { t1c.push(`<c r="I${r1}" s="${S.time[dt]}"/>`) }
-        if (approvedOutStr) {
-          const [ah, am] = approvedOutStr.split(':').map(Number)
-          t1c.push(`<c r="J${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`)
-        } else { t1c.push(`<c r="J${r1}" s="${S.time[dt]}"/>`) }
-        t1c.push(approvedInStr && approvedOutStr
-          ? `<c r="K${r1}" s="${S.hours[dt]}"><f>MAX(0,J${r1}-I${r1}-E${r1})</f></c>`
-          : `<c r="K${r1}" s="${S.hours[dt]}"/>`)
-        t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
-
-        // 表2行
-        const t2c = []
-        t2c.push(`<c r="A${r2}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
-        t2c.push(`<c r="B${r2}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
-        for (const type of workTypes) {
-          const { wd, su, hasSunday } = typeColMap[type]
-          const mins = wi[type] || 0
-          const hours = mins / 60
-          if (hasSunday) {
-            if (isSun) {
-              t2c.push(`<c r="${wd}${r2}" s="${S.hours[dt]}"/>`)
-              t2c.push(mins > 0
-                ? `<c r="${su}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>`
-                : `<c r="${su}${r2}" s="${S.hours[dt]}"/>`)
-            } else {
-              t2c.push(mins > 0
-                ? `<c r="${wd}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>`
-                : `<c r="${wd}${r2}" s="${S.hours[dt]}"/>`)
-              t2c.push(`<c r="${su}${r2}" s="${S.hours[dt]}"/>`)
-            }
-          } else {
-            t2c.push(mins > 0
-              ? `<c r="${wd}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>`
-              : `<c r="${wd}${r2}" s="${S.hours[dt]}"/>`)
-          }
+        // 日付・曜日（最初のセッション行のみ値あり）
+        if (isFirst) {
+          t1c.push(`<c r="A${r1}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
+          t1c.push(`<c r="B${r1}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
+          t2c.push(`<c r="A${r2}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
+          t2c.push(`<c r="B${r2}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
+        } else {
+          t1c.push(`<c r="A${r1}" s="${S.date[dt]}"/>`, `<c r="B${r1}" s="${S.dow[dt]}"/>`)
+          t2c.push(`<c r="A${r2}" s="${S.date[dt]}"/>`, `<c r="B${r2}" s="${S.dow[dt]}"/>`)
         }
+
+        if (session) {
+          const inStr = session.inLog?.time?.substring(0, 5) || ''
+          const outStr = session.outLog?.time?.substring(0, 5) || ''
+          const wi = session.workItems || {}
+          const hasAtt = !!(inStr || outStr)
+
+          if (inStr) { const [h, mi] = inStr.split(':').map(Number); t1c.push(`<c r="C${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
+          else t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`)
+          if (outStr) { const [h, mi] = outStr.split(':').map(Number); t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
+          else t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`)
+
+          const breakMins = wi['休憩'] || 0
+          t1c.push(breakMins > 0 ? `<c r="E${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>` : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
+          t1c.push(inStr && outStr ? `<c r="F${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1}-E${r1})</f></c>` : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
+          // 準備時間: 10分/日、その日の最初のセッション行のみ
+          t1c.push(isFirst && hasAtt ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
+          t1c.push(hasAtt ? `<c r="H${r1}" s="${S.hours[dt]}"><f>F${r1}+G${r1}</f></c>` : `<c r="H${r1}" s="${S.hours[dt]}"/>`)
+
+          const approvedInStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')
+          const approvedOutStr = session.outLog?.approved_time?.substring(0, 5) || (outStr ? roundDown15str(outStr) : '')
+          if (approvedInStr) { const [ah, am] = approvedInStr.split(':').map(Number); t1c.push(`<c r="I${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`) }
+          else t1c.push(`<c r="I${r1}" s="${S.time[dt]}"/>`)
+          if (approvedOutStr) { const [ah, am] = approvedOutStr.split(':').map(Number); t1c.push(`<c r="J${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`) }
+          else t1c.push(`<c r="J${r1}" s="${S.time[dt]}"/>`)
+          t1c.push(approvedInStr && approvedOutStr ? `<c r="K${r1}" s="${S.hours[dt]}"><f>MAX(0,J${r1}-I${r1}-E${r1})</f></c>` : `<c r="K${r1}" s="${S.hours[dt]}"/>`)
+
+          for (const type of workTypes) {
+            const { wd: wdCol, su: suCol, hasSunday } = typeColMap[type]
+            const mins = wi[type] || 0
+            const hours = mins / 60
+            if (hasSunday) {
+              if (isSun) {
+                t2c.push(`<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
+                t2c.push(mins > 0 ? `<c r="${suCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${suCol}${r2}" s="${S.hours[dt]}"/>`)
+              } else {
+                t2c.push(mins > 0 ? `<c r="${wdCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
+                t2c.push(`<c r="${suCol}${r2}" s="${S.hours[dt]}"/>`)
+              }
+            } else {
+              t2c.push(mins > 0 ? `<c r="${wdCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
+            }
+          }
+        } else {
+          // 空行（その日勤務なし）
+          t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`, `<c r="D${r1}" s="${S.time[dt]}"/>`)
+          t1c.push(`<c r="E${r1}" s="${S.hours[dt]}"/>`, `<c r="F${r1}" s="${S.hours[dt]}"/>`)
+          t1c.push(`<c r="G${r1}" s="${S.hours[dt]}"/>`, `<c r="H${r1}" s="${S.hours[dt]}"/>`)
+          t1c.push(`<c r="I${r1}" s="${S.time[dt]}"/>`, `<c r="J${r1}" s="${S.time[dt]}"/>`)
+          t1c.push(`<c r="K${r1}" s="${S.hours[dt]}"/>`)
+          for (const col of allTypeCols) t2c.push(`<c r="${col}${r2}" s="${S.hours[dt]}"/>`)
+        }
+
         t2c.push(allTypeCols.length > 0
           ? `<c r="${typeTotalCol}${r2}" s="${S.hours[dt]}"><f>SUM(${allTypeCols.map(c => c + r2).join(',')})</f></c>`
           : `<c r="${typeTotalCol}${r2}" s="${S.hours[dt]}"/>`)
+
+        t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
         t2Rows.push(`<row r="${r2}">${t2c.join('')}</row>`)
-      }
+        r1++
+        r2++
+      })
     }
 
     // 表1合計行 (E=休憩 F=勤務時間 G=準備時間 H=合計 K=承認勤務時間)
