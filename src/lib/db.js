@@ -883,7 +883,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           const wdPay = Math.round(wdHours * normalRate)
           totalPayHours += wdHours; totalPayAmount += wdPay
           const bCell = cutWd > 0
-            ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}-${cutWd / 1440}</f></c>`
+            ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>MAX(0,${typeColMap[type].wd}${T2_TOT}-${cutWd / 1440})</f></c>`
             : `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>`
           payRows.push(
             `<row r="${payRowIdx}">` +
@@ -901,7 +901,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           const wePay = Math.round(weHours * sundayRate)
           totalPayHours += weHours; totalPayAmount += wePay
           const bCell = cutWe > 0
-            ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].su}${T2_TOT}-${cutWe / 1440}</f></c>`
+            ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>MAX(0,${typeColMap[type].su}${T2_TOT}-${cutWe / 1440})</f></c>`
             : `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].su}${T2_TOT}</f></c>`
           payRows.push(
             `<row r="${payRowIdx}">` +
@@ -921,7 +921,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         const totalPay = Math.round(totalHours * normalRate)
         totalPayHours += totalHours; totalPayAmount += totalPay
         const bCell = totalCut > 0
-          ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}-${totalCut / 1440}</f></c>`
+          ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>MAX(0,${typeColMap[type].wd}${T2_TOT}-${totalCut / 1440})</f></c>`
           : `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>`
         payRows.push(
           `<row r="${payRowIdx}">` +
