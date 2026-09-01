@@ -230,11 +230,16 @@ function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTim
   )
 }
 
-function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onClose }) {
+function SubPickerModal({ groupKey, members, workTimes, workingMinutes, onSetTime, onClear, onClose }) {
   const [editing, setEditing] = useState(null)
   const [hStr, setHStr] = useState('')
   const [mStr, setMStr] = useState('')
   const [focus, setFocus] = useState('h')
+
+  const otherTotal = Object.entries(workTimes)
+    .filter(([k]) => k !== editing)
+    .reduce((sum, [, t]) => sum + (t?.h || 0) * 60 + (t?.m || 0), 0)
+  const remainingMins = workingMinutes != null ? Math.max(0, workingMinutes - otherTotal) : null
 
   function commitCurrent() {
     if (editing) {
@@ -320,6 +325,18 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
                   <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
                   <span className={styles.timeDisplayUnit}>分</span>
                 </button>
+                {remainingMins != null && (
+                  <button
+                    className={styles.remainingBtn}
+                    onClick={() => {
+                      const rh = Math.floor(remainingMins / 60)
+                      const rm = remainingMins % 60
+                      setHStr(rh > 0 ? String(rh) : '')
+                      setMStr(rm > 0 ? String(rm) : '')
+                      setFocus(rh > 0 ? 'h' : 'm')
+                    }}
+                  >残り{fmtMinutes(remainingMins)}</button>
+                )}
               </div>
               <div className={styles.timeNumGrid}>
                 {TIME_KEYS.map((k, i) => (
@@ -335,7 +352,7 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
           )}
         </div>
 
-        <button className={styles.subPickerCancel} onClick={() => { commitCurrent(); onClose() }}>OK</button>
+        <button className={styles.timeModalOk} onClick={() => { commitCurrent(); onClose() }}>OK</button>
       </div>
     </div>
   )
@@ -539,6 +556,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           groupKey={subPickerGroup.key}
           members={subPickerGroup.members}
           workTimes={workTimes}
+          workingMinutes={workingMinutes}
           onSetTime={setTime}
           onClear={id => {
             setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
