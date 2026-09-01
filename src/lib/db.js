@@ -574,20 +574,25 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
     const byDate = {}
     sortedLogs.forEach(log => {
-      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inApproved: null, outApproved: null, firstWork: null, lastWork: null }
+      if (!byDate[log.date]) byDate[log.date] = { pendingIn: null, sessions: [] }
       if (log.log_type === '出勤') {
-        byDate[log.date].ins.push(log.time || '')
-        if (!byDate[log.date].inApproved && log.approved_time)
-          byDate[log.date].inApproved = log.approved_time.substring(0, 5)
+        byDate[log.date].pendingIn = log
       } else if (log.log_type === '退勤') {
-        byDate[log.date].outs.push(log.time || '')
-        if (log.approved_time) byDate[log.date].outApproved = log.approved_time.substring(0, 5)
-        if (log.first_work) byDate[log.date].firstWork = log.first_work
-        if (log.last_work) byDate[log.date].lastWork = log.last_work
-        const items = getWorkItems(log)
-        if (Object.keys(items).length > 0) {
-          byDate[log.date].workItems = { ...items }  // replace entirely; last 退勤 wins
-        }
+        byDate[log.date].sessions.push({
+          inLog: byDate[log.date].pendingIn,
+          outLog: log,
+          workItems: getWorkItems(log),
+          firstWork: log.first_work || null,
+          lastWork: log.last_work || null,
+        })
+        byDate[log.date].pendingIn = null
+      }
+    })
+    // Handle unpaired clock-ins (still checked in)
+    Object.values(byDate).forEach(entry => {
+      if (entry.pendingIn) {
+        entry.sessions.push({ inLog: entry.pendingIn, outLog: null, workItems: {}, firstWork: null, lastWork: null })
+        entry.pendingIn = null
       }
     })
 
@@ -596,9 +601,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     Object.entries(byDate).forEach(([dateStr, entry]) => {
       const [y, mo, d] = dateStr.split('-').map(Number)
       const isWe = new Date(y, mo - 1, d).getDay() === 0  // Sunday only
-      Object.entries(entry.workItems).forEach(([t, m]) => {
-        if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + m
-        else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + m
+      entry.sessions.forEach(session => {
+        Object.entries(session.workItems).forEach(([t, m]) => {
+          if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + m
+          else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + m
+        })
       })
     })
     const monthlyMins = {}
@@ -610,18 +617,20 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       .filter(t => !EXCL.has(t) && (monthlyMins[t] || 0) > 0)
 
     // Count working days (出勤 or 退勤 exists that day) for 前後5分 min-wage calc
-    const workingDays = Object.values(byDate).filter(e => e.ins.length > 0 || e.outs.length > 0).length
+    const workingDays = Object.values(byDate).filter(e => e.sessions.length > 0).length
 
     // Accumulate global summary data
     for (const entry of Object.values(byDate)) {
-      const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
-      const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
-      const inApprStr = entry.inApproved || (inStr ? roundUp15str(inStr) : '')
-      const outApprStr = entry.outApproved || (outStr ? roundDown15str(outStr) : '')
-      if (inApprStr && outApprStr) {
-        const [ih, im] = inApprStr.split(':').map(Number)
-        const [oh, om] = outApprStr.split(':').map(Number)
-        summaryData.totalClockMins += Math.max(0, (oh * 60 + om) - (ih * 60 + im))
+      for (const session of entry.sessions) {
+        const inStr = session.inLog?.time?.substring(0, 5) || ''
+        const outStr = session.outLog?.time?.substring(0, 5) || ''
+        const inApprStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')
+        const outApprStr = session.outLog?.approved_time?.substring(0, 5) || (outStr ? roundDown15str(outStr) : '')
+        if (inApprStr && outApprStr) {
+          const [ih, im] = inApprStr.split(':').map(Number)
+          const [oh, om] = outApprStr.split(':').map(Number)
+          summaryData.totalClockMins += Math.max(0, (oh * 60 + om) - (ih * 60 + im))
+        }
       }
     }
     for (const type of workTypes) {
@@ -641,27 +650,29 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // Compute approved-time cuts per type (wd/we split)
     const typeCutWdMins = {}, typeCutWeMins = {}
     Object.entries(byDate).forEach(([dateStr, entry]) => {
-      const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
-      const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
-      if (!inStr && !outStr) return
-      const inApprStr = entry.inApproved || (inStr ? roundUp15str(inStr) : '')
-      const outApprStr = entry.outApproved || (outStr ? roundDown15str(outStr) : '')
-      const actualInMins = inStr ? (Number(inStr.split(':')[0]) * 60 + Number(inStr.split(':')[1])) : null
-      const actualOutMins = outStr ? (Number(outStr.split(':')[0]) * 60 + Number(outStr.split(':')[1])) : null
-      const apprInMins = inApprStr ? (Number(inApprStr.split(':')[0]) * 60 + Number(inApprStr.split(':')[1])) : null
-      const apprOutMins = outApprStr ? (Number(outApprStr.split(':')[0]) * 60 + Number(outApprStr.split(':')[1])) : null
-      const startCut = (apprInMins != null && actualInMins != null) ? Math.max(0, apprInMins - actualInMins) : 0
-      const endCut = (apprOutMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - apprOutMins) : 0
       const [yr, mo, d] = dateStr.split('-').map(Number)
       const isWe = new Date(yr, mo - 1, d).getDay() === 0
-      if (startCut > 0 && entry.firstWork) {
-        if (isWe) typeCutWeMins[entry.firstWork] = (typeCutWeMins[entry.firstWork] || 0) + startCut
-        else typeCutWdMins[entry.firstWork] = (typeCutWdMins[entry.firstWork] || 0) + startCut
-      }
-      if (endCut > 0 && entry.lastWork) {
-        if (isWe) typeCutWeMins[entry.lastWork] = (typeCutWeMins[entry.lastWork] || 0) + endCut
-        else typeCutWdMins[entry.lastWork] = (typeCutWdMins[entry.lastWork] || 0) + endCut
-      }
+      entry.sessions.forEach(session => {
+        const inStr = session.inLog?.time?.substring(0, 5) || ''
+        const outStr = session.outLog?.time?.substring(0, 5) || ''
+        if (!inStr && !outStr) return
+        const inApprStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')
+        const outApprStr = session.outLog?.approved_time?.substring(0, 5) || (outStr ? roundDown15str(outStr) : '')
+        const actualInMins = inStr ? (Number(inStr.split(':')[0]) * 60 + Number(inStr.split(':')[1])) : null
+        const actualOutMins = outStr ? (Number(outStr.split(':')[0]) * 60 + Number(outStr.split(':')[1])) : null
+        const apprInMins = inApprStr ? (Number(inApprStr.split(':')[0]) * 60 + Number(inApprStr.split(':')[1])) : null
+        const apprOutMins = outApprStr ? (Number(outApprStr.split(':')[0]) * 60 + Number(outApprStr.split(':')[1])) : null
+        const startCut = (apprInMins != null && actualInMins != null) ? Math.max(0, apprInMins - actualInMins) : 0
+        const endCut = (apprOutMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - apprOutMins) : 0
+        if (startCut > 0 && session.firstWork) {
+          if (isWe) typeCutWeMins[session.firstWork] = (typeCutWeMins[session.firstWork] || 0) + startCut
+          else typeCutWdMins[session.firstWork] = (typeCutWdMins[session.firstWork] || 0) + startCut
+        }
+        if (endCut > 0 && session.lastWork) {
+          if (isWe) typeCutWeMins[session.lastWork] = (typeCutWeMins[session.lastWork] || 0) + endCut
+          else typeCutWdMins[session.lastWork] = (typeCutWdMins[session.lastWork] || 0) + endCut
+        }
+      })
     })
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
