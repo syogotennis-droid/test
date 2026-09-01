@@ -628,7 +628,7 @@
   background: #fff;
   border-radius: 20px;
   padding: 24px 20px 20px;
-  width: min(420px, 92vw);
+  width: min(700px, 94vw);
   max-height: 90vh;
   overflow-y: auto;
   display: flex;
@@ -643,10 +643,19 @@
   text-align: center;
 }
 
+.subPickerSplit {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  align-items: flex-start;
+}
+
 .subPickerList {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 180px;
+  flex: 0 0 auto;
 }
 
 .subPickerRow {
@@ -689,11 +698,13 @@
 }
 
 .subPickerInputArea {
-  border-top: 1.5px solid #e2e8f0;
-  padding-top: 12px;
+  border-left: 1.5px solid #e2e8f0;
+  padding-left: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .subPickerInputLabel {
