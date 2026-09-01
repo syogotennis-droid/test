@@ -383,6 +383,14 @@
   cursor: not-allowed;
 }
 
+.skipHint {
+  flex-shrink: 0;
+  color: #888;
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 6px 16px;
+}
+
 .timeError {
   flex-shrink: 0;
   color: #e53935;

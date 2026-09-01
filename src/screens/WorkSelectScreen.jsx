@@ -422,8 +422,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const resolvedLastWork = workActiveItems.length === 1 ? workActiveItems[0] : lastWork
 
   async function handleConfirm() {
-    if (activeItems.length === 0 || saving) return
-    if (workingMinutes !== null && totalInputMinutes !== workingMinutes) {
+    if (saving) return
+    if (activeItems.length > 0 && workingMinutes !== null && totalInputMinutes !== workingMinutes) {
       setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
       return
     }
@@ -534,14 +534,17 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           <span className={styles.totalUnit}>分</span>
         </div>
 
+        {activeItems.length === 0 && !timeError && (
+          <div className={styles.skipHint}>業務時間の入力は後で管理者が行えます</div>
+        )}
         {timeError && <div className={styles.timeError}>{timeError}</div>}
 
         <div className={styles.bottomRow}>
           <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
           <button
-            className={[styles.submitButton, (activeItems.length === 0 || saving) ? styles.submitDisabled : ''].join(' ')}
+            className={[styles.submitButton, saving ? styles.submitDisabled : ''].join(' ')}
             onClick={handleConfirm}
-            disabled={activeItems.length === 0 || saving}
+            disabled={saving}
           >
             <ExitIcon size={54} color="#fff" />
             <span>{saving ? '記録中...' : '退勤を登録'}</span>
