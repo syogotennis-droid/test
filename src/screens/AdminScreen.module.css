@@ -870,6 +870,56 @@
   background: #f8fafc;
 }
 
+/* Multi-session blocks */
+.sessionBlock {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px 8px;
+  margin-bottom: 10px;
+  background: #f8fafc;
+}
+
+.sessionBlockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sessionBlockLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sessionRemoveBtn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.sessionRemoveBtn:hover { background: #fee2e2; }
+
+.addSessionBtn {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 14px;
+  background: none;
+  border: 1.5px dashed #94a3b8;
+  border-radius: 8px;
+  color: #475569;
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-align: center;
+}
+.addSessionBtn:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+
 /* Time row 2-col */
 .timeRow {
   display: grid;

@@ -799,8 +799,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const dow = new Date(year, month, day).getDay()
   const dateLabel = `${year}年${month + 1}月${day}日（${DOW_LABELS[dow]}）`
 
-  const inLog = dayLogs.find(l => l.log_type === '出勤')
-  const outLog = dayLogs.find(l => l.log_type === '退勤')
   const hasExisting = dayLogs.length > 0
 
   function initHM(timeStr) {
@@ -809,26 +807,41 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const hv = parseInt(hStr), mv = parseInt(mStr)
     return { h: isNaN(hv) ? '' : String(hv), m: isNaN(mv) ? '' : String(mv) }
   }
-  const initIn = initHM(inLog?.time?.substring(0, 5))
-  const initOut = initHM(outLog?.time?.substring(0, 5))
 
-  const [inH, setInH] = useState(initIn.h)
-  const [inM, setInM] = useState(initIn.m)
-  const [outH, setOutH] = useState(initOut.h)
-  const [outM, setOutM] = useState(initOut.m)
-  const [workTimes, setWorkTimes] = useState(() => parseWorkType(outLog?.work_type || ''))
-  const [step, setStep] = useState('form') // 'form' | 'confirm' | 'confirmDelete'
+  function initSessions() {
+    const sorted = [...dayLogs].sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+    const result = []
+    let pendingIn = null
+    for (const log of sorted) {
+      if (log.log_type === '出勤') {
+        pendingIn = log
+      } else if (log.log_type === '退勤') {
+        const inHM = initHM(pendingIn?.time?.substring(0, 5))
+        const outHM = initHM(log.time?.substring(0, 5))
+        result.push({ inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m })
+        pendingIn = null
+      }
+    }
+    if (pendingIn) {
+      const inHM = initHM(pendingIn.time?.substring(0, 5))
+      result.push({ inH: inHM.h, inM: inHM.m, outH: '', outM: '' })
+    }
+    if (result.length === 0) result.push({ inH: '', inM: '', outH: '', outM: '' })
+    return result
+  }
+
+  const lastOutLog = [...dayLogs].filter(l => l.log_type === '退勤').sort((a, b) => (b.time || '').localeCompare(a.time || ''))[0]
+
+  const [sessions, setSessions] = useState(() => initSessions())
+  const [workTimes, setWorkTimes] = useState(() => parseWorkType(lastOutLog?.work_type || ''))
+  const [step, setStep] = useState('form')
   const [focusedWorkItem, setFocusedWorkItem] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [editingTimeField, setEditingTimeField] = useState(null) // 'in' | 'out'
+  const [editingTimeField, setEditingTimeField] = useState(null) // { si, field: 'in'|'out' }
   const [editingWorkItemTablet, setEditingWorkItemTablet] = useState(null)
 
-  const inHRef = useRef(null)
-  const inMRef = useRef(null)
-  const outHRef = useRef(null)
-  const outMRef = useRef(null)
-
-  useEffect(() => { setTimeout(() => inHRef.current?.focus(), 60) }, [])
+  const firstInHRef = useRef(null)
+  useEffect(() => { setTimeout(() => firstInHRef.current?.focus(), 60) }, [])
 
   function hmToTimeStr(h, m) {
     if (h === '') return ''
@@ -839,35 +852,45 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     return `${String(hv).padStart(2, '0')}:${String(mv).padStart(2, '0')}`
   }
 
-  function handleTimeInput(val, max, setter, nextRef) {
-    const v = toHalf(String(val)).replace(/\D/g, '').slice(0, 2)
-    setter(v)
-    if (v.length === 2 && parseInt(v) <= max) nextRef?.current?.focus()
+  function updateSession(si, field, val) {
+    setSessions(prev => prev.map((s, i) => i === si ? { ...s, [field]: val } : s))
   }
 
-  const inTime = hmToTimeStr(inH, inM)
-  const outTime = hmToTimeStr(outH, outM)
+  function addSession() {
+    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '' }])
+  }
 
-  const inHInvalid = inH !== '' && (isNaN(parseInt(inH)) || parseInt(inH) > 23)
-  const inMInvalid = inM !== '' && parseInt(inM) > 59
-  const outHInvalid = outH !== '' && (isNaN(parseInt(outH)) || parseInt(outH) > 23)
-  const outMInvalid = outM !== '' && parseInt(outM) > 59
+  function removeSession(si) {
+    setSessions(prev => prev.filter((_, i) => i !== si))
+  }
+
+  const sessionTimes = sessions.map(s => ({
+    inTime: hmToTimeStr(s.inH, s.inM),
+    outTime: hmToTimeStr(s.outH, s.outM),
+  }))
 
   const workingMinutes = useMemo(() => {
-    if (!inTime || !outTime) return null
-    const [h1, m1] = inTime.split(':').map(Number)
-    const [h2, m2] = outTime.split(':').map(Number)
-    const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
-    return diff > 0 ? diff : null
-  }, [inTime, outTime])
+    let total = 0
+    for (const { inTime, outTime } of sessionTimes) {
+      if (!inTime || !outTime) continue
+      const [h1, m1] = inTime.split(':').map(Number)
+      const [h2, m2] = outTime.split(':').map(Number)
+      const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+      if (diff > 0) total += diff
+    }
+    return total > 0 ? total : null
+  }, [JSON.stringify(sessionTimes)])
 
   const userWorkItems = useMemo(() => getWorkItemsForUser(user?.workItems), [user])
   const totalInputMinutes = Object.values(workTimes).reduce((sum, t) => sum + t.h * 60 + t.m, 0)
+  const hasAnyOut = sessionTimes.some(st => st.outTime)
+  const hasAnyTime = sessionTimes.some(st => st.inTime || st.outTime)
 
   const remainingMinutes = workingMinutes !== null ? workingMinutes - totalInputMinutes : null
   const isExceeded = workingMinutes !== null && totalInputMinutes > workingMinutes
   const isComplete = workingMinutes !== null && totalInputMinutes === workingMinutes && totalInputMinutes > 0
   const progressPct = workingMinutes !== null && workingMinutes > 0 ? Math.min(100, Math.round(totalInputMinutes / workingMinutes * 100)) : 0
+  const canSave = hasAnyTime && !isExceeded && (workingMinutes === null || isComplete)
 
   function fillRemaining(t) {
     if (workingMinutes === null) return
@@ -893,8 +916,12 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     if (saving) return
     setSaving(true)
     for (const log of dayLogs) await deleteLog(log.id)
-    if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
-    if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: buildWorkTypeStr() })
+    for (let si = 0; si < sessions.length; si++) {
+      const { inTime, outTime } = sessionTimes[si]
+      const isLast = si === sessions.length - 1
+      if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
+      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: isLast ? buildWorkTypeStr() : '' })
+    }
     onSaved()
   }
 
@@ -917,103 +944,132 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalBody}>
-              <div className={styles.timeRow}>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>出勤時刻</label>
-                  {isTablet ? (
-                    <button className={styles.numpadTrigger} onClick={() => setEditingTimeField('in')}>
-                      {inTime || '──:──'}
-                    </button>
-                  ) : (
-                    <div className={styles.timeHmRow}>
-                      <input
-                        ref={inHRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={2}
-                        value={inH}
-                        onChange={e => handleTimeInput(e.target.value, 23, setInH, inMRef)}
-                        onFocus={e => { if (e.target.value) e.target.select() }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); inMRef.current?.focus() } }}
-                        placeholder="--"
-                        className={[styles.timeHmNum, inHInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                      />
-                      <span className={styles.timeHmUnit}>時</span>
-                      <input
-                        ref={inMRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={2}
-                        value={inM}
-                        onChange={e => handleTimeInput(e.target.value, 59, setInM, outHRef)}
-                        onFocus={e => { if (e.target.value) e.target.select() }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outHRef.current?.focus() } }}
-                        placeholder="--"
-                        className={[styles.timeHmNum, inMInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                      />
-                      <span className={styles.timeHmUnit}>分</span>
+              {sessions.map((s, si) => {
+                const { inTime, outTime } = sessionTimes[si]
+                const inHInvalid = s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)
+                const inMInvalid = s.inM !== '' && parseInt(s.inM) > 59
+                const outHInvalid = s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)
+                const outMInvalid = s.outM !== '' && parseInt(s.outM) > 59
+                return (
+                  <div key={si} className={styles.sessionBlock}>
+                    {(sessions.length > 1) && (
+                      <div className={styles.sessionBlockHeader}>
+                        <span className={styles.sessionBlockLabel}>{si + 1}回目</span>
+                        <button className={styles.sessionRemoveBtn} onClick={() => removeSession(si)}>✕ 削除</button>
+                      </div>
+                    )}
+                    <div className={styles.timeRow}>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>出勤時刻</label>
+                        {isTablet ? (
+                          <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>
+                            {inTime || '──:──'}
+                          </button>
+                        ) : (
+                          <div className={styles.timeHmRow}>
+                            <input
+                              ref={si === 0 ? firstInHRef : null}
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={2}
+                              value={s.inH}
+                              onChange={e => {
+                                const v = toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2)
+                                updateSession(si, 'inH', v)
+                              }}
+                              onFocus={e => { if (e.target.value) e.target.select() }}
+                              placeholder="--"
+                              className={[styles.timeHmNum, inHInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                            />
+                            <span className={styles.timeHmUnit}>時</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={2}
+                              value={s.inM}
+                              onChange={e => {
+                                const v = toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2)
+                                updateSession(si, 'inM', v)
+                              }}
+                              onFocus={e => { if (e.target.value) e.target.select() }}
+                              placeholder="--"
+                              className={[styles.timeHmNum, inMInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                            />
+                            <span className={styles.timeHmUnit}>分</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>退勤時刻</label>
+                        {isTablet ? (
+                          <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'out' })}>
+                            {outTime || '──:──'}
+                          </button>
+                        ) : (
+                          <div className={styles.timeHmRow}>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={2}
+                              value={s.outH}
+                              onChange={e => {
+                                const v = toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2)
+                                updateSession(si, 'outH', v)
+                              }}
+                              onFocus={e => { if (e.target.value) e.target.select() }}
+                              placeholder="--"
+                              className={[styles.timeHmNum, outHInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                            />
+                            <span className={styles.timeHmUnit}>時</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={2}
+                              value={s.outM}
+                              onChange={e => {
+                                const v = toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2)
+                                updateSession(si, 'outM', v)
+                              }}
+                              onFocus={e => { if (e.target.value) e.target.select() }}
+                              placeholder="--"
+                              className={[styles.timeHmNum, outMInvalid ? styles.timeHmNumErr : ''].join(' ')}
+                            />
+                            <span className={styles.timeHmUnit}>分</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>退勤時刻</label>
-                  {isTablet ? (
-                    <button className={styles.numpadTrigger} onClick={() => setEditingTimeField('out')}>
-                      {outTime || '──:──'}
-                    </button>
-                  ) : (
-                    <div className={styles.timeHmRow}>
-                      <input
-                        ref={outHRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={2}
-                        value={outH}
-                        onChange={e => handleTimeInput(e.target.value, 23, setOutH, outMRef)}
-                        onFocus={e => { if (e.target.value) e.target.select() }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); outMRef.current?.focus() } }}
-                        placeholder="--"
-                        className={[styles.timeHmNum, outHInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                      />
-                      <span className={styles.timeHmUnit}>時</span>
-                      <input
-                        ref={outMRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={2}
-                        value={outM}
-                        onChange={e => handleTimeInput(e.target.value, 59, setOutM, null)}
-                        onFocus={e => { if (e.target.value) e.target.select() }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault() } }}
-                        placeholder="--"
-                        className={[styles.timeHmNum, outMInvalid ? styles.timeHmNumErr : ''].join(' ')}
-                      />
-                      <span className={styles.timeHmUnit}>分</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                  </div>
+                )
+              })}
+
+              <button className={styles.addSessionBtn} onClick={addSession}>＋ セッション追加</button>
+
               {isTablet && editingTimeField && (
                 <TimeNumpadOverlay
-                  title={editingTimeField === 'in' ? '出勤時刻' : '退勤時刻'}
-                  initialValue={editingTimeField === 'in' ? inTime : outTime}
+                  title={editingTimeField.field === 'in' ? '出勤時刻' : '退勤時刻'}
+                  initialValue={editingTimeField.field === 'in' ? sessionTimes[editingTimeField.si].inTime : sessionTimes[editingTimeField.si].outTime}
                   onConfirm={val => {
                     const [h, m] = val.split(':')
-                    if (editingTimeField === 'in') { setInH(String(parseInt(h))); setInM(String(parseInt(m))) }
-                    else { setOutH(String(parseInt(h))); setOutM(String(parseInt(m))) }
+                    const si = editingTimeField.si
+                    if (editingTimeField.field === 'in') {
+                      setSessions(prev => prev.map((s, i) => i === si ? { ...s, inH: String(parseInt(h)), inM: String(parseInt(m)) } : s))
+                    } else {
+                      setSessions(prev => prev.map((s, i) => i === si ? { ...s, outH: String(parseInt(h)), outM: String(parseInt(m)) } : s))
+                    }
                     setEditingTimeField(null)
                   }}
                   onClose={() => setEditingTimeField(null)}
                 />
               )}
 
-              {outTime && (
+              {hasAnyOut && (
                 <>
                   {workingMinutes !== null && (
                     <div className={styles.timeSummaryWrap}>
                       <div className={styles.timeSummaryCards}>
                         <div className={styles.tscWork}>
-                          <div className={styles.tscLabel}>勤務時間</div>
+                          <div className={styles.tscLabel}>勤務時間合計</div>
                           <div className={styles.tscValue}>{fmtMinutes(workingMinutes)}</div>
                         </div>
                         <div className={styles.tscInput}>
@@ -1167,14 +1223,14 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalFooter}>
-              {!inTime && !outTime && <span className={styles.modalSaveHint}>出勤または退勤時刻を入力してください</span>}
-              {(inTime || outTime) && workingMinutes !== null && (
+              {!hasAnyTime && <span className={styles.modalSaveHint}>出勤または退勤時刻を入力してください</span>}
+              {hasAnyTime && workingMinutes !== null && (
                 <span className={[styles.footerStatus, isComplete ? styles.footerStatusDone : isExceeded ? styles.footerStatusOver : ''].join(' ')}>
                   {isExceeded ? `超過 ${fmtMinutes(totalInputMinutes - workingMinutes)}` : isComplete ? '入力完了' : remainingMinutes !== null ? `残り ${fmtMinutes(remainingMinutes)}` : ''}
                 </span>
               )}
               <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
-              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={(!inTime && !outTime) || isExceeded || (workingMinutes !== null && !isComplete)}>保存する</button>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!canSave}>保存する</button>
             </div>
           </>
         )}
@@ -1188,9 +1244,17 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               <div className={styles.confirmTable}>
                 <div className={styles.confirmRow}><span>担当者</span><strong>{user.name}</strong></div>
                 <div className={styles.confirmRow}><span>日付</span><strong>{dateLabel}</strong></div>
-                {inTime && <div className={styles.confirmRow}><span>出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
-                {outTime && <div className={styles.confirmRow}><span>退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
-                {workingMinutes !== null && <div className={styles.confirmRow}><span>勤務時間</span><strong>{fmtMinutes(workingMinutes)}</strong></div>}
+                {sessions.map((s, si) => {
+                  const { inTime, outTime } = sessionTimes[si]
+                  const label = sessions.length > 1 ? `${si + 1}回目 ` : ''
+                  return (
+                    <React.Fragment key={si}>
+                      {inTime && <div className={styles.confirmRow}><span>{label}出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
+                      {outTime && <div className={styles.confirmRow}><span>{label}退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
+                    </React.Fragment>
+                  )
+                })}
+                {workingMinutes !== null && <div className={styles.confirmRow}><span>勤務時間合計</span><strong>{fmtMinutes(workingMinutes)}</strong></div>}
                 {buildWorkTypeStr() && (() => {
                   const items = buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return { name: t, mins: m ? Number(m) : 0 } })
                   return (
