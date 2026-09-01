@@ -236,7 +236,15 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
   const [mStr, setMStr] = useState('')
   const [focus, setFocus] = useState('h')
 
+  function commitCurrent() {
+    if (editing) {
+      onSetTime(editing, 'h', parseInt(hStr) || 0)
+      onSetTime(editing, 'm', parseInt(mStr) || 0)
+    }
+  }
+
   function selectVariant(m) {
+    commitCurrent()
     const t = workTimes[m] || { h: 0, m: 0 }
     setEditing(m)
     setHStr(t.h > 0 ? String(t.h) : '')
@@ -260,12 +268,6 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
       if (parseInt(next) > 59) return
       setMStr(next)
     }
-  }
-
-  function handleOk() {
-    onSetTime(editing, 'h', parseInt(hStr) || 0)
-    onSetTime(editing, 'm', parseInt(mStr) || 0)
-    setEditing(null)
   }
 
   return (
@@ -329,12 +331,11 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
                   >{k}</button>
                 ))}
               </div>
-              <button className={styles.timeModalOk} onClick={handleOk}>OK</button>
             </div>
           )}
         </div>
 
-        <button className={styles.subPickerCancel} onClick={onClose}>閉じる</button>
+        <button className={styles.subPickerCancel} onClick={() => { commitCurrent(); onClose() }}>OK</button>
       </div>
     </div>
   )
