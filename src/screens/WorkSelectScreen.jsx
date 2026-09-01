@@ -261,6 +261,8 @@ function SubPickerModal({ groupKey, members, workTimes, onSelect, onClear, onClo
   )
 }
 
+const BREAK_TYPES = new Set(['休憩'])
+
 export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [workTimes, setWorkTimes] = useState({})
   const [saving, setSaving] = useState(false)
@@ -268,6 +270,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [timeError, setTimeError] = useState('')
   const [editingItem, setEditingItem] = useState(null)
   const [subPickerGroup, setSubPickerGroup] = useState(null)
+  const [firstWork, setFirstWork] = useState(null)
+  const [lastWork, setLastWork] = useState(null)
   const clockOutRef = useRef(new Date())
 
   const displayCards = getDisplayCards(user.workItems)
@@ -304,6 +308,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   }
 
   const activeItems = allFlatItems.filter(id => isActive(id))
+  const workActiveItems = activeItems.filter(id => !BREAK_TYPES.has(id))
 
   const totalInputMinutes = activeItems.reduce((sum, id) => {
     const t = workTimes[id] || { h: 0, m: 0 }
@@ -313,10 +318,18 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const displayH = workingMinutes != null ? Math.floor(workingMinutes / 60) : 0
   const displayM = workingMinutes != null ? workingMinutes % 60 : 0
 
+  // Auto-set firstWork/lastWork when only one work type
+  const resolvedFirstWork = workActiveItems.length === 1 ? workActiveItems[0] : firstWork
+  const resolvedLastWork = workActiveItems.length === 1 ? workActiveItems[0] : lastWork
+
   async function handleConfirm() {
     if (activeItems.length === 0 || saving) return
     if (workingMinutes !== null && totalInputMinutes !== workingMinutes) {
       setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
+      return
+    }
+    if (workActiveItems.length >= 2 && (!resolvedFirstWork || !resolvedLastWork)) {
+      setTimeError('最初の業務と最後の業務を選択してください')
       return
     }
     setSaving(true)
@@ -326,7 +339,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
         const t = workTimes[id] || { h: 0, m: 0 }
         workItemsObj[id] = t.h * 60 + t.m
       })
-      await onComplete(workItemsObj)
+      await onComplete(workItemsObj, resolvedFirstWork || null, resolvedLastWork || null)
     } catch (e) {
       console.error(e)
       setSaving(false)
@@ -408,6 +421,36 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           <span className={styles.totalNumber}>{String(displayM).padStart(2, '0')}</span>
           <span className={styles.totalUnit}>分</span>
         </div>
+
+        {/* 最初/最後の業務選択 (2種類以上ある場合のみ) */}
+        {workActiveItems.length >= 2 && (
+          <div className={styles.boundarySection}>
+            <div className={styles.boundaryRow}>
+              <span className={styles.boundaryLabel}>最初の業務</span>
+              <div className={styles.boundaryBtns}>
+                {workActiveItems.map(id => (
+                  <button
+                    key={id}
+                    className={[styles.boundaryBtn, resolvedFirstWork === id ? styles.boundaryBtnActive : ''].join(' ')}
+                    onClick={() => setFirstWork(id)}
+                  >{id}</button>
+                ))}
+              </div>
+            </div>
+            <div className={styles.boundaryRow}>
+              <span className={styles.boundaryLabel}>最後の業務</span>
+              <div className={styles.boundaryBtns}>
+                {workActiveItems.map(id => (
+                  <button
+                    key={id}
+                    className={[styles.boundaryBtn, resolvedLastWork === id ? styles.boundaryBtnActive : ''].join(' ')}
+                    onClick={() => setLastWork(id)}
+                  >{id}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {timeError && <div className={styles.timeError}>{timeError}</div>}
 

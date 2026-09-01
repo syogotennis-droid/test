@@ -174,7 +174,7 @@ export async function resolveUserByPin(pin) {
   return { id: d.id, ...d.data() }
 }
 
-export async function saveLog({ userId, workType, workItems, logType, transportCount }) {
+export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork }) {
   const now = new Date()
   const timestamp = now.toISOString()
   const date = now.toLocaleDateString('ja-JP', {
@@ -197,8 +197,19 @@ export async function saveLog({ userId, workType, workItems, logType, transportC
   }
   if (workItems) logData.work_items = workItems
   if (transportCount) logData.transport_count = transportCount
+  if (firstWork) logData.first_work = firstWork
+  if (lastWork) logData.last_work = lastWork
   const ref = await addDoc(logsCol, logData)
   return ref.id
+}
+
+export async function setFirstLastWork(logId, firstWork, lastWork) {
+  const updates = {}
+  if (firstWork != null) updates.first_work = firstWork
+  if (lastWork != null) updates.last_work = lastWork
+  if (Object.keys(updates).length > 0) {
+    await updateDoc(doc(db, 'logs', logId), updates)
+  }
 }
 
 // Parse work_items from a log entry (handles both new object and legacy string format)
@@ -563,7 +574,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
     const byDate = {}
     sortedLogs.forEach(log => {
-      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inApproved: null, outApproved: null }
+      if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inApproved: null, outApproved: null, firstWork: null, lastWork: null }
       if (log.log_type === '出勤') {
         byDate[log.date].ins.push(log.time || '')
         if (!byDate[log.date].inApproved && log.approved_time)
@@ -571,6 +582,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       } else if (log.log_type === '退勤') {
         byDate[log.date].outs.push(log.time || '')
         if (log.approved_time) byDate[log.date].outApproved = log.approved_time.substring(0, 5)
+        if (log.first_work) byDate[log.date].firstWork = log.first_work
+        if (log.last_work) byDate[log.date].lastWork = log.last_work
         const items = getWorkItems(log)
         if (Object.keys(items).length > 0) {
           byDate[log.date].workItems = { ...items }  // replace entirely; last 退勤 wins
@@ -624,6 +637,32 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         ? Math.round(wdMins / 60 * normalRate) + Math.round(weMins / 60 * sundayRate)
         : Math.round((wdMins + weMins) / 60 * normalRate)
     }
+
+    // Compute approved-time cuts per type (wd/we split)
+    const typeCutWdMins = {}, typeCutWeMins = {}
+    Object.entries(byDate).forEach(([dateStr, entry]) => {
+      const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
+      const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
+      if (!inStr && !outStr) return
+      const inApprStr = entry.inApproved || (inStr ? roundUp15str(inStr) : '')
+      const outApprStr = entry.outApproved || (outStr ? roundDown15str(outStr) : '')
+      const actualInMins = inStr ? (Number(inStr.split(':')[0]) * 60 + Number(inStr.split(':')[1])) : null
+      const actualOutMins = outStr ? (Number(outStr.split(':')[0]) * 60 + Number(outStr.split(':')[1])) : null
+      const apprInMins = inApprStr ? (Number(inApprStr.split(':')[0]) * 60 + Number(inApprStr.split(':')[1])) : null
+      const apprOutMins = outApprStr ? (Number(outApprStr.split(':')[0]) * 60 + Number(outApprStr.split(':')[1])) : null
+      const startCut = (apprInMins != null && actualInMins != null) ? Math.max(0, apprInMins - actualInMins) : 0
+      const endCut = (apprOutMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - apprOutMins) : 0
+      const [yr, mo, d] = dateStr.split('-').map(Number)
+      const isWe = new Date(yr, mo - 1, d).getDay() === 0
+      if (startCut > 0 && entry.firstWork) {
+        if (isWe) typeCutWeMins[entry.firstWork] = (typeCutWeMins[entry.firstWork] || 0) + startCut
+        else typeCutWdMins[entry.firstWork] = (typeCutWdMins[entry.firstWork] || 0) + startCut
+      }
+      if (endCut > 0 && entry.lastWork) {
+        if (isWe) typeCutWeMins[entry.lastWork] = (typeCutWeMins[entry.lastWork] || 0) + endCut
+        else typeCutWdMins[entry.lastWork] = (typeCutWdMins[entry.lastWork] || 0) + endCut
+      }
+    })
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
     let ci = 2
@@ -834,18 +873,24 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const normalRate = Number(rateObj.normal) || 0
       const sundayRate = Number(rateObj.sunday) || 0
       const hasSunday = !!(itemRates[type]?.sunday)
+      const cutWd = typeCutWdMins[type] || 0
+      const cutWe = typeCutWeMins[type] || 0
 
       if (hasSunday) {
         const wdMins = monthlyWdMins[type] || 0
         const weMins = monthlyWeMins[type] || 0
         if (wdMins > 0) {
-          const wdHours = wdMins / 60
+          const adjWdMins = Math.max(0, wdMins - cutWd)
+          const wdHours = adjWdMins / 60
           const wdPay = Math.round(wdHours * normalRate)
           totalPayHours += wdHours; totalPayAmount += wdPay
+          const bCell = cutWd > 0
+            ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}-${cutWd / 1440}</f></c>`
+            : `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>`
           payRows.push(
             `<row r="${payRowIdx}">` +
             `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
-            `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>` +
+            bCell +
             (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
             `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
             `</row>`
@@ -853,13 +898,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           payRowIdx++
         }
         if (weMins > 0) {
-          const weHours = weMins / 60
+          const adjWeMins = Math.max(0, weMins - cutWe)
+          const weHours = adjWeMins / 60
           const wePay = Math.round(weHours * sundayRate)
           totalPayHours += weHours; totalPayAmount += wePay
+          const bCell = cutWe > 0
+            ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].su}${T2_TOT}-${cutWe / 1440}</f></c>`
+            : `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].su}${T2_TOT}</f></c>`
           payRows.push(
             `<row r="${payRowIdx}">` +
             `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + '（日曜）')}</t></is></c>` +
-            `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].su}${T2_TOT}</f></c>` +
+            bCell +
             (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
             `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
             `</row>`
@@ -868,13 +917,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         }
       } else {
         const totalMins = monthlyMins[type] || 0
-        const totalHours = totalMins / 60
+        const totalCut = cutWd + cutWe
+        const adjMins = Math.max(0, totalMins - totalCut)
+        const totalHours = adjMins / 60
         const totalPay = Math.round(totalHours * normalRate)
         totalPayHours += totalHours; totalPayAmount += totalPay
+        const bCell = totalCut > 0
+          ? `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}-${totalCut / 1440}</f></c>`
+          : `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>`
         payRows.push(
           `<row r="${payRowIdx}">` +
           `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type)}</t></is></c>` +
-          `<c r="B${payRowIdx}" s="${S.hours.wd}"><f>${typeColMap[type].wd}${T2_TOT}</f></c>` +
+          bCell +
           (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
           `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
           `</row>`

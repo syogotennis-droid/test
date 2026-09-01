@@ -5,7 +5,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, setApprovedTime, getTodayStatuses, getClockInTimeForDate,
+  updateLogTime, saveLog, saveLogManual, setApprovedTime, setFirstLastWork, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
   getWorkItems
 } from '../lib/db'
@@ -1251,6 +1251,7 @@ function KinmuboTab({ today }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [approvedEdits, setApprovedEdits] = useState({})
+  const [workBoundaryEdits, setWorkBoundaryEdits] = useState({})
 
   function timeStrToMinsK(s) {
     const [h, m] = s.split(':').map(Number)
@@ -1275,6 +1276,7 @@ function KinmuboTab({ today }) {
     setExpandedIds(new Set())
     setSearchQuery('')
     setApprovedEdits({})
+    setWorkBoundaryEdits({})
     const [y, m] = selectedYM.split('-').map(Number)
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
@@ -1298,7 +1300,7 @@ function KinmuboTab({ today }) {
       const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
       const byDate = {}
       sortedLogs.forEach(log => {
-        if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inLogId: null, outLogId: null, inApproved: null, outApproved: null }
+        if (!byDate[log.date]) byDate[log.date] = { ins: [], outs: [], workItems: {}, inLogId: null, outLogId: null, inApproved: null, outApproved: null, firstWork: null, lastWork: null }
         if (log.log_type === '出勤') {
           byDate[log.date].ins.push(log.time || '')
           if (!byDate[log.date].inLogId) {
@@ -1309,6 +1311,8 @@ function KinmuboTab({ today }) {
           byDate[log.date].outs.push(log.time || '')
           byDate[log.date].outLogId = log.id
           byDate[log.date].outApproved = log.approved_time?.substring(0, 5) || null
+          byDate[log.date].firstWork = log.first_work || null
+          byDate[log.date].lastWork = log.last_work || null
           const items = getWorkItems(log)
           if (Object.keys(items).length > 0) byDate[log.date].workItems = { ...items }
         }
@@ -1323,11 +1327,36 @@ function KinmuboTab({ today }) {
         })
       })
       const workingDays = Object.values(byDate).filter(e => e.ins.length > 0 || e.outs.length > 0).length
+
+      // Compute approved-time cuts per type
+      const typeCutWd = {}, typeCutWe = {}
+      Object.entries(byDate).forEach(([dateStr, entry]) => {
+        const inStr = entry.ins.sort()[0]?.substring(0, 5) || ''
+        const outStr = entry.outs.sort().reverse()[0]?.substring(0, 5) || ''
+        if (!inStr && !outStr) return
+        const inApprMins = entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null
+        const outApprMins = entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null
+        const actualInMins = inStr ? timeStrToMinsK(inStr) : null
+        const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
+        const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
+        const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
+        const [yr, mo, dNum] = dateStr.split('-').map(Number)
+        const isWe = new Date(yr, mo - 1, dNum).getDay() === 0
+        if (startCut > 0 && entry.firstWork) {
+          if (isWe) typeCutWe[entry.firstWork] = (typeCutWe[entry.firstWork] || 0) + startCut
+          else typeCutWd[entry.firstWork] = (typeCutWd[entry.firstWork] || 0) + startCut
+        }
+        if (endCut > 0 && entry.lastWork) {
+          if (isWe) typeCutWe[entry.lastWork] = (typeCutWe[entry.lastWork] || 0) + endCut
+          else typeCutWd[entry.lastWork] = (typeCutWd[entry.lastWork] || 0) + endCut
+        }
+      })
+
       const rows = []
       for (const type of (user.workItems || []).filter(t => !EXCL.has(t))) {
         const rateObj = itemRates[type] || {}
-        const wdMins = monthlyWdMins[type] || 0
-        const weMins = monthlyWeMins[type] || 0
+        const wdMins = Math.max(0, (monthlyWdMins[type] || 0) - (typeCutWd[type] || 0))
+        const weMins = Math.max(0, (monthlyWeMins[type] || 0) - (typeCutWe[type] || 0))
         if (wdMins + weMins === 0) continue
         if (rateObj.sunday) {
           if (wdMins > 0) rows.push({ label: type, mins: wdMins, days: null, rate: Number(rateObj.normal) || 0, pay: Math.round(wdMins / 60 * (Number(rateObj.normal) || 0)) })
@@ -1380,6 +1409,21 @@ function KinmuboTab({ today }) {
     }))
     if (logId) {
       try { await setApprovedTime(logId, minsToTimeStrK(newMins)) } catch {}
+    }
+  }
+
+  async function handleBoundaryChange(userId, dateStr, field, value, logId) {
+    const key = `${userId}_${dateStr}`
+    setWorkBoundaryEdits(prev => ({
+      ...prev,
+      [key]: { ...prev[key], [field]: value }
+    }))
+    if (logId) {
+      try {
+        const fw = field === 'firstWork' ? value : (workBoundaryEdits[key]?.firstWork ?? null)
+        const lw = field === 'lastWork' ? value : (workBoundaryEdits[key]?.lastWork ?? null)
+        await setFirstLastWork(logId, fw, lw)
+      } catch {}
     }
   }
 
@@ -1614,6 +1658,8 @@ function KinmuboTab({ today }) {
                                 <th className={styles.kinmuboDailyTh}>日付</th>
                                 <th className={styles.kinmuboDailyTh}>打刻時間</th>
                                 <th className={styles.kinmuboDailyTh}>承認時間</th>
+                                <th className={styles.kinmuboDailyTh}>最初の業務</th>
+                                <th className={styles.kinmuboDailyTh}>最後の業務</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1633,6 +1679,15 @@ function KinmuboTab({ today }) {
                                 const editedOut = approvedEdits[key]?.outMins
                                 const inApprMins = editedIn ?? (entry.inApproved ? timeStrToMinsK(entry.inApproved) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
                                 const outApprMins = editedOut ?? (entry.outApproved ? timeStrToMinsK(entry.outApproved) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
+                                const actualInMins = inStr ? timeStrToMinsK(inStr) : null
+                                const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
+                                const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
+                                const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
+                                const boundEdit = workBoundaryEdits[key] || {}
+                                const resolvedFirst = boundEdit.firstWork ?? entry.firstWork
+                                const resolvedLast = boundEdit.lastWork ?? entry.lastWork
+                                const workTypeOptions = Object.keys(entry.workItems).filter(t => !new Set(['休憩']).has(t) && entry.workItems[t] > 0)
+                                const showBoundary = workTypeOptions.length >= 1 && entry.outLogId
                                 return (
                                   <tr key={ds} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].join(' ')}>
                                     <td className={styles.kinmuboDailyTd}>{mo}/{d}（{dowLabel}）</td>
@@ -1655,6 +1710,40 @@ function KinmuboTab({ today }) {
                                           <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(user.id, ds, 'out', (outApprMins ?? 0) + 15, entry.outLogId)}>+</button>
                                         </span>
                                       )}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {showBoundary ? (
+                                        <div className={styles.boundarySelectWrap}>
+                                          <select
+                                            className={styles.boundarySelect}
+                                            value={resolvedFirst || ''}
+                                            onChange={e => handleBoundaryChange(user.id, ds, 'firstWork', e.target.value || null, entry.outLogId)}
+                                          >
+                                            <option value="">—</option>
+                                            {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                                          </select>
+                                          {startCut > 0 && resolvedFirst && (
+                                            <span className={styles.cutBadge}>−{fmtMins(startCut)}</span>
+                                          )}
+                                        </div>
+                                      ) : '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {showBoundary ? (
+                                        <div className={styles.boundarySelectWrap}>
+                                          <select
+                                            className={styles.boundarySelect}
+                                            value={resolvedLast || ''}
+                                            onChange={e => handleBoundaryChange(user.id, ds, 'lastWork', e.target.value || null, entry.outLogId)}
+                                          >
+                                            <option value="">—</option>
+                                            {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                                          </select>
+                                          {endCut > 0 && resolvedLast && (
+                                            <span className={styles.cutBadge}>−{fmtMins(endCut)}</span>
+                                          )}
+                                        </div>
+                                      ) : '—'}
                                     </td>
                                   </tr>
                                 )

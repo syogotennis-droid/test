@@ -127,12 +127,14 @@ export default function App() {
     }
   }
 
-  async function handleWorkComplete(workItems) {
+  async function handleWorkComplete(workItems, firstWork, lastWork) {
     const clockIn = await getClockInTime(currentUser.id)
     await saveLog({
       userId: currentUser.id,
       workItems,
-      logType: '退勤'
+      logType: '退勤',
+      ...(firstWork ? { firstWork } : {}),
+      ...(lastWork ? { lastWork } : {}),
     })
     setCompletedInfo({
       logType: '退勤',
