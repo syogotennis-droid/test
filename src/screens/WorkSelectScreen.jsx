@@ -273,64 +273,66 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
       <div className={styles.subPickerBox} onClick={e => e.stopPropagation()}>
         <div className={styles.subPickerTitle}>{groupKey}</div>
 
-        {/* バリアント一覧 */}
-        <div className={styles.subPickerList}>
-          {members.map(m => {
-            const t = workTimes[m]
-            const active = t && (t.h > 0 || t.m > 0)
-            const isEditing = editing === m
-            return (
-              <div key={m} className={styles.subPickerRow}>
-                <button
-                  className={[styles.subPickerItem, active ? styles.subPickerItemActive : '', isEditing ? styles.subPickerItemEditing : ''].join(' ')}
-                  onClick={() => selectVariant(m)}
-                >
-                  <span>{variantLabel(groupKey, m)}</span>
-                  {active && <span className={styles.subPickerTime}>{fmtMinutes(t.h * 60 + t.m)}</span>}
-                  {!active && <span className={styles.subPickerHint}>タップして入力</span>}
-                </button>
-                {active && !isEditing && (
-                  <button className={styles.subPickerClear} onClick={() => onClear(m)}>×</button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* インライン時間入力 */}
-        {editing && (
-          <div className={styles.subPickerInputArea}>
-            <div className={styles.subPickerInputLabel}>{variantLabel(groupKey, editing)}</div>
-            <div className={styles.timeDisplayRow}>
-              <button
-                className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
-                onClick={() => setFocus('h')}
-              >
-                <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
-                <span className={styles.timeDisplayUnit}>時間</span>
-              </button>
-              <span className={styles.timeDisplaySep}>:</span>
-              <button
-                className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
-                onClick={() => setFocus('m')}
-              >
-                <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
-                <span className={styles.timeDisplayUnit}>分</span>
-              </button>
-            </div>
-            <div className={styles.timeNumGrid}>
-              {TIME_KEYS.map((k, i) => (
-                <button
-                  key={i}
-                  className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
-                  onClick={() => pressKey(k)}
-                  disabled={k === ''}
-                >{k}</button>
-              ))}
-            </div>
-            <button className={styles.timeModalOk} onClick={handleOk}>OK</button>
+        <div className={editing ? styles.subPickerSplit : ''}>
+          {/* バリアント一覧 */}
+          <div className={styles.subPickerList}>
+            {members.map(m => {
+              const t = workTimes[m]
+              const active = t && (t.h > 0 || t.m > 0)
+              const isEditing = editing === m
+              return (
+                <div key={m} className={styles.subPickerRow}>
+                  <button
+                    className={[styles.subPickerItem, active ? styles.subPickerItemActive : '', isEditing ? styles.subPickerItemEditing : ''].join(' ')}
+                    onClick={() => selectVariant(m)}
+                  >
+                    <span>{variantLabel(groupKey, m)}</span>
+                    {active && <span className={styles.subPickerTime}>{fmtMinutes(t.h * 60 + t.m)}</span>}
+                    {!active && <span className={styles.subPickerHint}>タップ</span>}
+                  </button>
+                  {active && !isEditing && (
+                    <button className={styles.subPickerClear} onClick={() => onClear(m)}>×</button>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )}
+
+          {/* インライン時間入力（横に並ぶ） */}
+          {editing && (
+            <div className={styles.subPickerInputArea}>
+              <div className={styles.subPickerInputLabel}>{variantLabel(groupKey, editing)}</div>
+              <div className={styles.timeDisplayRow}>
+                <button
+                  className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
+                  onClick={() => setFocus('h')}
+                >
+                  <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
+                  <span className={styles.timeDisplayUnit}>時間</span>
+                </button>
+                <span className={styles.timeDisplaySep}>:</span>
+                <button
+                  className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
+                  onClick={() => setFocus('m')}
+                >
+                  <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
+                  <span className={styles.timeDisplayUnit}>分</span>
+                </button>
+              </div>
+              <div className={styles.timeNumGrid}>
+                {TIME_KEYS.map((k, i) => (
+                  <button
+                    key={i}
+                    className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
+                    onClick={() => pressKey(k)}
+                    disabled={k === ''}
+                  >{k}</button>
+                ))}
+              </div>
+              <button className={styles.timeModalOk} onClick={handleOk}>OK</button>
+            </div>
+          )}
+        </div>
 
         <button className={styles.subPickerCancel} onClick={onClose}>閉じる</button>
       </div>
