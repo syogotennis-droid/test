@@ -1448,11 +1448,8 @@ function KinmuboTab({ today }) {
         typeMap[row.label].pay += row.pay
       }
     }
-    const totalTypeMins = Object.values(typeMap).reduce((s, v) => s + v.mins, 0)
-    const shortfallMins = Math.max(0, totalClockMins - totalTypeMins)
     return {
       totalClockMins,
-      shortfallMins,
       types: Object.entries(typeMap).map(([label, v]) => ({ label, mins: v.mins, pay: v.pay }))
     }
   }, [preview, approvedEdits])
@@ -1530,7 +1527,6 @@ function KinmuboTab({ today }) {
                     <th className={styles.kinmuboGlobalTh}>単価種別</th>
                     <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>勤務時間</th>
                     <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>時間合計</th>
-                    <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>不足時間</th>
                     <th className={[styles.kinmuboGlobalTh, styles.kinmuboGlobalThNum].join(' ')}>金額合計</th>
                   </tr>
                 </thead>
@@ -1540,7 +1536,6 @@ function KinmuboTab({ today }) {
                       <td className={styles.kinmuboGlobalTd}>{label}</td>
                       <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.totalClockMins)}</td>
                       <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(mins)}</td>
-                      <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.shortfallMins)}</td>
                       <td className={[styles.kinmuboGlobalTd, styles.kinmuboGlobalTdNum, styles.kinmuboGlobalTdPay].join(' ')}>{pay.toLocaleString()}円</td>
                     </tr>
                   ))}
@@ -1550,7 +1545,6 @@ function KinmuboTab({ today }) {
                     <td className={styles.kinmuboGlobalTotTd}>合計</td>
                     <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.totalClockMins)}</td>
                     <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.types.reduce((s, t) => s + t.mins, 0))}</td>
-                    <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum].join(' ')}>{fmtMins(globalSummary.shortfallMins)}</td>
                     <td className={[styles.kinmuboGlobalTotTd, styles.kinmuboGlobalTdNum, styles.kinmuboGlobalTdPay].join(' ')}>{globalSummary.types.reduce((s, t) => s + t.pay, 0).toLocaleString()}円</td>
                   </tr>
                 </tfoot>

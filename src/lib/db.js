@@ -952,19 +952,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
     const summaryTypeEntries = Object.entries(summaryData.types)
     const totalTypeMins = summaryTypeEntries.reduce((s, [, v]) => s + v.mins, 0)
-    const shortfallMins = Math.max(0, summaryData.totalClockMins - totalTypeMins)
     const totalTypePay = summaryTypeEntries.reduce((s, [, v]) => s + v.pay, 0)
     let sumRows = ''
     sumRows += `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 業務別集計')}</t></is></c></row>`
-    sumRows += `<row r="2" ht="36">${shdrCell('A', 2, '単価種別')}${shdrCell('B', 2, '勤務時間')}${shdrCell('C', 2, '時間合計')}${shdrCell('D', 2, '不足時間')}${shdrCell('E', 2, '金額合計')}</row>`
+    sumRows += `<row r="2" ht="36">${shdrCell('A', 2, '単価種別')}${shdrCell('B', 2, '勤務時間')}${shdrCell('C', 2, '時間合計')}${shdrCell('D', 2, '金額合計')}</row>`
     let sr = 3
     for (const [label, v] of summaryTypeEntries) {
       sumRows += `<row r="${sr}">` +
         `<c r="A${sr}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(label)}</t></is></c>` +
         `<c r="B${sr}" s="${S.tot_hrs}"><v>${summaryData.totalClockMins / 1440}</v></c>` +
         `<c r="C${sr}" s="${S.tot_hrs}"><v>${v.mins / 1440}</v></c>` +
-        `<c r="D${sr}" s="${S.tot_hrs}"><v>${shortfallMins / 1440}</v></c>` +
-        `<c r="E${sr}" s="${S.tot_pay}"><v>${v.pay}</v></c>` +
+        `<c r="D${sr}" s="${S.tot_pay}"><v>${v.pay}</v></c>` +
         `</row>`
       sr++
     }
@@ -972,8 +970,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="A${sr}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
       `<c r="B${sr}" s="${S.tot_hrs}"><v>${summaryData.totalClockMins / 1440}</v></c>` +
       `<c r="C${sr}" s="${S.tot_hrs}"><v>${totalTypeMins / 1440}</v></c>` +
-      `<c r="D${sr}" s="${S.tot_hrs}"><v>${shortfallMins / 1440}</v></c>` +
-      `<c r="E${sr}" s="${S.tot_pay}"><v>${totalTypePay}</v></c>` +
+      `<c r="D${sr}" s="${S.tot_pay}"><v>${totalTypePay}</v></c>` +
       `</row>`
     const summarySheetXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
