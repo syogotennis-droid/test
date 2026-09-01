@@ -3091,3 +3091,34 @@
   color: #1e293b;
 }
 .dateInput:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+
+/* 社員 / アルバイト toggle */
+.empTypeToggle {
+  display: flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+.empTypeBtn {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.empTypeBtnActive {
+  background: #1a3f6f;
+  color: #fff;
+  font-weight: 700;
+}
+
+/* overtime hint in DayEditModal */
+.overtimeHint {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin-top: 4px;
+}

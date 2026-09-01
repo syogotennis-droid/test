@@ -7,7 +7,7 @@ import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, setApprovedTime, setFirstLastWork, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
-  getWorkItems, getRatesForDate
+  getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -840,8 +840,19 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [editingTimeField, setEditingTimeField] = useState(null) // { si, field: 'in'|'out' }
   const [editingWorkItemTablet, setEditingWorkItemTablet] = useState(null)
 
+  const isSalaried = user?.employeeType === 'salaried'
+  const [overtimeH, setOvertimeH] = useState('')
+  const [overtimeM, setOvertimeM] = useState('')
+
   const firstInHRef = useRef(null)
   useEffect(() => { setTimeout(() => firstInHRef.current?.focus(), 60) }, [])
+
+  useEffect(() => {
+    if (!isSalaried) return
+    getOvertimeApp(user.id, dateStr).then(mins => {
+      if (mins > 0) { setOvertimeH(String(Math.floor(mins / 60))); setOvertimeM(String(mins % 60)) }
+    })
+  }, [])
 
   function hmToTimeStr(h, m) {
     if (h === '') return ''
@@ -890,7 +901,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const isExceeded = workingMinutes !== null && totalInputMinutes > workingMinutes
   const isComplete = workingMinutes !== null && totalInputMinutes === workingMinutes && totalInputMinutes > 0
   const progressPct = workingMinutes !== null && workingMinutes > 0 ? Math.min(100, Math.round(totalInputMinutes / workingMinutes * 100)) : 0
-  const canSave = hasAnyTime && !isExceeded && (workingMinutes === null || isComplete)
+  const canSave = isSalaried ? hasAnyTime : (hasAnyTime && !isExceeded && (workingMinutes === null || isComplete))
 
   function fillRemaining(t) {
     if (workingMinutes === null) return
@@ -920,7 +931,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       const { inTime, outTime } = sessionTimes[si]
       const isLast = si === sessions.length - 1
       if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
-      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: isLast ? buildWorkTypeStr() : '' })
+      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: (!isSalaried && isLast) ? buildWorkTypeStr() : '' })
+    }
+    if (isSalaried) {
+      const otMins = (parseInt(overtimeH) || 0) * 60 + (parseInt(overtimeM) || 0)
+      await saveOvertimeApp(user.id, dateStr, otMins)
     }
     onSaved()
   }
@@ -1065,7 +1080,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
               {hasAnyOut && (
                 <>
-                  {workingMinutes !== null && (
+                  {!isSalaried && workingMinutes !== null && (
                     <div className={styles.timeSummaryWrap}>
                       <div className={styles.timeSummaryCards}>
                         <div className={styles.tscWork}>
@@ -1098,7 +1113,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                       )}
                     </div>
                   )}
-                  <div className={styles.formGroup}>
+                  {!isSalaried && (<div className={styles.formGroup}>
                     <label className={styles.formLabel}>作業内容</label>
                     {isTablet ? (
                       <>
@@ -1210,7 +1225,35 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         })}
                       </div>
                     )}
-                  </div>
+                  </div>)}
+                  {isSalaried && (
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>残業申請</label>
+                      <div className={styles.timeHmRow}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={overtimeH}
+                          onChange={e => setOvertimeH(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          placeholder="0"
+                          className={styles.timeHmNum}
+                        />
+                        <span className={styles.timeHmUnit}>時間</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={2}
+                          value={overtimeM}
+                          onChange={e => setOvertimeM(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          placeholder="0"
+                          className={styles.timeHmNum}
+                        />
+                        <span className={styles.timeHmUnit}>分</span>
+                      </div>
+                      <div className={styles.overtimeHint}>残業がない場合は空白のまま</div>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1224,7 +1267,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
             <div className={styles.modalFooter}>
               {!hasAnyTime && <span className={styles.modalSaveHint}>出勤または退勤時刻を入力してください</span>}
-              {hasAnyTime && workingMinutes !== null && (
+              {!isSalaried && hasAnyTime && workingMinutes !== null && (
                 <span className={[styles.footerStatus, isComplete ? styles.footerStatusDone : isExceeded ? styles.footerStatusOver : ''].join(' ')}>
                   {isExceeded ? `超過 ${fmtMinutes(totalInputMinutes - workingMinutes)}` : isComplete ? '入力完了' : remainingMinutes !== null ? `残り ${fmtMinutes(remainingMinutes)}` : ''}
                 </span>
@@ -1255,7 +1298,13 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                   )
                 })}
                 {workingMinutes !== null && <div className={styles.confirmRow}><span>勤務時間合計</span><strong>{fmtMinutes(workingMinutes)}</strong></div>}
-                {buildWorkTypeStr() && (() => {
+                {isSalaried && (parseInt(overtimeH) > 0 || parseInt(overtimeM) > 0) && (
+                  <div className={styles.confirmRow}>
+                    <span>残業申請</span>
+                    <strong>{fmtMinutes((parseInt(overtimeH) || 0) * 60 + (parseInt(overtimeM) || 0))}</strong>
+                  </div>
+                )}
+                {!isSalaried && buildWorkTypeStr() && (() => {
                   const items = buildWorkTypeStr().split(',').map(e => { const [t, m] = e.split(':'); return { name: t, mins: m ? Number(m) : 0 } })
                   return (
                     <>
@@ -2741,6 +2790,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   })
   const [rateHistoryOpen, setRateHistoryOpen] = useState({}) // { item: bool }
   const [addRateForm, setAddRateForm] = useState(null) // { item, date, normal, sunday }
+  const [employeeType, setEmployeeType] = useState(user.employeeType || 'hourly')
+  const [fixedStartTime, setFixedStartTime] = useState(user.fixedStartTime || '09:00')
+  const [fixedEndTime, setFixedEndTime] = useState(user.fixedEndTime || '18:00')
+  const [monthlySalary, setMonthlySalary] = useState(user.monthlySalary != null ? String(user.monthlySalary) : '')
+  const [overtimeRateSal, setOvertimeRateSal] = useState(user.overtimeRate != null ? String(user.overtimeRate) : '')
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -2750,7 +2804,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setIsDirty(true)
-  }, [name, pin, workItems, itemRates, multipliers, rateHistory])
+  }, [name, pin, workItems, itemRates, multipliers, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal])
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -2866,7 +2920,16 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           return
         }
       }
-      await upsertUser({ id: user.id, name: name.trim(), pin, workItems, itemRates: buildItemRates() })
+      await upsertUser({
+        id: user.id, name: name.trim(), pin, employeeType,
+        workItems: employeeType === 'salaried' ? [] : workItems,
+        itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
+        ...(employeeType === 'salaried' ? {
+          fixedStartTime, fixedEndTime,
+          monthlySalary: Number(monthlySalary) || 0,
+          overtimeRate: Number(overtimeRateSal) || 0,
+        } : {}),
+      })
       setIsDirty(false)
       onSaved()
     } catch(e) {
@@ -2968,6 +3031,21 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             <div className={styles.userEditSectionTitle}>基本情報</div>
             <div className={styles.userEditGrid2}>
               <div>
+                <label className={styles.userEditLabel}>種別</label>
+                <div className={styles.empTypeToggle}>
+                  <button
+                    type="button"
+                    className={[styles.empTypeBtn, employeeType === 'hourly' ? styles.empTypeBtnActive : ''].join(' ')}
+                    onClick={() => setEmployeeType('hourly')}
+                  >アルバイト</button>
+                  <button
+                    type="button"
+                    className={[styles.empTypeBtn, employeeType === 'salaried' ? styles.empTypeBtnActive : ''].join(' ')}
+                    onClick={() => setEmployeeType('salaried')}
+                  >社員</button>
+                </div>
+              </div>
+              <div>
                 <label className={styles.userEditLabel}>氏名 <span className={styles.userEditRequired}>必須</span></label>
                 <input
                   className={[styles.userEditInput, !name.trim() ? styles.userEditInputErr : ''].join(' ')}
@@ -3005,8 +3083,57 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             </div>
           </div>
 
+          {/* 社員設定 */}
+          {employeeType === 'salaried' && (
+            <div className={styles.userEditSection}>
+              <div className={styles.userEditSectionTitle}>社員設定</div>
+              <div className={styles.userEditGrid2}>
+                <div>
+                  <label className={styles.userEditLabel}>固定出勤時刻</label>
+                  <input
+                    type="time"
+                    className={styles.userEditInput}
+                    value={fixedStartTime}
+                    onChange={e => setFixedStartTime(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>固定退勤時刻</label>
+                  <input
+                    type="time"
+                    className={styles.userEditInput}
+                    value={fixedEndTime}
+                    onChange={e => setFixedEndTime(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>月給（円）</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className={styles.userEditInput}
+                    value={monthlySalary}
+                    onChange={e => setMonthlySalary(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>残業時給（円）</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className={styles.userEditInput}
+                    value={overtimeRateSal}
+                    onChange={e => setOvertimeRateSal(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 作業項目・時給 */}
-          <div className={styles.userEditSection}>
+          {employeeType !== 'salaried' && <div className={styles.userEditSection}>
             <div className={styles.userEditSectionTitle}>作業項目・時給</div>
             <div className={styles.workItemTableWrap}>
               <table className={styles.workItemTable}>
@@ -3151,7 +3278,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* 時給変更入力フォーム */}
           {addRateForm && (
@@ -3207,6 +3334,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
               </div>
             </div>
           )}
+
 
           {/* 本日の出勤状態 */}
           <div className={styles.userEditSection}>

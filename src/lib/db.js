@@ -69,6 +69,22 @@ export async function saveMinWage(wage) {
   await setDoc(configDocRef, { minWage: wage }, { merge: true })
 }
 
+export async function saveOvertimeApp(userId, date, minutes) {
+  const id = `${userId}_${date}`
+  if (!minutes || minutes <= 0) {
+    try { await deleteDoc(doc(db, 'overtime_apps', id)) } catch {}
+  } else {
+    await setDoc(doc(db, 'overtime_apps', id), { userId, date, minutes })
+  }
+}
+
+export async function getOvertimeApp(userId, date) {
+  try {
+    const snap = await getDoc(doc(db, 'overtime_apps', `${userId}_${date}`))
+    return snap.exists() ? (snap.data().minutes || 0) : 0
+  } catch { return 0 }
+}
+
 function getTodayDate() {
   return new Date().toLocaleDateString('ja-JP', {
     year: 'numeric', month: '2-digit', day: '2-digit'
@@ -628,6 +644,19 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const sheetXmls = []
   const summaryData = { totalClockMins: 0, types: {} }
 
+  // Fetch overtime applications for salaried employees
+  const overtimeAppsByUser = {}
+  try {
+    const otSnap = await getDocs(collection(db, 'overtime_apps'))
+    otSnap.docs.forEach(d => {
+      const data = d.data()
+      if (!overtimeAppsByUser[data.userId]) overtimeAppsByUser[data.userId] = {}
+      if ((!dateFrom || data.date >= dateFrom) && (!dateTo || data.date <= dateTo)) {
+        overtimeAppsByUser[data.userId][data.date] = data.minutes
+      }
+    })
+  } catch {}
+
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
     const itemRates = user.itemRates || {}
@@ -658,6 +687,147 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         entry.pendingIn = null
       }
     })
+
+    // Salaried employees: T1 (attendance) + T3 (base salary + overtime), skip T2
+    if (user.employeeType === 'salaried') {
+      const WB_NS_SAL = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+      const WB_REL_SAL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+      const hdrCellSal = (col, rn, text) => `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
+      const monthlySalaryVal = user.monthlySalary || 0
+      const overtimeRateVal = user.overtimeRate || 0
+      const userOvertimeApps = overtimeAppsByUser[user.id] || {}
+      const workingDaysSal = Object.values(byDate).filter(e => e.sessions.length > 0).length
+      const T1_HDR_SAL = 4, T1_DATA_SAL = 5
+      const dayRowsSal = []
+      for (let d = 1; d <= lastDay; d++) {
+        const ds = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
+        dayRowsSal.push({ d, ds, sessions: byDate[ds]?.sessions || [] })
+      }
+      const totalDataRowsSal = dayRowsSal.reduce((s, dr) => s + Math.max(1, dr.sessions.length), 0)
+      const T1_TOT_SAL = T1_DATA_SAL + totalDataRowsSal
+      const T3_HDR_SAL = T1_TOT_SAL + 2
+      const T1_DATA_END_SAL = T1_TOT_SAL - 1
+
+      const t1HdrSal =
+        `<row r="${T1_HDR_SAL}" ht="36">` +
+        hdrCellSal('A', T1_HDR_SAL, '日付') + hdrCellSal('B', T1_HDR_SAL, '曜日') +
+        hdrCellSal('C', T1_HDR_SAL, '出勤') + hdrCellSal('D', T1_HDR_SAL, '退勤') +
+        hdrCellSal('E', T1_HDR_SAL, '休憩') + hdrCellSal('F', T1_HDR_SAL, '勤務時間') +
+        hdrCellSal('G', T1_HDR_SAL, '準備時間') + hdrCellSal('H', T1_HDR_SAL, '合計') +
+        `</row>`
+
+      const t1RowsSal = []
+      let r1sal = T1_DATA_SAL
+      for (const dr of dayRowsSal) {
+        const { d, sessions } = dr
+        const dow = new Date(ym_y, ym_m - 1, d).getDay()
+        const isSat = dow === 6, isSun = dow === 0
+        const dt = isSun ? 'su' : (isSat ? 'sa' : 'wd')
+        const sessToShow = sessions.length > 0 ? sessions : [null]
+        sessToShow.forEach((session, si) => {
+          const isFirst = si === 0
+          const t1c = []
+          if (isFirst) {
+            t1c.push(`<c r="A${r1sal}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
+            t1c.push(`<c r="B${r1sal}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
+          } else {
+            t1c.push(`<c r="A${r1sal}" s="${S.date[dt]}"/>`, `<c r="B${r1sal}" s="${S.dow[dt]}"/>`)
+          }
+          if (session) {
+            const inStr = session.inLog?.time?.substring(0, 5) || ''
+            const outStr = session.outLog?.time?.substring(0, 5) || ''
+            const breakMins = (session.workItems || {})['休憩'] || 0
+            if (inStr) { const [h, mi] = inStr.split(':').map(Number); t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
+            else t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"/>`)
+            if (outStr) { const [h, mi] = outStr.split(':').map(Number); t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
+            else t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"/>`)
+            t1c.push(breakMins > 0 ? `<c r="E${r1sal}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>` : `<c r="E${r1sal}" s="${S.hours[dt]}"/>`)
+            t1c.push(inStr && outStr ? `<c r="F${r1sal}" s="${S.hours[dt]}"><f>MAX(0,D${r1sal}-C${r1sal}-E${r1sal})</f></c>` : `<c r="F${r1sal}" s="${S.hours[dt]}"/>`)
+            t1c.push(isFirst && (inStr || outStr) ? `<c r="G${r1sal}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1sal}" s="${S.hours[dt]}"/>`)
+            t1c.push(inStr && outStr ? `<c r="H${r1sal}" s="${S.hours[dt]}"><f>F${r1sal}+G${r1sal}</f></c>` : `<c r="H${r1sal}" s="${S.hours[dt]}"/>`)
+          } else {
+            t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"/>`, `<c r="D${r1sal}" s="${S.time[dt]}"/>`)
+            t1c.push(`<c r="E${r1sal}" s="${S.hours[dt]}"/>`, `<c r="F${r1sal}" s="${S.hours[dt]}"/>`)
+            t1c.push(`<c r="G${r1sal}" s="${S.hours[dt]}"/>`, `<c r="H${r1sal}" s="${S.hours[dt]}"/>`)
+          }
+          t1RowsSal.push(`<row r="${r1sal}">${t1c.join('')}</row>`)
+          r1sal++
+        })
+      }
+      const t1TotSal =
+        `<row r="${T1_TOT_SAL}">` +
+        `<c r="A${T1_TOT_SAL}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
+        `<c r="B${T1_TOT_SAL}" s="${S.tot_lbl}"/><c r="C${T1_TOT_SAL}" s="${S.tot_lbl}"/><c r="D${T1_TOT_SAL}" s="${S.tot_lbl}"/>` +
+        `<c r="E${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(E${T1_DATA_SAL}:E${T1_DATA_END_SAL})</f></c>` +
+        `<c r="F${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(F${T1_DATA_SAL}:F${T1_DATA_END_SAL})</f></c>` +
+        `<c r="G${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(G${T1_DATA_SAL}:G${T1_DATA_END_SAL})</f></c>` +
+        `<c r="H${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(H${T1_DATA_SAL}:H${T1_DATA_END_SAL})</f></c>` +
+        `</row>`
+      const t3HdrSal =
+        `<row r="${T3_HDR_SAL}" ht="32">` +
+        hdrCellSal('A', T3_HDR_SAL, '内訳') + hdrCellSal('B', T3_HDR_SAL, '時間') +
+        hdrCellSal('C', T3_HDR_SAL, '時給') + hdrCellSal('D', T3_HDR_SAL, '金額') +
+        `</row>`
+      const payRowsSal = []
+      let payRowIdxSal = T3_HDR_SAL + 1
+      payRowsSal.push(
+        `<row r="${payRowIdxSal}">` +
+        `<c r="A${payRowIdxSal}" s="${S.pay_lbl}" t="inlineStr"><is><t>基本給</t></is></c>` +
+        `<c r="B${payRowIdxSal}" s="${S.pay_lbl}"/>` +
+        `<c r="C${payRowIdxSal}" s="${S.pay_lbl}"/>` +
+        (monthlySalaryVal > 0 ? `<c r="D${payRowIdxSal}" s="${S.pay.wd}"><v>${monthlySalaryVal}</v></c>` : `<c r="D${payRowIdxSal}" s="${S.pay.wd}"/>`) +
+        `</row>`
+      )
+      payRowIdxSal++
+      const sortedOT = Object.entries(userOvertimeApps).filter(([, m]) => m > 0).sort(([a], [b]) => a.localeCompare(b))
+      for (const [otDate, mins] of sortedOT) {
+        const dd = Number(otDate.split('-')[2])
+        const otLabel = `残業（${Number(ym_m_str)}/${dd}）`
+        const hours = mins / 60
+        const pay = Math.round(hours * overtimeRateVal)
+        payRowsSal.push(
+          `<row r="${payRowIdxSal}">` +
+          `<c r="A${payRowIdxSal}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(otLabel)}</t></is></c>` +
+          `<c r="B${payRowIdxSal}" s="${S.hours.wd}"><v>${hours / 24}</v></c>` +
+          (overtimeRateVal > 0 ? `<c r="C${payRowIdxSal}" s="${S.pay_rate}"><v>${overtimeRateVal}</v></c>` : `<c r="C${payRowIdxSal}" s="${S.pay_rate}"/>`) +
+          `<c r="D${payRowIdxSal}" s="${S.pay.wd}"><v>${pay}</v></c>` +
+          `</row>`
+        )
+        payRowIdxSal++
+      }
+      const transportAmtSal = Number(user.itemRates?.['交通費']?.amount) || 0
+      if (transportAmtSal > 0 && workingDaysSal > 0) {
+        const transportTot = Math.round(workingDaysSal * transportAmtSal)
+        payRowsSal.push(
+          `<row r="${payRowIdxSal}">` +
+          `<c r="A${payRowIdxSal}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc('交通費（' + workingDaysSal + '日）')}</t></is></c>` +
+          `<c r="B${payRowIdxSal}" s="${S.pay_lbl}"/>` +
+          `<c r="C${payRowIdxSal}" s="${S.pay_rate}"><v>${transportAmtSal}</v></c>` +
+          `<c r="D${payRowIdxSal}" s="${S.pay.wd}"><v>${transportTot}</v></c>` +
+          `</row>`
+        )
+        payRowIdxSal++
+      }
+      const PTR_SAL = payRowIdxSal
+      const payTotRowSal =
+        `<row r="${PTR_SAL}">` +
+        `<c r="A${PTR_SAL}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
+        `<c r="B${PTR_SAL}" s="${S.tot_lbl}"/>` +
+        `<c r="C${PTR_SAL}" s="${S.tot_lbl}"/>` +
+        `<c r="D${PTR_SAL}" s="${S.tot_pay}"><f>SUM(D${T3_HDR_SAL + 1}:D${PTR_SAL - 1})</f></c>` +
+        `</row>`
+      const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
+      const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
+      const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}${t1TotSal}${t3HdrSal}${payRowsSal.join('')}${payTotRowSal}</sheetData>`
+      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="5" customWidth="1"/><col min="3" max="8" width="16" customWidth="1"/></cols>`
+      sheetXmls.push(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<worksheet xmlns="${WB_NS_SAL}" xmlns:r="${WB_REL_SAL}">` +
+        `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
+        `${colsXmlSal}${sheetDataSal}</worksheet>`
+      )
+      continue
+    }
 
     // Monthly hours split by weekday+sat / sunday per type
     // Also track per-date split for rate-period pay calculation
