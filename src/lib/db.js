@@ -361,11 +361,11 @@ export async function getTodayStatuses() {
   return result
 }
 
-export async function saveLogManual({ userId, workType, logType, date, time }) {
+export async function saveLogManual({ userId, workType, logType, date, time, approvedTime }) {
   const [y, mo, d] = date.split('-').map(Number)
   const [h, m] = time.split(':').map(Number)
   const dt = new Date(y, mo - 1, d, h, m, 0)
-  await addDoc(logsCol, {
+  const docData = {
     user_id: userId,
     work_type: workType || '',
     log_type: logType,
@@ -373,7 +373,9 @@ export async function saveLogManual({ userId, workType, logType, date, time }) {
     date,
     time: time + ':00',
     synced: 0
-  })
+  }
+  if (approvedTime) docData.approved_time = approvedTime
+  await addDoc(logsCol, docData)
 }
 
 export async function updateLogTime(id, timeStr) {
