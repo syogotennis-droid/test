@@ -272,6 +272,8 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [subPickerGroup, setSubPickerGroup] = useState(null)
   const [firstWork, setFirstWork] = useState(null)
   const [lastWork, setLastWork] = useState(null)
+  const [confirmingBoundary, setConfirmingBoundary] = useState(false)
+  const [pendingWorkItems, setPendingWorkItems] = useState(null)
   const clockOutRef = useRef(new Date())
 
   const displayCards = getDisplayCards(user.workItems)
@@ -328,18 +330,31 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
       setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
       return
     }
-    if (workActiveItems.length >= 2 && (!resolvedFirstWork || !resolvedLastWork)) {
-      setTimeError('最初の業務と最後の業務を選択してください')
+    const workItemsObj = {}
+    activeItems.forEach(id => {
+      const t = workTimes[id] || { h: 0, m: 0 }
+      workItemsObj[id] = t.h * 60 + t.m
+    })
+    if (workActiveItems.length >= 2) {
+      setPendingWorkItems(workItemsObj)
+      setConfirmingBoundary(true)
       return
     }
     setSaving(true)
     try {
-      const workItemsObj = {}
-      activeItems.forEach(id => {
-        const t = workTimes[id] || { h: 0, m: 0 }
-        workItemsObj[id] = t.h * 60 + t.m
-      })
-      await onComplete(workItemsObj, resolvedFirstWork || null, resolvedLastWork || null)
+      await onComplete(workItemsObj, workActiveItems[0] || null, workActiveItems[0] || null)
+    } catch (e) {
+      console.error(e)
+      setSaving(false)
+    }
+  }
+
+  async function handleBoundaryConfirm() {
+    if (!resolvedFirstWork || !resolvedLastWork) return
+    setSaving(true)
+    setConfirmingBoundary(false)
+    try {
+      await onComplete(pendingWorkItems, resolvedFirstWork, resolvedLastWork)
     } catch (e) {
       console.error(e)
       setSaving(false)
@@ -422,36 +437,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           <span className={styles.totalUnit}>分</span>
         </div>
 
-        {/* 最初/最後の業務選択 (2種類以上ある場合のみ) */}
-        {workActiveItems.length >= 2 && (
-          <div className={styles.boundarySection}>
-            <div className={styles.boundaryRow}>
-              <span className={styles.boundaryLabel}>最初の業務</span>
-              <div className={styles.boundaryBtns}>
-                {workActiveItems.map(id => (
-                  <button
-                    key={id}
-                    className={[styles.boundaryBtn, resolvedFirstWork === id ? styles.boundaryBtnActive : ''].join(' ')}
-                    onClick={() => setFirstWork(id)}
-                  >{id}</button>
-                ))}
-              </div>
-            </div>
-            <div className={styles.boundaryRow}>
-              <span className={styles.boundaryLabel}>最後の業務</span>
-              <div className={styles.boundaryBtns}>
-                {workActiveItems.map(id => (
-                  <button
-                    key={id}
-                    className={[styles.boundaryBtn, resolvedLastWork === id ? styles.boundaryBtnActive : ''].join(' ')}
-                    onClick={() => setLastWork(id)}
-                  >{id}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         {timeError && <div className={styles.timeError}>{timeError}</div>}
 
         <div className={styles.bottomRow}>
@@ -495,6 +480,50 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           onSetTime={setTime}
           onClose={() => setEditingItem(null)}
         />
+      )}
+
+      {/* 最初/最後の業務確認モーダル */}
+      {confirmingBoundary && (
+        <div className={styles.boundaryOverlay}>
+          <div className={styles.boundaryModal}>
+            <div className={styles.boundaryModalTitle}>業務の順番を確認</div>
+            <div className={styles.boundaryModalDesc}>始業・終業時の業務を選択してください。</div>
+            <div className={styles.boundaryModalRows}>
+              <div className={styles.boundaryModalRow}>
+                <span className={styles.boundaryModalLabel}>最初の業務</span>
+                <div className={styles.boundaryBtns}>
+                  {workActiveItems.map(id => (
+                    <button
+                      key={id}
+                      className={[styles.boundaryBtn, resolvedFirstWork === id ? styles.boundaryBtnActive : ''].join(' ')}
+                      onClick={() => setFirstWork(id)}
+                    >{id}</button>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.boundaryModalRow}>
+                <span className={styles.boundaryModalLabel}>最後の業務</span>
+                <div className={styles.boundaryBtns}>
+                  {workActiveItems.map(id => (
+                    <button
+                      key={id}
+                      className={[styles.boundaryBtn, resolvedLastWork === id ? styles.boundaryBtnActive : ''].join(' ')}
+                      onClick={() => setLastWork(id)}
+                    >{id}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className={styles.boundaryModalActions}>
+              <button className={styles.boundaryModalCancel} onClick={() => setConfirmingBoundary(false)}>戻る</button>
+              <button
+                className={[styles.boundaryModalOk, (!resolvedFirstWork || !resolvedLastWork) ? styles.boundaryModalOkDisabled : ''].join(' ')}
+                onClick={handleBoundaryConfirm}
+                disabled={!resolvedFirstWork || !resolvedLastWork}
+              >退勤を登録</button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
