@@ -407,6 +407,11 @@ export async function setApprovedTime(logId, approvedTime) {
   await updateDoc(doc(db, 'logs', logId), { approved_time: approvedTime })
 }
 
+export async function updateLogWorkItems(logId, workItems) {
+  const workTypeStr = Object.entries(workItems).filter(([, m]) => m > 0).map(([t, m]) => `${t}:${m}`).join(',')
+  await updateDoc(doc(db, 'logs', logId), { work_type: workTypeStr, work_items: workItems })
+}
+
 export async function updateLogTime(id, timeStr) {
   const d = await getDoc(doc(db, 'logs', id))
   if (!d.exists()) return

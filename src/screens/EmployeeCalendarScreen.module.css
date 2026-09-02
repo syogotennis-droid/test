@@ -215,3 +215,105 @@
   color: var(--color-text);
   width: 100%;
 }
+
+.editWorkBtn {
+  margin-top: 4px;
+  background: #e8f0fe;
+  border: 1px solid #93b4f5;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  color: #1a3f6f;
+  width: 100%;
+}
+
+.workEditHint {
+  font-size: 0.88rem;
+  color: var(--color-subtext);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.workEditList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.workEditRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workEditLabel {
+  font-size: 1rem;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.workEditInputWrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workEditInput {
+  width: 72px;
+  text-align: right;
+  font-size: 1.1rem;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.workEditUnit {
+  font-size: 0.95rem;
+  color: var(--color-subtext);
+}
+
+.workEditActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.workEditActions .modalClose {
+  margin-top: 0;
+  flex: 1;
+}
+
+.editWorkSaveBtn {
+  flex: 1;
+  background: #1a3f6f;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  color: #fff;
+}
+
+.editWorkSaveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.noWorkDot {
+  position: absolute;
+  bottom: 3px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  background: #f59e0b;
+  border-radius: 50%;
+}

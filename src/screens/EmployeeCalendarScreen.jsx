@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { getLogs } from '../lib/db'
+import React, { useState, useEffect, useCallback } from 'react'
+import { getLogs, updateLogWorkItems, CLOCK_OUT_HIDDEN } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -22,14 +22,16 @@ function getCalendarDays(year, month) {
 
 function buildDayMap(logs, year, month) {
   const map = {}
+  // logs are sorted desc by timestamp, so first encountered per day = latest
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
-    if (!map[d]) map[d] = { ins: [], outs: [], workType: '' }
+    if (!map[d]) map[d] = { ins: [], outs: [], workType: '', outLog: null }
     if (log.log_type === '出勤') map[d].ins.push(log.time || '')
     else if (log.log_type === '退勤') {
       map[d].outs.push(log.time || '')
       if (log.work_type) map[d].workType = log.work_type
+      if (!map[d].outLog) map[d].outLog = log
     }
   })
   return map
@@ -61,40 +63,115 @@ function parseWorkType(wt) {
   }).filter(e => e.type)
 }
 
-function DayModal({ day, year, month, entry, onClose }) {
+function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
   const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
   const duration = timeDiff(inTime, outTime)
   const workTypes = parseWorkType(entry?.workType || '')
 
+  const editableItems = (user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item))
+  const canEdit = editableItems.length > 0 && entry?.outLog && user?.employeeType !== 'salaried'
+
+  const [editing, setEditing] = useState(false)
+  const [inputs, setInputs] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!editing) return
+    const initial = {}
+    parseWorkType(entry?.workType || '').forEach(({ type, mins }) => {
+      if (mins) initial[type] = String(mins)
+    })
+    setInputs(initial)
+  }, [editing])
+
+  async function handleSave() {
+    setSaving(true)
+    const workItems = {}
+    editableItems.forEach(item => {
+      const v = parseInt(inputs[item] || '0')
+      if (v > 0) workItems[item] = v
+    })
+    try {
+      await updateLogWorkItems(entry.outLog.id, workItems)
+      setEditing(false)
+      onSaved()
+    } catch(e) {
+      alert('保存に失敗しました: ' + (e?.message || e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} onClick={editing ? undefined : onClose}>
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
         <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
-        <div className={styles.modalRow}>
-          <span className={styles.modalRowLabel}>出勤</span>
-          <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
-        </div>
-        <div className={styles.modalRow}>
-          <span className={styles.modalRowLabel}>退勤</span>
-          <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
-        </div>
-        <div className={styles.modalRow}>
-          <span className={styles.modalRowLabel}>勤務時間</span>
-          <span className={styles.modalRowValue}>{duration || '—'}</span>
-        </div>
-        {workTypes.length > 0 && (
+
+        {!editing ? (
           <>
-            <div className={styles.modalDivider} />
-            {workTypes.map(({ type, mins }) => (
-              <div key={type} className={styles.modalRow}>
-                <span className={styles.modalRowLabel}>{type}</span>
-                <span className={styles.modalRowValue}>{mins !== null ? fmtMins(mins) : '—'}</span>
-              </div>
-            ))}
+            <div className={styles.modalRow}>
+              <span className={styles.modalRowLabel}>出勤</span>
+              <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
+            </div>
+            <div className={styles.modalRow}>
+              <span className={styles.modalRowLabel}>退勤</span>
+              <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
+            </div>
+            <div className={styles.modalRow}>
+              <span className={styles.modalRowLabel}>勤務時間</span>
+              <span className={styles.modalRowValue}>{duration || '—'}</span>
+            </div>
+            {workTypes.length > 0 && (
+              <>
+                <div className={styles.modalDivider} />
+                {workTypes.map(({ type, mins }) => (
+                  <div key={type} className={styles.modalRow}>
+                    <span className={styles.modalRowLabel}>{type}</span>
+                    <span className={styles.modalRowValue}>{mins !== null ? fmtMins(mins) : '—'}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {canEdit && (
+              <button className={styles.editWorkBtn} onClick={() => setEditing(true)}>
+                {workTypes.length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
+              </button>
+            )}
+            <button className={styles.modalClose} onClick={onClose}>閉じる</button>
+          </>
+        ) : (
+          <>
+            <div className={styles.workEditHint}>各業務の時間を分単位で入力してください</div>
+            <div className={styles.workEditList}>
+              {editableItems.map(item => (
+                <div key={item} className={styles.workEditRow}>
+                  <span className={styles.workEditLabel}>{item}</span>
+                  <div className={styles.workEditInputWrap}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className={styles.workEditInput}
+                      value={inputs[item] || ''}
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g, '')
+                        setInputs(prev => ({ ...prev, [item]: v }))
+                      }}
+                      placeholder="0"
+                    />
+                    <span className={styles.workEditUnit}>分</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className={styles.workEditActions}>
+              <button className={styles.modalClose} onClick={() => setEditing(false)}>キャンセル</button>
+              <button className={styles.editWorkSaveBtn} onClick={handleSave} disabled={saving}>
+                {saving ? '保存中…' : '保存'}
+              </button>
+            </div>
           </>
         )}
-        <button className={styles.modalClose} onClick={onClose}>閉じる</button>
       </div>
     </div>
   )
@@ -108,12 +185,14 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const [loading, setLoading] = useState(true)
   const [selectedDay, setSelectedDay] = useState(null)
 
-  useEffect(() => {
+  const loadLogs = useCallback(() => {
     setLoading(true)
     const { from, to } = getMonthRange(year, month)
     getLogs({ dateFrom: from, dateTo: to, userId: user.id })
       .then(data => { setLogs(data); setLoading(false) })
   }, [year, month, user.id])
+
+  useEffect(() => { loadLogs() }, [loadLogs])
 
   const days = getCalendarDays(year, month)
   const dayMap = buildDayMap(logs, year, month)
@@ -156,8 +235,8 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
             const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
             const worked = !!inTime
-            const duration = worked && outTime ? timeDiff(inTime, outTime) : ''
             const dow = new Date(year, month, d).getDay()
+            const hasNoWorkType = entry?.outLog && !entry.workType && user?.employeeType !== 'salaried' && (user?.workItems || []).filter(i => !CLOCK_OUT_HIDDEN.has(i)).length > 0
             return (
               <div
                 key={d}
@@ -168,6 +247,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                 {inTime && <div className={styles.inTime}>出 {inTime}</div>}
                 {inTime && outTime && <div className={styles.timeSpacer} />}
                 {outTime && <div className={styles.outTime}>退 {outTime}</div>}
+                {hasNoWorkType && <div className={styles.noWorkDot} />}
               </div>
             )
           })}
@@ -180,7 +260,9 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
           year={year}
           month={month}
           entry={dayMap[selectedDay]}
+          user={user}
           onClose={() => setSelectedDay(null)}
+          onSaved={() => { loadLogs(); setSelectedDay(null) }}
         />
       )}
     </div>
