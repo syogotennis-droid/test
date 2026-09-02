@@ -2144,14 +2144,31 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
 function AddUserModal({ onClose, onAdded }) {
   const [addId, setAddId] = useState('')
   const [addName, setAddName] = useState('')
+  const [pin, setPin] = useState('')
+  const [pinError, setPinError] = useState('')
   const [employeeType, setEmployeeType] = useState('hourly')
   const [saving, setSaving] = useState(false)
 
+  function handlePinChange(e) {
+    const v = e.target.value.replace(/\D/g, '').slice(0, 4)
+    setPin(v)
+    setPinError('')
+  }
+
   async function handleAdd() {
     if (!addId.trim() || !addName.trim() || saving) return
+    if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
     setSaving(true)
     try {
-      const newUser = { id: addId.trim(), name: addName.trim(), employeeType }
+      if (pin) {
+        const existing = await resolveUserByPin(pin)
+        if (existing) {
+          setPinError(`このPINは${existing.name}さんが使用中です`)
+          setSaving(false)
+          return
+        }
+      }
+      const newUser = { id: addId.trim(), name: addName.trim(), pin, employeeType }
       await upsertUser(newUser)
       onAdded(newUser)
     } catch(e) {
@@ -2160,7 +2177,7 @@ function AddUserModal({ onClose, onAdded }) {
     }
   }
 
-  const canSave = addId.trim() && addName.trim()
+  const canSave = addId.trim() && addName.trim() && !pinError
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -2216,11 +2233,27 @@ function AddUserModal({ onClose, onAdded }) {
                   onKeyDown={e => e.key === 'Enter' && canSave && handleAdd()}
                 />
               </div>
+              <div>
+                <label className={styles.userEditLabel}>PINコード</label>
+                <input
+                  className={[styles.userEditInput, pinError ? styles.userEditInputErr : ''].join(' ')}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="4桁（任意）"
+                  value={pin}
+                  onChange={handlePinChange}
+                />
+                {pinError
+                  ? <div className={styles.userEditErrMsg}>{pinError}</div>
+                  : <div className={styles.userEditHintText}>4桁の数字。未設定の場合はPINで打刻できません。</div>
+                }
+              </div>
             </div>
             <p className={styles.userEditHintText}>
               {employeeType === 'salaried'
                 ? '月給・固定時間・残業時給は追加後に「編集」から設定できます。'
-                : '作業項目・時給・PINは追加後に「編集」から設定できます。'}
+                : '作業項目・時給は追加後に「編集」から設定できます。'}
             </p>
           </div>
         </div>
