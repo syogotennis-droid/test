@@ -2144,13 +2144,14 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
 function AddUserModal({ onClose, onAdded }) {
   const [addId, setAddId] = useState('')
   const [addName, setAddName] = useState('')
+  const [employeeType, setEmployeeType] = useState('hourly')
   const [saving, setSaving] = useState(false)
 
   async function handleAdd() {
     if (!addId.trim() || !addName.trim() || saving) return
     setSaving(true)
     try {
-      const newUser = { id: addId.trim(), name: addName.trim() }
+      const newUser = { id: addId.trim(), name: addName.trim(), employeeType }
       await upsertUser(newUser)
       onAdded(newUser)
     } catch(e) {
@@ -2180,6 +2181,22 @@ function AddUserModal({ onClose, onAdded }) {
             <div className={styles.userEditSectionTitle}>基本情報</div>
             <div className={styles.userEditGrid2}>
               <div>
+                <label className={styles.userEditLabel}>種別</label>
+                <div className={styles.empTypeToggle}>
+                  <button
+                    type="button"
+                    className={[styles.empTypeBtn, employeeType === 'hourly' ? styles.empTypeBtnActive : ''].join(' ')}
+                    onClick={() => setEmployeeType('hourly')}
+                  >アルバイト</button>
+                  <button
+                    type="button"
+                    className={[styles.empTypeBtn, employeeType === 'salaried' ? styles.empTypeBtnActive : ''].join(' ')}
+                    onClick={() => setEmployeeType('salaried')}
+                  >社員</button>
+                </div>
+              </div>
+              <div />
+              <div>
                 <label className={styles.userEditLabel}>ユーザーID <span className={styles.userEditRequired}>必須</span></label>
                 <input
                   className={styles.userEditInput}
@@ -2200,7 +2217,11 @@ function AddUserModal({ onClose, onAdded }) {
                 />
               </div>
             </div>
-            <p className={styles.userEditHintText}>作業項目・時給・PINは追加後に「編集」から設定できます。</p>
+            <p className={styles.userEditHintText}>
+              {employeeType === 'salaried'
+                ? '月給・固定時間・残業時給は追加後に「編集」から設定できます。'
+                : '作業項目・時給・PINは追加後に「編集」から設定できます。'}
+            </p>
           </div>
         </div>
         <div className={styles.userEditFooter}>
