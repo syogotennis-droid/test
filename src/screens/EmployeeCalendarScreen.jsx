@@ -222,7 +222,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
               {/* 右列：入力エリア */}
               <div className={styles.editInputArea}>
                 <div className={styles.editSelectedTitle}>
-                  {selectedItem ? `${selectedItem}` : '業務を選択'}
+                  {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
                 </div>
 
                 {workingMinutes != null && selectedItem && (
@@ -245,7 +245,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                         className={[styles.quickBtn, styles.quickBtnAll, !maxMins || maxMins <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
                         disabled={!maxMins || maxMins <= 0}
                         onClick={() => maxMins > 0 && setQuick(maxMins)}
-                      >残り全て</button>
+                      >{maxMins > 0 ? `残り${fmtMins(maxMins)}を入力` : '残り全て'}</button>
                     </div>
                     <div className={styles.timeNumGrid}>
                       {NUM_KEYS.map((k, i) => (

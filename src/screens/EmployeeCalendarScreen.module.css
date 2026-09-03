@@ -184,6 +184,7 @@
   max-height: 96dvh;
   padding: 18px 20px 14px;
   gap: 10px;
+  overflow: hidden;
 }
 
 .modalDate {
@@ -248,8 +249,8 @@
   display: flex;
   flex-direction: row;
   gap: 10px;
-  min-height: 0;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -260,11 +261,24 @@
   gap: 6px;
   width: 140px;
   flex-shrink: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
+  overflow-y: scroll;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
 }
 
-.editItemList::-webkit-scrollbar { display: none; }
+.editItemList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.editItemList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editItemList::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 2px;
+}
 
 .editItemBtn {
   display: flex;
