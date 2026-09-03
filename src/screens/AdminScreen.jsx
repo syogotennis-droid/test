@@ -383,6 +383,16 @@ function buildDayMap(logs, year, month) {
       }
     }
   })
+  // Build ordered session pairs per day
+  Object.values(map).forEach(entry => {
+    const sortedIns = [...entry.ins].sort()
+    const sortedOuts = [...entry.outs].sort()
+    const n = Math.max(sortedIns.length, sortedOuts.length)
+    entry.sessions = Array.from({ length: n }, (_, i) => ({
+      in: sortedIns[i] ? sortedIns[i].substring(0, 5) : '',
+      out: sortedOuts[i] ? sortedOuts[i].substring(0, 5) : '',
+    }))
+  })
   return map
 }
 
@@ -482,12 +492,14 @@ function CalendarTab({ users, today, isTablet }) {
             {days.map((d, i) => {
               if (!d) return <div key={`pad-${i}`} className={styles.calEmpty} />
               const entry = dayMap[d]
-              const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-              const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
+              const sessions = entry?.sessions || []
+              const inTime = sessions[0]?.in || ''
               const worked = !!inTime
-              const needsAlert = !!inTime && !!outTime && !entry?.hasWorkItems
+              const needsAlert = worked && sessions.some(s => s.out) && !entry?.hasWorkItems
+              const multiSession = sessions.length > 1
               const dow = new Date(year, month, d).getDay()
               const isToday = d === todayDay && year === todayYear && month === todayMonth
+              const SESSION_NUMS = ['①', '②', '③', '④', '⑤']
               return (
                 <div
                   key={d}
@@ -495,8 +507,29 @@ function CalendarTab({ users, today, isTablet }) {
                   onClick={() => setSelectedDay(d)}
                 >
                   <div className={[styles.calDayNum, isToday ? styles.calDayNumToday : ''].join(' ')}>{d}</div>
-                  {worked && <div className={styles.calIn}>出勤 {inTime}</div>}
-                  {outTime && <div className={styles.calOut}>退勤 {outTime}</div>}
+                  {multiSession && (
+                    <div className={styles.calMultiBadge}>{sessions.length}回</div>
+                  )}
+                  {multiSession ? (
+                    <div className={styles.calSessions}>
+                      {sessions.map((s, idx) => (
+                        <div key={idx} className={styles.calSessionRow}>
+                          <span className={styles.calSessionNum}>{SESSION_NUMS[idx] || `${idx + 1}.`}</span>
+                          <span className={styles.calSessionIn}>{s.in}</span>
+                          {s.out ? (
+                            <><span className={styles.calSessionArrow}>→</span><span className={styles.calSessionOut}>{s.out}</span></>
+                          ) : (
+                            <span className={styles.calSessionOut} style={{ color: '#aaa' }}>—</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      {inTime && <div className={styles.calIn}>出勤 {inTime}</div>}
+                      {sessions[0]?.out && <div className={styles.calOut}>退勤 {sessions[0].out}</div>}
+                    </>
+                  )}
                 </div>
               )
             })}
