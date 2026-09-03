@@ -180,10 +180,10 @@
 }
 
 .modalEditing {
-  width: min(380px, 94vw);
-  max-height: 92dvh;
-  overflow-y: auto;
-  gap: 10px;
+  width: min(400px, 94vw);
+  max-height: 96dvh;
+  padding: 18px 20px 14px;
+  gap: 8px;
 }
 
 .modalDate {
@@ -243,66 +243,82 @@
   width: 100%;
 }
 
-/* ── 項目セレクタ ── */
-.editItemList {
+/* ── 項目チップ行 ── */
+.editChipRow {
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  max-height: 36vh;
-  overflow-y: auto;
+  flex-direction: row;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  flex-shrink: 0;
+  scrollbar-width: none;
 }
 
-.editItemBtn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border: 2px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-bg);
+.editChipRow::-webkit-scrollbar { display: none; }
+
+.editChip {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 2px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
-  text-align: left;
-  width: 100%;
+  min-height: 34px;
 }
 
-.editItemBtnSelected {
+.editChipSelected {
+  border-color: #1a3f6f;
+  background: #1a3f6f;
+  color: #fff;
+}
+
+.editChipEntered {
   border-color: #1a5fa8;
   background: #eff6ff;
-}
-
-.editItemBtnEntered {
-  border-color: #93b4f5;
-  background: var(--color-bg);
-}
-
-.editItemName {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.editItemTime {
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.editItemTimeEntered {
   color: #1a5fa8;
 }
 
-.editItemTimeMissing {
-  color: #94a3b8;
-  font-weight: 500;
+/* ── 選択中業務名（常時表示） ── */
+.editSelectedTitle {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #1a3f6f;
+  text-align: center;
+  line-height: 1.4;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
-/* ── テンキーエリア ── */
-.editNumpadSection {
+/* ── 残り時間（常時表示） ── */
+.editRemainingRow {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-top: 1px solid var(--color-border);
-  padding-top: 10px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.editRemainingLabel {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.editRemainingValue {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1a5fa8;
+}
+
+.editRemainingDone {
+  color: #16a34a;
 }
 
 .minsDisplay {
@@ -369,7 +385,7 @@
 }
 
 .timeNumKey {
-  height: 52px;
+  height: 48px;
   min-height: 48px;
   border: 2px solid #e2e8f0;
   border-radius: 10px;

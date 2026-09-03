@@ -190,29 +190,41 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
           </>
         ) : (
           <>
-            {/* 項目セレクタ */}
-            <div className={styles.editItemList}>
+            {/* 水平チップ行（項目切り替え） */}
+            <div className={styles.editChipRow}>
               {editableItems.map(item => {
                 const v = parseInt(inputs[item] || '0') || 0
                 const isSel = selectedItem === item
                 return (
                   <button
                     key={item}
-                    className={[styles.editItemBtn, isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''].join(' ')}
+                    className={[styles.editChip, isSel ? styles.editChipSelected : v > 0 ? styles.editChipEntered : ''].join(' ')}
                     onClick={() => setSelectedItem(item)}
                   >
-                    <span className={styles.editItemName}>{item}</span>
-                    <span className={[styles.editItemTime, v > 0 ? styles.editItemTimeEntered : styles.editItemTimeMissing].join(' ')}>
-                      {v > 0 ? fmtMins(v) : '未入力'}
-                    </span>
+                    {item}{v > 0 && !isSel ? ` ${fmtMins(v)}` : ''}
                   </button>
                 )
               })}
             </div>
 
-            {/* テンキーエリア */}
+            {/* 選択中業務名（常時表示） */}
+            <div className={styles.editSelectedTitle}>
+              {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
+            </div>
+
+            {/* 残り時間（常時表示） */}
+            {workingMinutes != null && selectedItem && (
+              <div className={styles.editRemainingRow}>
+                <span className={styles.editRemainingLabel}>残り</span>
+                <span className={[styles.editRemainingValue, maxMins <= 0 ? styles.editRemainingDone : ''].join(' ')}>
+                  {maxMins > 0 ? fmtMins(maxMins) : maxMins === 0 ? '完了' : `${-maxMins}分超過`}
+                </span>
+              </div>
+            )}
+
+            {/* 入力値 + クイックボタン + テンキー */}
             {selectedItem && (
-              <div className={styles.editNumpadSection}>
+              <>
                 <div className={styles.minsDisplay}>
                   <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
                   {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
@@ -239,7 +251,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                 {isOver && (
                   <div className={styles.minsError}>残り時間を{currentValue - maxMins}分超えています</div>
                 )}
-              </div>
+              </>
             )}
 
             <div className={styles.workEditActions}>
