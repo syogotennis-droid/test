@@ -87,6 +87,83 @@ function parseWorkType(wt) {
   }).filter(e => e.type)
 }
 
+/* ─── 保存確認モーダル ─── */
+function ConfirmSaveModal({ year, month, day, workingMinutes, totalInputMinutes, editableItems, inputs, saving, onBack, onSave }) {
+  const remaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
+  const isComplete = remaining === 0
+
+  const enteredItems = editableItems
+    .map(item => ({ name: item, mins: parseInt(inputs[item] || '0') || 0 }))
+    .filter(e => e.mins > 0)
+
+  return (
+    <div className={styles.confirmOverlay}>
+      <div className={styles.confirmModal}>
+        {/* ヘッダー */}
+        <div className={styles.confirmHeader}>
+          <span className={styles.confirmTitle}>入力内容を確認</span>
+          <span className={styles.confirmDate}>{year}年{month + 1}月{day}日</span>
+        </div>
+
+        {/* サマリー */}
+        <div className={styles.confirmSummary}>
+          <div className={styles.confirmStat}>
+            <span className={styles.confirmStatLabel}>勤務時間</span>
+            <span className={styles.confirmStatValue}>{workingMinutes != null ? fmtMins(workingMinutes) : '—'}</span>
+          </div>
+          <div className={styles.confirmStatDivider} />
+          <div className={styles.confirmStat}>
+            <span className={styles.confirmStatLabel}>入力済み</span>
+            <span className={styles.confirmStatValue}>{fmtMins(totalInputMinutes) || '0分'}</span>
+          </div>
+          <div className={styles.confirmStatDivider} />
+          <div className={styles.confirmStat}>
+            <span className={styles.confirmStatLabel}>残り時間</span>
+            <span className={[styles.confirmStatValue, isComplete ? styles.confirmStatZero : styles.confirmStatPending].join(' ')}>
+              {remaining != null ? (fmtMins(remaining) || '0分') : '—'}
+            </span>
+          </div>
+        </div>
+
+        {isComplete && (
+          <div className={styles.confirmComplete}>勤務時間の入力が完了しています</div>
+        )}
+
+        {/* 業務内訳（長い場合だけスクロール） */}
+        <div className={styles.confirmBreakdown}>
+          {enteredItems.length === 0 ? (
+            <div className={styles.confirmEmpty}>入力された業務はありません</div>
+          ) : (
+            enteredItems.map(e => (
+              <div key={e.name} className={styles.confirmItem}>
+                <span className={styles.confirmItemName}>{e.name}</span>
+                <span className={styles.confirmItemTime}>{fmtMins(e.mins)}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* 合計 */}
+        <div className={styles.confirmTotal}>
+          <span>合計</span>
+          <span>{fmtMins(totalInputMinutes) || '0分'}</span>
+        </div>
+
+        {/* ボタン */}
+        <div className={styles.confirmActions}>
+          <button className={styles.confirmBackBtn} onClick={onBack} disabled={saving}>
+            入力画面に戻る
+          </button>
+          <button className={styles.confirmSaveBtn} onClick={onSave} disabled={saving}>
+            {saving ? '保存中…' : 'この内容で保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ─── 日別詳細モーダル ─── */
 function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
   const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
@@ -100,6 +177,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const [inputs, setInputs] = useState({})
   const [selectedItem, setSelectedItem] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   const workingMinutes = timeDiffMins(inTime, outTime)
 
@@ -142,29 +220,20 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     setInputs(prev => ({ ...prev, [selectedItem]: String(v) }))
   }
 
-  function handleConfirmItem() {
-    const idx = editableItems.indexOf(selectedItem)
-    const nextIdx = (idx + 1) % editableItems.length
-    setSelectedItem(editableItems[nextIdx])
+  function handleSave() {
+    setShowConfirm(true)
   }
 
-  async function handleSave() {
+  async function handleDoSave() {
+    setSaving(true)
     const workItems = {}
     editableItems.forEach(item => {
       const v = parseInt(inputs[item] || '0')
       if (v > 0) workItems[item] = v
     })
-    const lines = editableItems
-      .filter(item => workItems[item])
-      .map(item => `${item}：${fmtMins(workItems[item])}`)
-      .join('\n')
-    const msg = lines
-      ? `以下の内容で保存しますか？\n\n${lines}`
-      : '業務時間が入力されていません。このまま保存しますか？'
-    if (!window.confirm(msg)) return
-    setSaving(true)
     try {
       await updateLogWorkItems(entry.outLog.id, workItems)
+      setShowConfirm(false)
       setEditing(false)
       onSaved()
     } catch (e) {
@@ -175,178 +244,188 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={editing ? undefined : onClose}>
-      <div
-        className={[styles.modal, editing ? styles.modalEditing : ''].join(' ')}
-        onClick={e => e.stopPropagation()}
-      >
-        {!editing ? (
-          <>
-            <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
-            <div className={styles.modalRow}>
-              <span className={styles.modalRowLabel}>出勤</span>
-              <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
-            </div>
-            <div className={styles.modalRow}>
-              <span className={styles.modalRowLabel}>退勤</span>
-              <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
-            </div>
-            <div className={styles.modalRow}>
-              <span className={styles.modalRowLabel}>勤務時間</span>
-              <span className={styles.modalRowValue}>{duration || '—'}</span>
-            </div>
-            {workTypes.length > 0 && (
-              <>
-                <div className={styles.modalDivider} />
-                {workTypes.map(({ type, mins }) => (
-                  <div key={type} className={styles.modalRow}>
-                    <span className={styles.modalRowLabel}>{type}</span>
-                    <span className={styles.modalRowValue}>{mins !== null ? fmtMins(mins) : '—'}</span>
-                  </div>
-                ))}
-              </>
-            )}
-            {canEdit && (
-              <button className={styles.editWorkBtn} onClick={() => setEditing(true)}>
-                {workTypes.length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
-              </button>
-            )}
-            <button className={styles.modalClose} onClick={onClose}>閉じる</button>
-          </>
-        ) : (
-          <>
-            {/* ── ヘッダー ── */}
-            <div className={styles.editHeader}>
-              <div className={styles.editHeaderDate}>{year}年{month + 1}月{day}日</div>
-              <div className={styles.editHeaderStats}>
-                <span className={styles.editStatItem}>
-                  <span className={styles.editStatLabel}>勤務</span>
-                  <span className={styles.editStatValue}>
-                    {workingMinutes != null ? fmtMins(workingMinutes) : '—'}
-                  </span>
-                </span>
-                <span className={styles.editStatItem}>
-                  <span className={styles.editStatLabel}>入力済み</span>
-                  <span className={styles.editStatValue}>
-                    {totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}
-                  </span>
-                </span>
-                <span className={styles.editStatItem}>
-                  <span className={styles.editStatLabel}>残り</span>
-                  <span className={[styles.editStatValue, styles.editStatRemaining].join(' ')}>
-                    {headerRemaining != null
-                      ? (headerRemaining > 0 ? fmtMins(headerRemaining) : '完了')
-                      : '—'}
-                  </span>
-                </span>
+    <>
+      <div className={styles.modalOverlay} onClick={editing ? undefined : onClose}>
+        <div
+          className={[styles.modal, editing ? styles.modalEditing : ''].join(' ')}
+          onClick={e => e.stopPropagation()}
+        >
+          {!editing ? (
+            <>
+              <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
+              <div className={styles.modalRow}>
+                <span className={styles.modalRowLabel}>出勤</span>
+                <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
               </div>
-            </div>
-
-            {/* ── ボディ（左右2カラム） ── */}
-            <div className={styles.editBody}>
-
-              {/* 左：業務選択 */}
-              <div className={styles.editLeftCol}>
-                <p className={styles.editColTitle}>業務を選択</p>
-                <div className={styles.editItemGrid}>
-                  {editableItems.map(item => {
-                    const v = parseInt(inputs[item] || '0') || 0
-                    const isSel = selectedItem === item
-                    return (
-                      <button
-                        key={item}
-                        className={[
-                          styles.editItemBtn,
-                          isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
-                        ].join(' ')}
-                        onClick={() => setSelectedItem(item)}
-                      >
-                        <span className={styles.editItemName}>{item}</span>
-                        {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-                <button className={styles.editSaveFinalBtn} onClick={handleSave} disabled={saving}>
-                  {saving ? '保存中…' : '保存する'}
-                </button>
+              <div className={styles.modalRow}>
+                <span className={styles.modalRowLabel}>退勤</span>
+                <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
               </div>
-
-              {/* 右：入力エリア */}
-              <div className={styles.editRightCol}>
-                <div className={styles.editInputTitle}>
-                  {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
-                </div>
-
-                <div className={styles.minsDisplay}>
-                  <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
-                  {currentValue >= 60 && (
-                    <div className={styles.minsDisplaySecondary}>{currentValue}分</div>
-                  )}
-                </div>
-
-                <div className={styles.quickBtns}>
-                  {QUICK_PRESETS.map(opt => {
-                    const isDisabled = !selectedItem || (maxMins !== null && opt.mins > maxMins)
-                    return (
-                      <button
-                        key={opt.label}
-                        className={[styles.quickBtn, isDisabled ? styles.quickBtnDisabled : ''].join(' ')}
-                        disabled={isDisabled}
-                        onClick={() => !isDisabled && setQuick(opt.mins)}
-                      >{opt.label}</button>
-                    )
-                  })}
-                  <button
-                    className={[
-                      styles.quickBtn,
-                      (!selectedItem || !maxMins || maxMins <= 0) ? styles.quickBtnDisabled : ''
-                    ].join(' ')}
-                    disabled={!selectedItem || !maxMins || maxMins <= 0}
-                    onClick={() => maxMins > 0 && setQuick(maxMins)}
-                  >
-                    {maxMins > 0 ? `残り${fmtMins(maxMins)}` : '残り全て'}
-                  </button>
-                </div>
-
-                <div className={styles.timeNumGrid}>
-                  {NUM_KEYS.map((k, i) => (
-                    <button
-                      key={i}
-                      className={[
-                        styles.timeNumKey,
-                        k === '⌫' ? styles.timeNumDel : '',
-                        k === 'C' ? styles.timeNumClear : ''
-                      ].join(' ')}
-                      onClick={() => pressKey(k)}
-                    >{k}</button>
+              <div className={styles.modalRow}>
+                <span className={styles.modalRowLabel}>勤務時間</span>
+                <span className={styles.modalRowValue}>{duration || '—'}</span>
+              </div>
+              {workTypes.length > 0 && (
+                <>
+                  <div className={styles.modalDivider} />
+                  {workTypes.map(({ type, mins }) => (
+                    <div key={type} className={styles.modalRow}>
+                      <span className={styles.modalRowLabel}>{type}</span>
+                      <span className={styles.modalRowValue}>{mins !== null ? fmtMins(mins) : '—'}</span>
+                    </div>
                   ))}
-                </div>
-
-                {isOver && (
-                  <div className={styles.minsError}>
-                    残り時間を{currentValue - maxMins}分超えています
-                  </div>
-                )}
-
-                <div className={styles.editRightActions}>
-                  <button className={styles.editCancelBtn} onClick={() => setEditing(false)}>
-                    キャンセル
-                  </button>
-                  <button
-                    className={styles.editConfirmBtn}
-                    onClick={handleConfirmItem}
-                    disabled={!selectedItem}
-                  >
-                    この業務を決定
-                  </button>
+                </>
+              )}
+              {canEdit && (
+                <button className={styles.editWorkBtn} onClick={() => setEditing(true)}>
+                  {workTypes.length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
+                </button>
+              )}
+              <button className={styles.modalClose} onClick={onClose}>閉じる</button>
+            </>
+          ) : (
+            <>
+              {/* ── ヘッダー ── */}
+              <div className={styles.editHeader}>
+                <div className={styles.editHeaderDate}>{year}年{month + 1}月{day}日</div>
+                <div className={styles.editHeaderStats}>
+                  <span className={styles.editStatItem}>
+                    <span className={styles.editStatLabel}>勤務</span>
+                    <span className={styles.editStatValue}>
+                      {workingMinutes != null ? fmtMins(workingMinutes) : '—'}
+                    </span>
+                  </span>
+                  <span className={styles.editStatItem}>
+                    <span className={styles.editStatLabel}>入力済み</span>
+                    <span className={styles.editStatValue}>
+                      {totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}
+                    </span>
+                  </span>
+                  <span className={styles.editStatItem}>
+                    <span className={styles.editStatLabel}>残り</span>
+                    <span className={[styles.editStatValue, styles.editStatRemaining].join(' ')}>
+                      {headerRemaining != null
+                        ? (headerRemaining > 0 ? fmtMins(headerRemaining) : '完了')
+                        : '—'}
+                    </span>
+                  </span>
                 </div>
               </div>
-            </div>
-          </>
-        )}
+
+              {/* ── ボディ（左右2カラム） ── */}
+              <div className={styles.editBody}>
+
+                {/* 左：業務選択 */}
+                <div className={styles.editLeftCol}>
+                  <p className={styles.editColTitle}>業務を選択</p>
+                  <div className={styles.editItemGrid}>
+                    {editableItems.map(item => {
+                      const v = parseInt(inputs[item] || '0') || 0
+                      const isSel = selectedItem === item
+                      return (
+                        <button
+                          key={item}
+                          className={[
+                            styles.editItemBtn,
+                            isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
+                          ].join(' ')}
+                          onClick={() => setSelectedItem(item)}
+                        >
+                          <span className={styles.editItemName}>{item}</span>
+                          {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <button className={styles.editSaveFinalBtn} onClick={handleSave} disabled={saving}>
+                    保存する
+                  </button>
+                </div>
+
+                {/* 右：入力エリア */}
+                <div className={styles.editRightCol}>
+                  <div className={styles.editInputTitle}>
+                    {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
+                  </div>
+
+                  <div className={styles.minsDisplay}>
+                    <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
+                    {currentValue >= 60 && (
+                      <div className={styles.minsDisplaySecondary}>{currentValue}分</div>
+                    )}
+                  </div>
+
+                  <div className={styles.quickBtns}>
+                    {QUICK_PRESETS.map(opt => {
+                      const isDisabled = !selectedItem || (maxMins !== null && opt.mins > maxMins)
+                      return (
+                        <button
+                          key={opt.label}
+                          className={[styles.quickBtn, isDisabled ? styles.quickBtnDisabled : ''].join(' ')}
+                          disabled={isDisabled}
+                          onClick={() => !isDisabled && setQuick(opt.mins)}
+                        >{opt.label}</button>
+                      )
+                    })}
+                    <button
+                      className={[
+                        styles.quickBtn,
+                        (!selectedItem || !maxMins || maxMins <= 0) ? styles.quickBtnDisabled : ''
+                      ].join(' ')}
+                      disabled={!selectedItem || !maxMins || maxMins <= 0}
+                      onClick={() => maxMins > 0 && setQuick(maxMins)}
+                    >
+                      {maxMins > 0 ? `残り${fmtMins(maxMins)}` : '残り全て'}
+                    </button>
+                  </div>
+
+                  <div className={styles.timeNumGrid}>
+                    {NUM_KEYS.map((k, i) => (
+                      <button
+                        key={i}
+                        className={[
+                          styles.timeNumKey,
+                          k === '⌫' ? styles.timeNumDel : '',
+                          k === 'C' ? styles.timeNumClear : ''
+                        ].join(' ')}
+                        onClick={() => pressKey(k)}
+                      >{k}</button>
+                    ))}
+                  </div>
+
+                  {isOver && (
+                    <div className={styles.minsError}>
+                      残り時間を{currentValue - maxMins}分超えています
+                    </div>
+                  )}
+
+                  <div className={styles.editRightActions}>
+                    <button className={styles.editCancelBtn} onClick={() => setEditing(false)}>
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+
+      {editing && showConfirm && (
+        <ConfirmSaveModal
+          year={year}
+          month={month}
+          day={day}
+          workingMinutes={workingMinutes}
+          totalInputMinutes={totalInputMinutes}
+          editableItems={editableItems}
+          inputs={inputs}
+          saving={saving}
+          onBack={() => setShowConfirm(false)}
+          onSave={handleDoSave}
+        />
+      )}
+    </>
   )
 }
 
