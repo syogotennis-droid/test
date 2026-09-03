@@ -133,12 +133,20 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   }
 
   async function handleSave() {
-    setSaving(true)
     const workItems = {}
     editableItems.forEach(item => {
       const v = parseInt(inputs[item] || '0')
       if (v > 0) workItems[item] = v
     })
+    const lines = editableItems
+      .filter(item => workItems[item])
+      .map(item => `${item}：${fmtMins(workItems[item])}`)
+      .join('\n')
+    const msg = lines
+      ? `以下の内容で保存しますか？\n\n${lines}`
+      : '業務時間が入力されていません。このまま保存しますか？'
+    if (!window.confirm(msg)) return
+    setSaving(true)
     try {
       await updateLogWorkItems(entry.outLog.id, workItems)
       setEditing(false)
@@ -233,8 +241,6 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                       {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
                     </div>
                     <div className={styles.quickBtns}>
-                      <button className={styles.quickBtn} onClick={() => setQuick(30)}>30分</button>
-                      <button className={styles.quickBtn} onClick={() => setQuick(60)}>1時間</button>
                       <button
                         className={[styles.quickBtn, styles.quickBtnAll, !maxMins || maxMins <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
                         disabled={!maxMins || maxMins <= 0}
