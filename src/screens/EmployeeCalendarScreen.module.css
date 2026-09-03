@@ -1,3 +1,4 @@
+/* ─── カレンダー画面 ─── */
 .screen {
   display: flex;
   flex-direction: column;
@@ -158,7 +159,7 @@
   line-height: 1;
 }
 
-/* ─── Day detail modal ─── */
+/* ─── 詳細モーダル（閲覧） ─── */
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -177,14 +178,6 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.modalEditing {
-  width: min(620px, 94vw);
-  max-height: 96dvh;
-  padding: 18px 20px 14px;
-  gap: 10px;
-  overflow: hidden;
 }
 
 .modalDate {
@@ -244,39 +237,124 @@
   width: 100%;
 }
 
-/* ─── 2カラム編集レイアウト ─── */
-.editSplit {
+.noWorkBadge {
+  position: absolute;
+  bottom: 2px;
+  right: 3px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #b45309;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+/* ─── 編集モーダル（業務時間入力） ─── */
+.modalEditing {
+  width: min(960px, 82vw);
+  max-height: 90dvh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ヘッダー */
+.editHeader {
   display: flex;
-  flex-direction: row;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 16px 16px 0 0;
+  flex-shrink: 0;
+}
+
+.editHeaderDate {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1a3f6f;
+}
+
+.editHeaderStats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.editStatItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.editStatLabel {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.editStatValue {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.editStatRemaining {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #1a5fa8;
+}
+
+/* ボディ */
+.editBody {
+  display: flex;
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-/* 左列：業務アイテムリスト */
-.editItemList {
+/* 左列：業務選択（40%） */
+.editLeftCol {
+  width: 40%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 140px;
+  padding: 14px 12px 14px 16px;
+  gap: 10px;
+  border-right: 1px solid #e2e8f0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editColTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   flex-shrink: 0;
-  overflow-y: scroll;
-  padding-bottom: 8px;
+  margin: 0;
+}
+
+/* 業務グリッド（2列） */
+.editItemGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 4px;
+  padding-bottom: 2px;
   scrollbar-width: thin;
-  scrollbar-color: #94a3b8 transparent;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
-.editItemList::-webkit-scrollbar {
-  width: 4px;
-}
-
-.editItemList::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.editItemList::-webkit-scrollbar-thumb {
-  background: #94a3b8;
+.editItemGrid::-webkit-scrollbar { width: 3px; }
+.editItemGrid::-webkit-scrollbar-track { background: transparent; }
+.editItemGrid::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
   border-radius: 2px;
 }
 
@@ -285,139 +363,137 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 10px 8px;
-  border-radius: 10px;
-  border: 2px solid #e2e8f0;
-  background: #f8fafc;
+  gap: 3px;
+  padding: 10px 6px;
+  border-radius: 8px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   min-height: 56px;
-  flex-shrink: 0;
+}
+
+.editItemBtn:hover {
+  background: #f0f7ff;
+  border-color: #bfdbfe;
 }
 
 .editItemBtnSelected {
-  border-color: #1a3f6f;
   background: #1a3f6f;
+  border-color: #1a3f6f;
+}
+
+.editItemBtnSelected:hover {
+  background: #1a4d8a;
+  border-color: #1a4d8a;
 }
 
 .editItemBtnEntered {
-  border-color: #1a5fa8;
   background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.editItemBtnEntered:hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
 }
 
 .editItemName {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 700;
-  color: #64748b;
+  color: #334155;
   line-height: 1.2;
-  word-break: keep-all;
+  text-align: center;
 }
 
-.editItemBtnSelected .editItemName {
-  color: #fff;
-}
-
-.editItemBtnEntered .editItemName {
-  color: #1a5fa8;
-}
+.editItemBtnSelected .editItemName { color: #fff; }
+.editItemBtnEntered .editItemName { color: #1a5fa8; }
 
 .editItemTime {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.editItemBtnSelected .editItemTime { color: rgba(255,255,255,0.7); }
+.editItemBtnEntered .editItemTime { color: #2563eb; }
+
+/* 保存する（左下） */
+.editSaveFinalBtn {
+  flex-shrink: 0;
+  background: #1a3f6f;
+  border: none;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 0.95rem;
   font-weight: 700;
-  color: #94a3b8;
-  line-height: 1;
+  cursor: pointer;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.editItemBtnSelected .editItemTime {
-  color: #93b4f5;
+.editSaveFinalBtn:active { background: #163460; }
+
+.editSaveFinalBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.editItemBtnEntered .editItemTime {
-  color: #3b82f6;
-}
-
-/* 右列：入力エリア */
-.editInputArea {
+/* 右列：入力（60%） */
+.editRightCol {
   flex: 1;
   display: flex;
   flex-direction: column;
+  padding: 12px 16px 14px 12px;
   gap: 6px;
-  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* ── 選択中業務名 ── */
-.editSelectedTitle {
-  font-size: 1.1rem;
+.editInputTitle {
+  font-size: 0.95rem;
   font-weight: 800;
   color: #1a3f6f;
   text-align: center;
+  flex-shrink: 0;
   line-height: 1.3;
-  flex-shrink: 0;
-  padding: 2px 4px;
-  word-break: keep-all;
-  overflow-wrap: break-word;
 }
 
-/* ── 残り時間 ── */
-.editRemainingRow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.editRemainingLabel {
-  font-size: 0.82rem;
-  color: #64748b;
-  font-weight: 600;
-}
-
-.editRemainingValue {
-  font-size: 1rem;
-  font-weight: 800;
-  color: #1a5fa8;
-}
-
-.editRemainingDone {
-  color: #16a34a;
-}
-
+/* 入力値表示 */
 .minsDisplay {
   background: #f0f7ff;
   border-radius: 10px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   text-align: center;
   border: 1.5px solid #dbeafe;
   flex-shrink: 0;
 }
 
 .minsDisplayPrimary {
-  font-size: 1.7rem;
+  font-size: 1.9rem;
   font-weight: 900;
   color: #1a3f6f;
   line-height: 1;
 }
 
 .minsDisplaySecondary {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: #64748b;
   margin-top: 2px;
 }
 
+/* クイックボタン */
 .quickBtns {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
 .quickBtn {
   flex: 1;
-  padding: 6px 2px;
-  border: 2px solid #dbeafe;
+  padding: 7px 3px;
+  border: 1.5px solid #bfdbfe;
   border-radius: 8px;
   background: #eff6ff;
   color: #1a5fa8;
@@ -425,29 +501,25 @@
   font-weight: 700;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .quickBtn:active { background: #dbeafe; }
 
-.quickBtnAll {
-  background: #1a5fa8;
-  color: #fff;
-  border-color: #1a5fa8;
-}
-
-.quickBtnAll:active { background: #1558a0; }
-
 .quickBtnDisabled {
-  background: #e2e8f0 !important;
-  color: #94a3b8 !important;
+  background: #f1f5f9 !important;
+  color: #cbd5e1 !important;
   border-color: #e2e8f0 !important;
   cursor: not-allowed;
 }
 
+/* テンキー */
 .timeNumGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
+  gap: 6px;
   flex: 1;
   min-height: 0;
 }
@@ -455,7 +527,7 @@
 .timeNumKey {
   height: 100%;
   min-height: 42px;
-  border: 2px solid #e2e8f0;
+  border: 1.5px solid #e2e8f0;
   border-radius: 10px;
   background: #f8fafc;
   font-size: 1.3rem;
@@ -471,7 +543,7 @@
   background: #fee2e2;
   border-color: #fca5a5;
   color: #dc2626;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .timeNumDel:active { background: #fecaca; }
@@ -480,58 +552,61 @@
   background: #f1f5f9;
   border-color: #cbd5e1;
   color: #475569;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .timeNumClear:active { background: #e2e8f0; }
 
+/* エラー */
 .minsError {
   color: #dc2626;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   text-align: center;
   background: #fee2e2;
   border-radius: 8px;
-  padding: 5px;
+  padding: 4px;
   flex-shrink: 0;
 }
 
-/* ── 編集アクション ── */
-.workEditActions {
+/* 右フッター */
+.editRightActions {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
 }
 
-.workEditActions .modalClose {
-  margin-top: 0;
-  flex: 1;
+.editCancelBtn {
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
 }
 
-.editWorkSaveBtn {
+.editCancelBtn:active { background: #f1f5f9; }
+
+.editConfirmBtn {
   flex: 1;
-  background: #1a3f6f;
+  padding: 10px;
+  background: #1a5fa8;
   border: none;
   border-radius: 10px;
-  padding: 12px;
-  font-size: 1.1rem;
-  font-weight: bold;
-  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
   color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.editWorkSaveBtn:disabled {
+.editConfirmBtn:active { background: #1558a0; }
+
+.editConfirmBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.noWorkBadge {
-  position: absolute;
-  bottom: 2px;
-  right: 3px;
-  font-size: 0.65rem;
-  font-weight: 800;
-  color: #b45309;
-  line-height: 1;
-  letter-spacing: -0.02em;
 }

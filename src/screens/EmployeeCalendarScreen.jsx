@@ -4,6 +4,14 @@ import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
+const QUICK_PRESETS = [
+  { label: '30分', mins: 30 },
+  { label: '1時間', mins: 60 },
+  { label: '2時間', mins: 120 },
+]
+
+const NUM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
+
 function getMonthRange(year, month) {
   const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
   const lastDay = new Date(year, month + 1, 0).getDate()
@@ -22,7 +30,6 @@ function getCalendarDays(year, month) {
 
 function buildDayMap(logs, year, month) {
   const map = {}
-  // logs are sorted desc by timestamp, so first encountered per day = latest
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
@@ -56,6 +63,13 @@ function timeDiffMins(t1, t2) {
   return diff > 0 ? diff : null
 }
 
+function fmtMins(mins) {
+  if (mins === null || mins === undefined || isNaN(mins)) return ''
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`
+}
+
 function fmtMinsDisplay(mins) {
   if (!mins) return '0分'
   const h = Math.floor(mins / 60)
@@ -63,15 +77,6 @@ function fmtMinsDisplay(mins) {
   if (h > 0 && m > 0) return `${h}時間${m}分`
   if (h > 0) return `${h}時間`
   return `${m}分`
-}
-
-const NUM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
-
-function fmtMins(mins) {
-  if (mins === null || mins === undefined || isNaN(mins)) return ''
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`
 }
 
 function parseWorkType(wt) {
@@ -115,6 +120,11 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const maxMins = workingMinutes != null ? workingMinutes - otherMins : null
   const isOver = maxMins !== null && currentValue > maxMins
 
+  const totalInputMinutes = editableItems.reduce(
+    (s, item) => s + (parseInt(inputs[item] || '0') || 0), 0
+  )
+  const headerRemaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
+
   function pressKey(k) {
     if (!selectedItem) return
     setInputs(prev => {
@@ -130,6 +140,12 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   function setQuick(v) {
     if (!selectedItem) return
     setInputs(prev => ({ ...prev, [selectedItem]: String(v) }))
+  }
+
+  function handleConfirmItem() {
+    const idx = editableItems.indexOf(selectedItem)
+    const nextIdx = (idx + 1) % editableItems.length
+    setSelectedItem(editableItems[nextIdx])
   }
 
   async function handleSave() {
@@ -151,7 +167,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
       await updateLogWorkItems(entry.outLog.id, workItems)
       setEditing(false)
       onSaved()
-    } catch(e) {
+    } catch (e) {
       alert('保存に失敗しました: ' + (e?.message || e))
     } finally {
       setSaving(false)
@@ -160,11 +176,13 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
 
   return (
     <div className={styles.modalOverlay} onClick={editing ? undefined : onClose}>
-      <div className={[styles.modal, editing ? styles.modalEditing : ''].join(' ')} onClick={e => e.stopPropagation()}>
-        <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
-
+      <div
+        className={[styles.modal, editing ? styles.modalEditing : ''].join(' ')}
+        onClick={e => e.stopPropagation()}
+      >
         {!editing ? (
           <>
+            <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
             <div className={styles.modalRow}>
               <span className={styles.modalRowLabel}>出勤</span>
               <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
@@ -197,78 +215,133 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
           </>
         ) : (
           <>
-            <div className={styles.editSplit}>
-              {/* 左列：業務アイテム選択 */}
-              <div className={styles.editItemList}>
-                {editableItems.map(item => {
-                  const v = parseInt(inputs[item] || '0') || 0
-                  const isSel = selectedItem === item
-                  return (
-                    <button
-                      key={item}
-                      className={[
-                        styles.editItemBtn,
-                        isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
-                      ].join(' ')}
-                      onClick={() => setSelectedItem(item)}
-                    >
-                      <span className={styles.editItemName}>{item}</span>
-                      {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* 右列：入力エリア */}
-              <div className={styles.editInputArea}>
-                <div className={styles.editSelectedTitle}>
-                  {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
-                </div>
-
-                {workingMinutes != null && selectedItem && (
-                  <div className={styles.editRemainingRow}>
-                    <span className={styles.editRemainingLabel}>残り</span>
-                    <span className={[styles.editRemainingValue, maxMins <= 0 ? styles.editRemainingDone : ''].join(' ')}>
-                      {maxMins > 0 ? fmtMins(maxMins) : maxMins === 0 ? '完了' : `${-maxMins}分超過`}
-                    </span>
-                  </div>
-                )}
-
-                {selectedItem && (
-                  <>
-                    <div className={styles.minsDisplay}>
-                      <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
-                      {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
-                    </div>
-                    <div className={styles.quickBtns}>
-                      <button
-                        className={[styles.quickBtn, styles.quickBtnAll, !maxMins || maxMins <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
-                        disabled={!maxMins || maxMins <= 0}
-                        onClick={() => maxMins > 0 && setQuick(maxMins)}
-                      >{maxMins > 0 ? `残り${fmtMins(maxMins)}を入力` : '残り全て'}</button>
-                    </div>
-                    <div className={styles.timeNumGrid}>
-                      {NUM_KEYS.map((k, i) => (
-                        <button
-                          key={i}
-                          className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : '', k === 'C' ? styles.timeNumClear : ''].join(' ')}
-                          onClick={() => pressKey(k)}
-                        >{k}</button>
-                      ))}
-                    </div>
-                    {isOver && (
-                      <div className={styles.minsError}>残り時間を{currentValue - maxMins}分超えています</div>
-                    )}
-                  </>
-                )}
+            {/* ── ヘッダー ── */}
+            <div className={styles.editHeader}>
+              <div className={styles.editHeaderDate}>{year}年{month + 1}月{day}日</div>
+              <div className={styles.editHeaderStats}>
+                <span className={styles.editStatItem}>
+                  <span className={styles.editStatLabel}>勤務</span>
+                  <span className={styles.editStatValue}>
+                    {workingMinutes != null ? fmtMins(workingMinutes) : '—'}
+                  </span>
+                </span>
+                <span className={styles.editStatItem}>
+                  <span className={styles.editStatLabel}>入力済み</span>
+                  <span className={styles.editStatValue}>
+                    {totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}
+                  </span>
+                </span>
+                <span className={styles.editStatItem}>
+                  <span className={styles.editStatLabel}>残り</span>
+                  <span className={[styles.editStatValue, styles.editStatRemaining].join(' ')}>
+                    {headerRemaining != null
+                      ? (headerRemaining > 0 ? fmtMins(headerRemaining) : '完了')
+                      : '—'}
+                  </span>
+                </span>
               </div>
             </div>
 
-            <div className={styles.workEditActions}>
-              <button className={styles.modalClose} onClick={() => setEditing(false)}>キャンセル</button>
-              <button className={styles.editWorkSaveBtn} onClick={handleSave} disabled={saving}>
-                {saving ? '保存中…' : '保存'}
-              </button>
+            {/* ── ボディ（左右2カラム） ── */}
+            <div className={styles.editBody}>
+
+              {/* 左：業務選択 */}
+              <div className={styles.editLeftCol}>
+                <p className={styles.editColTitle}>業務を選択</p>
+                <div className={styles.editItemGrid}>
+                  {editableItems.map(item => {
+                    const v = parseInt(inputs[item] || '0') || 0
+                    const isSel = selectedItem === item
+                    return (
+                      <button
+                        key={item}
+                        className={[
+                          styles.editItemBtn,
+                          isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
+                        ].join(' ')}
+                        onClick={() => setSelectedItem(item)}
+                      >
+                        <span className={styles.editItemName}>{item}</span>
+                        {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button className={styles.editSaveFinalBtn} onClick={handleSave} disabled={saving}>
+                  {saving ? '保存中…' : '保存する'}
+                </button>
+              </div>
+
+              {/* 右：入力エリア */}
+              <div className={styles.editRightCol}>
+                <div className={styles.editInputTitle}>
+                  {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
+                </div>
+
+                <div className={styles.minsDisplay}>
+                  <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
+                  {currentValue >= 60 && (
+                    <div className={styles.minsDisplaySecondary}>{currentValue}分</div>
+                  )}
+                </div>
+
+                <div className={styles.quickBtns}>
+                  {QUICK_PRESETS.map(opt => {
+                    const isDisabled = !selectedItem || (maxMins !== null && opt.mins > maxMins)
+                    return (
+                      <button
+                        key={opt.label}
+                        className={[styles.quickBtn, isDisabled ? styles.quickBtnDisabled : ''].join(' ')}
+                        disabled={isDisabled}
+                        onClick={() => !isDisabled && setQuick(opt.mins)}
+                      >{opt.label}</button>
+                    )
+                  })}
+                  <button
+                    className={[
+                      styles.quickBtn,
+                      (!selectedItem || !maxMins || maxMins <= 0) ? styles.quickBtnDisabled : ''
+                    ].join(' ')}
+                    disabled={!selectedItem || !maxMins || maxMins <= 0}
+                    onClick={() => maxMins > 0 && setQuick(maxMins)}
+                  >
+                    {maxMins > 0 ? `残り${fmtMins(maxMins)}` : '残り全て'}
+                  </button>
+                </div>
+
+                <div className={styles.timeNumGrid}>
+                  {NUM_KEYS.map((k, i) => (
+                    <button
+                      key={i}
+                      className={[
+                        styles.timeNumKey,
+                        k === '⌫' ? styles.timeNumDel : '',
+                        k === 'C' ? styles.timeNumClear : ''
+                      ].join(' ')}
+                      onClick={() => pressKey(k)}
+                    >{k}</button>
+                  ))}
+                </div>
+
+                {isOver && (
+                  <div className={styles.minsError}>
+                    残り時間を{currentValue - maxMins}分超えています
+                  </div>
+                )}
+
+                <div className={styles.editRightActions}>
+                  <button className={styles.editCancelBtn} onClick={() => setEditing(false)}>
+                    キャンセル
+                  </button>
+                  <button
+                    className={styles.editConfirmBtn}
+                    onClick={handleConfirmItem}
+                    disabled={!selectedItem}
+                  >
+                    この業務を決定
+                  </button>
+                </div>
+              </div>
             </div>
           </>
         )}
@@ -327,7 +400,10 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       ) : (
         <div className={styles.calGrid}>
           {DAY_LABELS.map((d, i) => (
-            <div key={d} className={[styles.dayLabel, i === 0 ? styles.sun : i === 6 ? styles.sat : ''].join(' ')}>{d}</div>
+            <div
+              key={d}
+              className={[styles.dayLabel, i === 0 ? styles.sun : i === 6 ? styles.sat : ''].join(' ')}
+            >{d}</div>
           ))}
           {days.map((d, i) => {
             if (!d) return <div key={`pad-${i}`} className={styles.emptyCell} />
@@ -336,11 +412,18 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
             const worked = !!inTime
             const dow = new Date(year, month, d).getDay()
-            const hasNoWorkType = entry?.outLog && !entry.workType && user?.employeeType !== 'salaried' && (user?.workItems || []).filter(i => !CLOCK_OUT_HIDDEN.has(i)).length > 0
+            const hasNoWorkType =
+              entry?.outLog && !entry.workType &&
+              user?.employeeType !== 'salaried' &&
+              (user?.workItems || []).filter(i => !CLOCK_OUT_HIDDEN.has(i)).length > 0
             return (
               <div
                 key={d}
-                className={[styles.cell, hasNoWorkType ? styles.noWork : worked ? styles.worked : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
+                className={[
+                  styles.cell,
+                  hasNoWorkType ? styles.noWork : worked ? styles.worked : '',
+                  dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''
+                ].join(' ')}
                 onClick={() => worked && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
