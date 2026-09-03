@@ -48,6 +48,25 @@ function timeDiff(t1, t2) {
   return h > 0 ? `${h}h${m > 0 ? m + 'm' : ''}` : `${m}m`
 }
 
+function timeDiffMins(t1, t2) {
+  if (!t1 || !t2) return null
+  const [h1, m1] = t1.split(':').map(Number)
+  const [h2, m2] = t2.split(':').map(Number)
+  const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+  return diff > 0 ? diff : null
+}
+
+function fmtMinsDisplay(mins) {
+  if (!mins) return '0分'
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h > 0 && m > 0) return `${h}時間${m}分`
+  if (h > 0) return `${h}時間`
+  return `${m}分`
+}
+
+const NUM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
+
 function fmtMins(mins) {
   if (mins === null || mins === undefined || isNaN(mins)) return ''
   const h = Math.floor(mins / 60)
@@ -74,7 +93,10 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
 
   const [editing, setEditing] = useState(false)
   const [inputs, setInputs] = useState({})
+  const [selectedItem, setSelectedItem] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  const workingMinutes = timeDiffMins(inTime, outTime)
 
   useEffect(() => {
     if (!editing) return
@@ -83,7 +105,33 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
       if (mins) initial[type] = String(mins)
     })
     setInputs(initial)
+    setSelectedItem(editableItems[0] || null)
   }, [editing])
+
+  const totalInputMinutes = editableItems.reduce((s, item) => s + (parseInt(inputs[item] || '0') || 0), 0)
+  const currentValue = parseInt(inputs[selectedItem] || '0') || 0
+  const otherMins = editableItems
+    .filter(i => i !== selectedItem)
+    .reduce((s, i) => s + (parseInt(inputs[i] || '0') || 0), 0)
+  const maxMins = workingMinutes != null ? workingMinutes - otherMins : null
+  const isOver = maxMins !== null && currentValue > maxMins
+
+  function pressKey(k) {
+    if (!selectedItem) return
+    setInputs(prev => {
+      const cur = prev[selectedItem] || ''
+      if (k === '⌫') return { ...prev, [selectedItem]: cur.slice(0, -1) }
+      if (k === 'C') return { ...prev, [selectedItem]: '' }
+      const next = cur + k
+      if (parseInt(next) > 9999) return prev
+      return { ...prev, [selectedItem]: next }
+    })
+  }
+
+  function setQuick(v) {
+    if (!selectedItem) return
+    setInputs(prev => ({ ...prev, [selectedItem]: String(v) }))
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -105,7 +153,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
 
   return (
     <div className={styles.modalOverlay} onClick={editing ? undefined : onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+      <div className={[styles.modal, editing ? styles.modalEditing : ''].join(' ')} onClick={e => e.stopPropagation()}>
         <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
 
         {!editing ? (
@@ -142,28 +190,58 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
           </>
         ) : (
           <>
-            <div className={styles.workEditHint}>各業務の時間を分単位で入力してください</div>
-            <div className={styles.workEditList}>
-              {editableItems.map(item => (
-                <div key={item} className={styles.workEditRow}>
-                  <span className={styles.workEditLabel}>{item}</span>
-                  <div className={styles.workEditInputWrap}>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className={styles.workEditInput}
-                      value={inputs[item] || ''}
-                      onChange={e => {
-                        const v = e.target.value.replace(/\D/g, '')
-                        setInputs(prev => ({ ...prev, [item]: v }))
-                      }}
-                      placeholder="0"
-                    />
-                    <span className={styles.workEditUnit}>分</span>
-                  </div>
-                </div>
-              ))}
+            {/* 項目セレクタ */}
+            <div className={styles.editItemList}>
+              {editableItems.map(item => {
+                const v = parseInt(inputs[item] || '0') || 0
+                const isSel = selectedItem === item
+                return (
+                  <button
+                    key={item}
+                    className={[styles.editItemBtn, isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''].join(' ')}
+                    onClick={() => setSelectedItem(item)}
+                  >
+                    <span className={styles.editItemName}>{item}</span>
+                    <span className={[styles.editItemTime, v > 0 ? styles.editItemTimeEntered : styles.editItemTimeMissing].join(' ')}>
+                      {v > 0 ? fmtMins(v) : '未入力'}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
+
+            {/* テンキーエリア */}
+            {selectedItem && (
+              <div className={styles.editNumpadSection}>
+                <div className={styles.minsDisplay}>
+                  <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
+                  {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
+                </div>
+                <div className={styles.quickBtns}>
+                  <button className={styles.quickBtn} onClick={() => setQuick(30)}>30分</button>
+                  <button className={styles.quickBtn} onClick={() => setQuick(60)}>1時間</button>
+                  <button className={styles.quickBtn} onClick={() => setQuick(120)}>2時間</button>
+                  <button
+                    className={[styles.quickBtn, styles.quickBtnAll, !maxMins || maxMins <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
+                    disabled={!maxMins || maxMins <= 0}
+                    onClick={() => maxMins > 0 && setQuick(maxMins)}
+                  >残りすべて</button>
+                </div>
+                <div className={styles.timeNumGrid}>
+                  {NUM_KEYS.map((k, i) => (
+                    <button
+                      key={i}
+                      className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : '', k === 'C' ? styles.timeNumClear : ''].join(' ')}
+                      onClick={() => pressKey(k)}
+                    >{k}</button>
+                  ))}
+                </div>
+                {isOver && (
+                  <div className={styles.minsError}>残り時間を{currentValue - maxMins}分超えています</div>
+                )}
+              </div>
+            )}
+
             <div className={styles.workEditActions}>
               <button className={styles.modalClose} onClick={() => setEditing(false)}>キャンセル</button>
               <button className={styles.editWorkSaveBtn} onClick={handleSave} disabled={saving}>

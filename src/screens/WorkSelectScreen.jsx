@@ -3,27 +3,28 @@ import { getClockInTime } from '../lib/db'
 import styles from './WorkSelectScreen.module.css'
 
 const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
+
 const LEGACY_ITEMS = ['現場', '清掃', '事務', '休憩']
 
 const ITEM_META = {
-  'アスレ':      { barColor: '#f0952a' },
-  'スイム':      { barColor: '#5aadea' },
-  'スイム短期':  { barColor: '#4a9fd4' },
-  'スイムベビー': { barColor: '#c77ddb' },
-  'スイム成人':  { barColor: '#3a8fc4' },
-  'フロント':    { barColor: '#9baab8' },
-  'フロント短期': { barColor: '#8a9aaa' },
-  '監視':        { barColor: '#d4a520' },
-  '監視短期':    { barColor: '#c09515' },
-  '研修会':      { barColor: '#4caf50' },
-  '清掃':        { barColor: '#5aadea' },
-  '事務処理':    { barColor: '#9baab8' },
-  'エアロ':      { barColor: '#c090d8' },
-  'ドライバー':  { barColor: '#f0952a' },
-  '選手引率':    { barColor: '#d4a520' },
-  '休憩':        { barColor: '#c090d8' },
-  '現場':        { barColor: '#f0952a' },
-  '事務':        { barColor: '#9baab8' },
+  'アスレ':      { icon: '🏋️', circleColor: '#fff0dc', barColor: '#f0952a' },
+  'スイム':      { icon: '🏊', circleColor: '#dbeeff', barColor: '#5aadea' },
+  'スイム短期':  { icon: '🏊', circleColor: '#c8e8ff', barColor: '#4a9fd4' },
+  'スイムベビー': { icon: '👶', circleColor: '#fce4ff', barColor: '#c77ddb' },
+  'スイム成人':  { icon: '🏊', circleColor: '#d8f0ff', barColor: '#3a8fc4' },
+  'フロント':    { icon: '🖥️', circleColor: '#eef1f5', barColor: '#9baab8' },
+  'フロント短期': { icon: '🖥️', circleColor: '#e4e8ef', barColor: '#8a9aaa' },
+  '監視':        { icon: '👁️', circleColor: '#fff8dc', barColor: '#d4a520' },
+  '監視短期':    { icon: '👁️', circleColor: '#fdf5c8', barColor: '#c09515' },
+  '研修会':      { icon: '📚', circleColor: '#e8f5e9', barColor: '#4caf50' },
+  '清掃':        { icon: '🧹', circleColor: '#dbeeff', barColor: '#5aadea' },
+  '事務処理':    { icon: '📋', circleColor: '#eef1f5', barColor: '#9baab8' },
+  'エアロ':      { icon: '💃', circleColor: '#f0e8f8', barColor: '#c090d8' },
+  'ドライバー':  { icon: '🚗', circleColor: '#fff0dc', barColor: '#f0952a' },
+  '選手引率':    { icon: '🏅', circleColor: '#fff8dc', barColor: '#d4a520' },
+  '休憩':        { icon: '☕', circleColor: '#f0e8f8', barColor: '#c090d8' },
+  '現場':        { icon: '🤸', circleColor: '#fff0dc', barColor: '#f0952a' },
+  '事務':        { icon: '📋', circleColor: '#eef1f5', barColor: '#9baab8' },
 }
 
 const ITEM_GROUPS = {
@@ -41,9 +42,11 @@ function getDisplayCards(userWorkItems) {
   const base = (userWorkItems && userWorkItems.length > 0) ? userWorkItems : LEGACY_ITEMS
   const filtered = base.filter(item => !CLOCK_OUT_HIDDEN.has(item))
   if (!filtered.includes('休憩')) filtered.push('休憩')
+
   const cards = []
   const used = new Set()
   const doneGroups = new Set()
+
   for (const item of filtered) {
     if (used.has(item)) continue
     let pushed = false
@@ -70,26 +73,32 @@ function getDisplayCards(userWorkItems) {
   return cards
 }
 
-function fmtMinutes(mins) {
-  if (mins == null || isNaN(mins)) return ''
-  if (mins === 0) return '0分'
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  if (h > 0 && m > 0) return `${h}時間${m}分`
-  if (h > 0) return `${h}時間`
-  return `${m}分`
+function ScanIcon({ size = 48, color = '#fff' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <path d="M6 19V6h13" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M6 29v13h13" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M42 19V6H29" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M42 29v13H29" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <rect x="14" y="14" width="6" height="6" rx="1" fill={color}/>
+      <rect x="28" y="14" width="6" height="6" rx="1" fill={color}/>
+      <rect x="14" y="28" width="6" height="6" rx="1" fill={color}/>
+      <rect x="21" y="21" width="6" height="6" rx="1" fill={color}/>
+      <rect x="28" y="28" width="6" height="6" rx="1" fill={color}/>
+    </svg>
+  )
 }
 
-function fmtDisplay(mins) {
-  if (!mins) return '0分'
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  if (h > 0 && m > 0) return `${h}時間${m}分`
-  if (h > 0) return `${h}時間`
-  return `${m}分`
+function ClockIcon({ size = 34, color = '#34a36f' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth="2"/>
+      <path d="M12 6v6l4 2" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
 }
 
-function ExitIcon({ size = 48, color = '#fff' }) {
+function ExitIcon({ size = 54, color = '#fff' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -99,194 +108,250 @@ function ExitIcon({ size = 48, color = '#fff' }) {
   )
 }
 
-function SummaryBar({ workingMinutes, totalInputMinutes }) {
-  const remaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
-  const isComplete = remaining === 0
-  const isOver = remaining !== null && remaining < 0
+function Clock() {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+  const date = now.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
   return (
-    <div className={styles.summaryBar}>
-      <div className={styles.summaryItem}>
-        <span className={styles.summaryLabel}>勤務時間</span>
-        <span className={styles.summaryValue}>
-          {workingMinutes != null ? fmtMinutes(workingMinutes) : '—'}
-        </span>
-      </div>
-      <div className={styles.summaryDivider} />
-      <div className={styles.summaryItem}>
-        <span className={styles.summaryLabel}>入力済み</span>
-        <span className={[styles.summaryValue, totalInputMinutes > 0 ? styles.summaryEntered : ''].join(' ')}>
-          {fmtMinutes(totalInputMinutes) || '0分'}
-        </span>
-      </div>
-      <div className={styles.summaryDivider} />
-      <div className={styles.summaryItem}>
-        <span className={styles.summaryLabel}>残り</span>
-        {isComplete ? (
-          <span className={styles.summaryComplete}>入力が完了しました</span>
-        ) : isOver ? (
-          <span className={styles.summaryOver}>{fmtMinutes(-remaining)}超過</span>
-        ) : (
-          <span className={[styles.summaryValue, remaining !== null ? styles.summaryRemaining : ''].join(' ')}>
-            {remaining != null ? fmtMinutes(remaining) : '—'}
-          </span>
-        )}
-      </div>
-    </div>
+    <>
+      <div className={styles.clockTime}>{time}</div>
+      <div className={styles.clockDate}>{date}</div>
+    </>
   )
 }
 
-const NUM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
+function fmtMinutes(mins) {
+  if (mins == null || isNaN(mins)) return ''
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h > 0 ? `${h}時間${m}分` : `${m}分`
+}
 
-function NumPad({ minsStr, setMinsStr, maxMins }) {
+const TIME_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
+
+function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTime, onClose }) {
+  const initial = workTimes[item] || { h: 0, m: 0 }
+  const [hStr, setHStr] = useState(initial.h > 0 ? String(initial.h) : '')
+  const [mStr, setMStr] = useState(initial.m > 0 ? String(initial.m) : '')
+  const [focus, setFocus] = useState('h')
+
+  const h = parseInt(hStr) || 0
+  const m = parseInt(mStr) || 0
+
+  const otherMins = activeItems
+    .filter(id => id !== item)
+    .reduce((sum, id) => {
+      const t = workTimes[id] || { h: 0, m: 0 }
+      return sum + t.h * 60 + t.m
+    }, 0)
+  const remaining = workingMinutes != null ? workingMinutes - otherMins : null
+  const rh = remaining != null ? Math.floor(remaining / 60) : 0
+  const rm = remaining != null ? remaining % 60 : 0
+  const alreadySet = remaining != null && h * 60 + m === remaining
+
   function pressKey(k) {
-    if (k === '⌫') { setMinsStr(s => s.slice(0, -1)); return }
-    if (k === 'C') { setMinsStr(''); return }
-    const next = minsStr + k
-    if (parseInt(next) > 9999) return
-    setMinsStr(next)
+    if (k === '⌫') {
+      if (focus === 'h') setHStr(s => s.slice(0, -1))
+      else setMStr(s => s.slice(0, -1))
+      return
+    }
+    if (k === '') return
+    if (focus === 'h') {
+      const next = hStr + k
+      if (parseInt(next) > 23) return
+      setHStr(next)
+    } else {
+      const next = mStr + k
+      if (parseInt(next) > 59) return
+      setMStr(next)
+    }
   }
-  return (
-    <div className={styles.timeNumGrid}>
-      {NUM_KEYS.map((k, i) => (
-        <button
-          key={i}
-          className={[
-            styles.timeNumKey,
-            k === '⌫' ? styles.timeNumDel : '',
-            k === 'C' ? styles.timeNumClear : '',
-          ].join(' ')}
-          onClick={() => pressKey(k)}
-        >{k}</button>
-      ))}
-    </div>
-  )
-}
 
-function QuickBtns({ setMinsStr, maxMins }) {
-  const rem = maxMins != null ? maxMins : 0
-  return (
-    <div className={styles.quickBtns}>
-      <button className={styles.quickBtn} onClick={() => setMinsStr('30')}>30分</button>
-      <button className={styles.quickBtn} onClick={() => setMinsStr('60')}>1時間</button>
-      <button className={styles.quickBtn} onClick={() => setMinsStr('120')}>2時間</button>
-      <button
-        className={[styles.quickBtn, styles.quickBtnAll, rem <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
-        onClick={() => rem > 0 && setMinsStr(String(rem))}
-        disabled={rem <= 0}
-      >残りすべて</button>
-    </div>
-  )
-}
-
-function TimeInputModal({ item, currentMins, workingMinutes, totalInputMinutes, onConfirm, onClose }) {
-  const otherMins = totalInputMinutes - (currentMins || 0)
-  const maxMins = workingMinutes != null ? workingMinutes - otherMins : null
-  const [minsStr, setMinsStr] = useState(currentMins > 0 ? String(currentMins) : '')
-  const value = parseInt(minsStr) || 0
-  const isOver = maxMins !== null && value > maxMins
-  const overBy = isOver ? value - maxMins : 0
-  const canConfirm = value > 0 && !isOver
+  function handleOk() {
+    onSetTime(item, 'h', h)
+    onSetTime(item, 'm', m)
+    onClose()
+  }
 
   return (
     <div className={styles.timeModalOverlay} onClick={onClose}>
       <div className={styles.timeModal} onClick={e => e.stopPropagation()}>
-        <div className={styles.timeModalTitle}>{item}の時間</div>
-        <div className={styles.minsDisplay}>
-          <div className={styles.minsDisplayPrimary}>{fmtDisplay(value)}</div>
-          {value > 0 && <div className={styles.minsDisplaySecondary}>{value}分</div>}
-        </div>
-        <QuickBtns setMinsStr={setMinsStr} maxMins={maxMins} />
-        <NumPad minsStr={minsStr} setMinsStr={setMinsStr} maxMins={maxMins} />
-        {isOver && (
-          <div className={styles.minsError}>残り時間を{overBy}分超えています</div>
+        <div className={styles.timeModalTitle}>{item}の時間を入力</div>
+        {workingMinutes !== null && (
+          <div className={styles.timeModalHint}>
+            勤務時間合計: {fmtMinutes(workingMinutes)}
+            {activeItems.filter(id => id !== item).length > 0 && (
+              <> / 他の合計: {fmtMinutes(otherMins)}</>
+            )}
+          </div>
         )}
-        <div className={styles.timeModalActions}>
-          {currentMins > 0 && (
-            <button className={styles.timeModalClearBtn} onClick={() => onConfirm(0)}>クリア</button>
-          )}
-          <button className={styles.timeModalCancel} onClick={onClose}>キャンセル</button>
+        <div className={styles.timeDisplayRow}>
           <button
-            className={[styles.timeModalOk, !canConfirm ? styles.timeModalOkDisabled : ''].join(' ')}
-            onClick={() => canConfirm && onConfirm(value)}
-            disabled={!canConfirm}
-          >確定</button>
+            className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('h')}
+          >
+            <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
+            <span className={styles.timeDisplayUnit}>時間</span>
+          </button>
+          <span className={styles.timeDisplaySep}>:</span>
+          <button
+            className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
+            onClick={() => setFocus('m')}
+          >
+            <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
+            <span className={styles.timeDisplayUnit}>分</span>
+          </button>
+          {remaining != null && remaining > 0 && !alreadySet && (
+            <button
+              className={styles.remainingBtn}
+              onClick={() => { setHStr(rh > 0 ? String(rh) : ''); setMStr(rm > 0 ? String(rm) : '') }}
+            >
+              残り{fmtMinutes(remaining)}
+            </button>
+          )}
         </div>
+        <div className={styles.timeNumGrid}>
+          {TIME_KEYS.map((k, i) => (
+            <button
+              key={i}
+              className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
+              onClick={() => pressKey(k)}
+              disabled={k === ''}
+            >{k}</button>
+          ))}
+        </div>
+        <button className={styles.timeModalOk} onClick={handleOk}>OK</button>
       </div>
     </div>
   )
 }
 
-function SubPickerModal({ groupKey, members, workTimes, workingMinutes, totalInputMinutes, onSetTime, onClear, onClose }) {
+function SubPickerModal({ groupKey, members, workTimes, workingMinutes, onSetTime, onClear, onClose }) {
   const [editing, setEditing] = useState(null)
-  const [minsStr, setMinsStr] = useState('')
+  const [hStr, setHStr] = useState('')
+  const [mStr, setMStr] = useState('')
+  const [focus, setFocus] = useState('h')
 
-  const groupTotal = members.reduce((s, m) => s + (workTimes[m] || 0), 0)
-  const outsideTotal = totalInputMinutes - groupTotal
-  const otherGroupMins = editing
-    ? members.filter(m => m !== editing).reduce((s, m) => s + (workTimes[m] || 0), 0)
-    : 0
-  const maxMins = workingMinutes != null ? workingMinutes - outsideTotal - otherGroupMins : null
-
-  const currentValue = parseInt(minsStr) || 0
-  const isOver = maxMins !== null && currentValue > maxMins
-  const overBy = isOver ? currentValue - maxMins : 0
+  const otherTotal = Object.entries(workTimes)
+    .filter(([k]) => k !== editing)
+    .reduce((sum, [, t]) => sum + (t?.h || 0) * 60 + (t?.m || 0), 0)
+  const remainingMins = workingMinutes != null ? Math.max(0, workingMinutes - otherTotal) : null
 
   function commitCurrent() {
-    if (editing !== null) {
-      onSetTime(editing, parseInt(minsStr) || 0)
+    if (editing) {
+      onSetTime(editing, 'h', parseInt(hStr) || 0)
+      onSetTime(editing, 'm', parseInt(mStr) || 0)
     }
   }
 
   function selectVariant(m) {
     commitCurrent()
+    const t = workTimes[m] || { h: 0, m: 0 }
     setEditing(m)
-    setMinsStr((workTimes[m] || 0) > 0 ? String(workTimes[m]) : '')
+    setHStr(t.h > 0 ? String(t.h) : '')
+    setMStr(t.m > 0 ? String(t.m) : '')
+    setFocus('h')
+  }
+
+  function pressKey(k) {
+    if (k === '⌫') {
+      if (focus === 'h') setHStr(s => s.slice(0, -1))
+      else setMStr(s => s.slice(0, -1))
+      return
+    }
+    if (k === '') return
+    if (focus === 'h') {
+      const next = hStr + k
+      if (parseInt(next) > 23) return
+      setHStr(next)
+    } else {
+      const next = mStr + k
+      if (parseInt(next) > 59) return
+      setMStr(next)
+    }
   }
 
   return (
     <div className={styles.subPickerOverlay} onClick={onClose}>
       <div className={styles.subPickerBox} onClick={e => e.stopPropagation()}>
         <div className={styles.subPickerTitle}>{groupKey}</div>
+
         <div className={editing ? styles.subPickerSplit : ''}>
+          {/* バリアント一覧 */}
           <div className={styles.subPickerList}>
             {members.map(m => {
-              const mins = workTimes[m] || 0
-              const active = mins > 0
-              const isEdit = editing === m
+              const t = workTimes[m]
+              const active = t && (t.h > 0 || t.m > 0)
+              const isEditing = editing === m
               return (
                 <div key={m} className={styles.subPickerRow}>
                   <button
-                    className={[
-                      styles.subPickerItem,
-                      active ? styles.subPickerItemActive : '',
-                      isEdit ? styles.subPickerItemEditing : '',
-                    ].join(' ')}
+                    className={[styles.subPickerItem, active ? styles.subPickerItemActive : '', isEditing ? styles.subPickerItemEditing : ''].join(' ')}
                     onClick={() => selectVariant(m)}
                   >
                     <span>{variantLabel(groupKey, m)}</span>
-                    {active && !isEdit && <span className={styles.subPickerTime}>{fmtMinutes(mins)}</span>}
-                    {!active && !isEdit && <span className={styles.subPickerHint}>タップ</span>}
+                    {active && <span className={styles.subPickerTime}>{fmtMinutes(t.h * 60 + t.m)}</span>}
+                    {!active && <span className={styles.subPickerHint}>タップ</span>}
                   </button>
-                  {active && !isEdit && (
+                  {active && !isEditing && (
                     <button className={styles.subPickerClear} onClick={() => onClear(m)}>×</button>
                   )}
                 </div>
               )
             })}
           </div>
+
+          {/* インライン時間入力（横に並ぶ） */}
           {editing && (
             <div className={styles.subPickerInputArea}>
               <div className={styles.subPickerInputLabel}>{variantLabel(groupKey, editing)}</div>
-              <div className={styles.minsDisplay}>
-                <div className={styles.minsDisplayPrimary}>{fmtDisplay(currentValue)}</div>
-                {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
+              <div className={styles.timeDisplayRow}>
+                <button
+                  className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
+                  onClick={() => setFocus('h')}
+                >
+                  <span className={styles.timeDisplayNum}>{hStr || '0'}</span>
+                  <span className={styles.timeDisplayUnit}>時間</span>
+                </button>
+                <span className={styles.timeDisplaySep}>:</span>
+                <button
+                  className={[styles.timeDisplayBox, focus === 'm' ? styles.timeDisplayActive : ''].join(' ')}
+                  onClick={() => setFocus('m')}
+                >
+                  <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
+                  <span className={styles.timeDisplayUnit}>分</span>
+                </button>
+                {remainingMins != null && (
+                  <button
+                    className={styles.remainingBtn}
+                    onClick={() => {
+                      const rh = Math.floor(remainingMins / 60)
+                      const rm = remainingMins % 60
+                      setHStr(rh > 0 ? String(rh) : '')
+                      setMStr(rm > 0 ? String(rm) : '')
+                      setFocus(rh > 0 ? 'h' : 'm')
+                    }}
+                  >残り{fmtMinutes(remainingMins)}</button>
+                )}
               </div>
-              <QuickBtns setMinsStr={setMinsStr} maxMins={maxMins} />
-              <NumPad minsStr={minsStr} setMinsStr={setMinsStr} maxMins={maxMins} />
-              {isOver && <div className={styles.minsError}>残り時間を{overBy}分超えています</div>}
+              <div className={styles.timeNumGrid}>
+                {TIME_KEYS.map((k, i) => (
+                  <button
+                    key={i}
+                    className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
+                    onClick={() => pressKey(k)}
+                    disabled={k === ''}
+                  >{k}</button>
+                ))}
+              </div>
             </div>
           )}
         </div>
+
         <button className={styles.timeModalOk} onClick={() => { commitCurrent(); onClose() }}>OK</button>
       </div>
     </div>
@@ -299,6 +364,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [workTimes, setWorkTimes] = useState({})
   const [saving, setSaving] = useState(false)
   const [workingMinutes, setWorkingMinutes] = useState(null)
+  const [timeError, setTimeError] = useState('')
   const [editingItem, setEditingItem] = useState(null)
   const [subPickerGroup, setSubPickerGroup] = useState(null)
   const [firstWork, setFirstWork] = useState(null)
@@ -320,43 +386,52 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   }, [user.id])
 
   function isActive(id) {
-    return (workTimes[id] || 0) > 0
+    const t = workTimes[id]
+    return t && (t.h > 0 || t.m > 0)
   }
 
-  function setTime(id, mins) {
-    if (mins > 0) {
-      setWorkTimes(prev => ({ ...prev, [id]: mins }))
-    } else {
-      setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
-    }
+  function handleCardTap(id) {
+    setTimeError('')
+    if (!workTimes[id]) setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0 } }))
+    setEditingItem(id)
+  }
+
+  function handleClear(id, e) {
+    e.stopPropagation()
+    setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
+    setTimeError('')
+  }
+
+  function setTime(id, field, val) {
+    setWorkTimes(prev => ({ ...prev, [id]: { ...prev[id], [field]: val } }))
   }
 
   const activeItems = allFlatItems.filter(id => isActive(id))
   const workActiveItems = activeItems.filter(id => !BREAK_TYPES.has(id))
-  const totalInputMinutes = activeItems.reduce((sum, id) => sum + (workTimes[id] || 0), 0)
 
+  const totalInputMinutes = activeItems.reduce((sum, id) => {
+    const t = workTimes[id] || { h: 0, m: 0 }
+    return sum + t.h * 60 + t.m
+  }, 0)
+
+  const displayH = workingMinutes != null ? Math.floor(workingMinutes / 60) : 0
+  const displayM = workingMinutes != null ? workingMinutes % 60 : 0
+
+  // Auto-set firstWork/lastWork when only one work type
   const resolvedFirstWork = workActiveItems.length === 1 ? workActiveItems[0] : firstWork
   const resolvedLastWork = workActiveItems.length === 1 ? workActiveItems[0] : lastWork
 
-  const remaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
-  const isOver = remaining !== null && remaining < 0
-
-  const canSave = !saving && (
-    activeItems.length === 0 ||
-    workingMinutes === null ||
-    totalInputMinutes === workingMinutes
-  )
-
-  let saveHint = ''
-  if (activeItems.length > 0 && workingMinutes !== null) {
-    if (remaining > 0) saveHint = `残り${fmtMinutes(remaining)}を入力してください`
-    else if (remaining < 0) saveHint = `${fmtMinutes(-remaining)}超えています`
-  }
-
   async function handleConfirm() {
-    if (!canSave || saving) return
+    if (saving) return
+    if (activeItems.length > 0 && workingMinutes !== null && totalInputMinutes !== workingMinutes) {
+      setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
+      return
+    }
     const workItemsObj = {}
-    activeItems.forEach(id => { workItemsObj[id] = workTimes[id] || 0 })
+    activeItems.forEach(id => {
+      const t = workTimes[id] || { h: 0, m: 0 }
+      workItemsObj[id] = t.h * 60 + t.m
+    })
     if (workActiveItems.length >= 2) {
       setPendingWorkItems(workItemsObj)
       setConfirmingBoundary(true)
@@ -385,110 +460,127 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
   return (
     <div className={styles.screen}>
-      <SummaryBar workingMinutes={workingMinutes} totalInputMinutes={totalInputMinutes} />
 
-      <div className={styles.workGrid}>
-        {displayCards.map(card => {
-          if (card.type === 'single') {
-            const id = card.id
-            const meta = ITEM_META[id] || { barColor: '#9baab8' }
-            const active = isActive(id)
+      {/* メイン */}
+      <div className={styles.main}>
+
+        {/* 作業カード */}
+        <div className={styles.workGrid}>
+          {displayCards.map(card => {
+            if (card.type === 'single') {
+              const id = card.id
+              const meta = ITEM_META[id] || { barColor: '#9baab8' }
+              const active = isActive(id)
+              return (
+                <div
+                  key={id}
+                  className={[styles.workCard, active ? styles.workCardActive : ''].join(' ')}
+                  onClick={() => handleCardTap(id)}
+                >
+                  {active && (
+                    <button className={styles.clearBtn} onClick={e => handleClear(id, e)}>×</button>
+                  )}
+                  <div className={styles.workCardInner}>
+                    <div className={styles.workLabel}>{id}</div>
+                    {active && (
+                      <div className={styles.workCardTime}>
+                        {fmtMinutes((workTimes[id]?.h ?? 0) * 60 + (workTimes[id]?.m ?? 0))}
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.workCardBar} style={{ background: meta.barColor }} />
+                </div>
+              )
+            }
+            // type === 'group'
+            const { key, members } = card
+            const activeMember = members.find(m => isActive(m))
+            const meta = ITEM_META[key] || { barColor: '#9baab8' }
             return (
               <div
-                key={id}
-                className={[styles.workCard, active ? styles.workCardEntered : ''].join(' ')}
-                onClick={() => setEditingItem(id)}
+                key={key}
+                className={[styles.workCard, activeMember ? styles.workCardActive : ''].join(' ')}
+                onClick={() => setSubPickerGroup(card)}
               >
-                {active && (
+                {activeMember && (
                   <button
                     className={styles.clearBtn}
-                    onClick={e => { e.stopPropagation(); setTime(id, 0) }}
+                    onClick={e => { e.stopPropagation(); members.forEach(m => handleClear(m, { stopPropagation: () => {} })) }}
                   >×</button>
                 )}
                 <div className={styles.workCardInner}>
-                  <div className={styles.workLabel}>{id}</div>
-                  <div className={[styles.workCardTimeDisplay, active ? styles.workCardTimeEntered : styles.workCardTimeMissing].join(' ')}>
-                    {active ? fmtMinutes(workTimes[id]) : '未入力'}
-                  </div>
+                  <div className={styles.workLabel}>{key}</div>
+                  {activeMember && (
+                    <div className={styles.workCardSub}>
+                      {members.filter(m => isActive(m)).map(m => (
+                        <span key={m}>{variantLabel(key, m)}: {fmtMinutes((workTimes[m]?.h ?? 0) * 60 + (workTimes[m]?.m ?? 0))}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className={styles.workCardBar} style={{ background: meta.barColor }} />
               </div>
             )
-          }
-          const { key, members } = card
-          const activeMember = members.find(m => isActive(m))
-          const meta = ITEM_META[key] || { barColor: '#9baab8' }
-          return (
-            <div
-              key={key}
-              className={[styles.workCard, activeMember ? styles.workCardEntered : ''].join(' ')}
-              onClick={() => setSubPickerGroup(card)}
-            >
-              {activeMember && (
-                <button
-                  className={styles.clearBtn}
-                  onClick={e => { e.stopPropagation(); members.forEach(m => setTime(m, 0)) }}
-                >×</button>
-              )}
-              <div className={styles.workCardInner}>
-                <div className={styles.workLabel}>{key}</div>
-                {activeMember ? (
-                  <div className={styles.workCardSub}>
-                    {members.filter(m => isActive(m)).map(m => (
-                      <span key={m}>{variantLabel(key, m)}: {fmtMinutes(workTimes[m])}</span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className={[styles.workCardTimeDisplay, styles.workCardTimeMissing].join(' ')}>未入力</div>
-                )}
-              </div>
-              <div className={styles.workCardBar} style={{ background: meta.barColor }} />
-            </div>
-          )
-        })}
-      </div>
+          })}
+        </div>
 
-      <div className={styles.bottomRow}>
-        <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
-        <div className={styles.submitArea}>
-          {saveHint && (
-            <div className={[styles.saveHint, isOver ? styles.saveHintOver : ''].join(' ')}>{saveHint}</div>
-          )}
+        {/* 合計時間パネル */}
+        <div className={styles.totalPanel}>
+          <ClockIcon size={44} color="#34a36f" />
+          <span className={styles.totalLabel}>合計</span>
+          <span className={styles.totalNumber}>{displayH}</span>
+          <span className={styles.totalUnit}>時間</span>
+          <span className={styles.totalNumber}>{String(displayM).padStart(2, '0')}</span>
+          <span className={styles.totalUnit}>分</span>
+        </div>
+
+        {activeItems.length === 0 && !timeError && (
+          <div className={styles.skipHint}>業務時間の入力は後で管理者が行えます</div>
+        )}
+        {timeError && <div className={styles.timeError}>{timeError}</div>}
+
+        <div className={styles.bottomRow}>
+          <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
           <button
-            className={[styles.submitButton, !canSave ? styles.submitDisabled : ''].join(' ')}
+            className={[styles.submitButton, saving ? styles.submitDisabled : ''].join(' ')}
             onClick={handleConfirm}
-            disabled={saving || !canSave}
+            disabled={saving}
           >
-            <ExitIcon size={44} color="#fff" />
+            <ExitIcon size={54} color="#fff" />
             <span>{saving ? '記録中...' : '退勤を登録'}</span>
           </button>
         </div>
+
       </div>
 
+      {/* サブ選択モーダル（グループカードタップ時） */}
       {subPickerGroup && (
         <SubPickerModal
           groupKey={subPickerGroup.key}
           members={subPickerGroup.members}
           workTimes={workTimes}
           workingMinutes={workingMinutes}
-          totalInputMinutes={totalInputMinutes}
           onSetTime={setTime}
-          onClear={id => setTime(id, 0)}
+          onClear={id => {
+            setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
+          }}
           onClose={() => setSubPickerGroup(null)}
         />
       )}
 
+      {/* 時間入力モーダル */}
       {editingItem && (
         <TimeInputModal
           item={editingItem}
-          currentMins={workTimes[editingItem] || 0}
+          workTimes={workTimes}
           workingMinutes={workingMinutes}
-          totalInputMinutes={totalInputMinutes}
-          onConfirm={mins => { setTime(editingItem, mins); setEditingItem(null) }}
+          activeItems={activeItems}
+          onSetTime={setTime}
           onClose={() => setEditingItem(null)}
         />
       )}
 
+      {/* 最初/最後の業務確認モーダル */}
       {confirmingBoundary && (
         <div className={styles.boundaryOverlay}>
           <div className={styles.boundaryModal}>
@@ -531,6 +623,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           </div>
         </div>
       )}
+
     </div>
   )
 }

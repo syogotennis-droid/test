@@ -179,6 +179,13 @@
   gap: 14px;
 }
 
+.modalEditing {
+  width: min(380px, 94vw);
+  max-height: 92dvh;
+  overflow-y: auto;
+  gap: 10px;
+}
+
 .modalDate {
   font-size: 1.3rem;
   font-weight: bold;
@@ -236,61 +243,179 @@
   width: 100%;
 }
 
-.workEditHint {
-  font-size: 0.88rem;
-  color: var(--color-subtext);
-  text-align: center;
-  margin-bottom: 4px;
-}
-
-.workEditList {
+/* ── 項目セレクタ ── */
+.editItemList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 50vh;
+  gap: 7px;
+  max-height: 36vh;
   overflow-y: auto;
 }
 
-.workEditRow {
+.editItemBtn {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-
-.workEditLabel {
-  font-size: 1rem;
-  color: var(--color-text);
-  flex: 1;
-}
-
-.workEditInputWrap {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.workEditInput {
-  width: 72px;
-  text-align: right;
-  font-size: 1.1rem;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  padding: 10px 14px;
+  border: 2px solid var(--color-border);
+  border-radius: 10px;
   background: var(--color-bg);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  text-align: left;
+  width: 100%;
+}
+
+.editItemBtnSelected {
+  border-color: #1a5fa8;
+  background: #eff6ff;
+}
+
+.editItemBtnEntered {
+  border-color: #93b4f5;
+  background: var(--color-bg);
+}
+
+.editItemName {
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--color-text);
-  font-family: inherit;
 }
 
-.workEditUnit {
+.editItemTime {
   font-size: 0.95rem;
-  color: var(--color-subtext);
+  font-weight: 700;
 }
 
+.editItemTimeEntered {
+  color: #1a5fa8;
+}
+
+.editItemTimeMissing {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* ── テンキーエリア ── */
+.editNumpadSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+
+.minsDisplay {
+  background: #f0f7ff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-align: center;
+  border: 1.5px solid #dbeafe;
+}
+
+.minsDisplayPrimary {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #1a3f6f;
+  line-height: 1;
+}
+
+.minsDisplaySecondary {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.quickBtns {
+  display: flex;
+  gap: 5px;
+}
+
+.quickBtn {
+  flex: 1;
+  padding: 8px 2px;
+  border: 2px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1a5fa8;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quickBtn:active { background: #dbeafe; }
+
+.quickBtnAll {
+  background: #1a5fa8;
+  color: #fff;
+  border-color: #1a5fa8;
+}
+
+.quickBtnAll:active { background: #1558a0; }
+
+.quickBtnDisabled {
+  background: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  border-color: #e2e8f0 !important;
+  cursor: not-allowed;
+}
+
+.timeNumGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.timeNumKey {
+  height: 52px;
+  min-height: 48px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1a3f6f;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.timeNumKey:active { background: #dbeafe; }
+
+.timeNumDel {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+  font-size: 1.1rem;
+}
+
+.timeNumDel:active { background: #fecaca; }
+
+.timeNumClear {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.timeNumClear:active { background: #e2e8f0; }
+
+.minsError {
+  color: #dc2626;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+  background: #fee2e2;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+/* ── 編集アクション ── */
 .workEditActions {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .workEditActions .modalClose {
