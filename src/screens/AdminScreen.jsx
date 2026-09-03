@@ -499,35 +499,47 @@ function CalendarTab({ users, today, isTablet }) {
               const multiSession = sessions.length > 1
               const dow = new Date(year, month, d).getDay()
               const isToday = d === todayDay && year === todayYear && month === todayMonth
-              const SESSION_NUMS = ['①', '②', '③', '④', '⑤']
+              const MAX_SHOW = sessions.length <= 3 ? sessions.length : 2
+              const extraCount = sessions.length > 3 ? sessions.length - 2 : 0
               return (
                 <div
                   key={d}
                   className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : '', isToday ? styles.calTodayCell : ''].join(' ')}
                   onClick={() => setSelectedDay(d)}
                 >
-                  <div className={[styles.calDayNum, isToday ? styles.calDayNumToday : ''].join(' ')}>{d}</div>
-                  {multiSession && (
-                    <div className={styles.calMultiBadge}>{sessions.length}回</div>
-                  )}
+                  <div className={styles.calDayHeader}>
+                    <div className={[styles.calDayNum, isToday ? styles.calDayNumToday : ''].join(' ')}>{d}</div>
+                    {multiSession && <span className={styles.calCountLabel}>{sessions.length}回勤務</span>}
+                  </div>
                   {multiSession ? (
                     <div className={styles.calSessions}>
-                      {sessions.map((s, idx) => (
+                      {sessions.slice(0, MAX_SHOW).map((s, idx) => (
                         <div key={idx} className={styles.calSessionRow}>
-                          <span className={styles.calSessionNum}>{SESSION_NUMS[idx] || `${idx + 1}.`}</span>
+                          <span className={styles.calSessionNum}>{idx + 1}回目</span>
                           <span className={styles.calSessionIn}>{s.in}</span>
-                          {s.out ? (
-                            <><span className={styles.calSessionArrow}>→</span><span className={styles.calSessionOut}>{s.out}</span></>
-                          ) : (
-                            <span className={styles.calSessionOut} style={{ color: '#aaa' }}>—</span>
-                          )}
+                          <span className={styles.calSessionArrow}>→</span>
+                          {s.out
+                            ? <span className={styles.calSessionOut}>{s.out}</span>
+                            : <span className={styles.calSessionActive}>勤務中</span>
+                          }
                         </div>
                       ))}
+                      {extraCount > 0 && (
+                        <button
+                          className={styles.calMoreBtn}
+                          onClick={e => { e.stopPropagation(); setSelectedDay(d) }}
+                        >
+                          ほか{extraCount}件
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <>
                       {inTime && <div className={styles.calIn}>出勤 {inTime}</div>}
-                      {sessions[0]?.out && <div className={styles.calOut}>退勤 {sessions[0].out}</div>}
+                      {sessions[0]?.out
+                        ? <div className={styles.calOut}>退勤 {sessions[0].out}</div>
+                        : inTime && <div className={styles.calActive}>勤務中</div>
+                      }
                     </>
                   )}
                 </div>
