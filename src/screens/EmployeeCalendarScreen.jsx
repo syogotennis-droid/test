@@ -108,7 +108,6 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     setSelectedItem(editableItems[0] || null)
   }, [editing])
 
-  const totalInputMinutes = editableItems.reduce((s, item) => s + (parseInt(inputs[item] || '0') || 0), 0)
   const currentValue = parseInt(inputs[selectedItem] || '0') || 0
   const otherMins = editableItems
     .filter(i => i !== selectedItem)
@@ -190,69 +189,74 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
           </>
         ) : (
           <>
-            {/* 水平チップ行（項目切り替え） */}
-            <div className={styles.editChipRow}>
-              {editableItems.map(item => {
-                const v = parseInt(inputs[item] || '0') || 0
-                const isSel = selectedItem === item
-                return (
-                  <button
-                    key={item}
-                    className={[styles.editChip, isSel ? styles.editChipSelected : v > 0 ? styles.editChipEntered : ''].join(' ')}
-                    onClick={() => setSelectedItem(item)}
-                  >
-                    {item}{v > 0 && !isSel ? ` ${fmtMins(v)}` : ''}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* 選択中業務名（常時表示） */}
-            <div className={styles.editSelectedTitle}>
-              {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
-            </div>
-
-            {/* 残り時間（常時表示） */}
-            {workingMinutes != null && selectedItem && (
-              <div className={styles.editRemainingRow}>
-                <span className={styles.editRemainingLabel}>残り</span>
-                <span className={[styles.editRemainingValue, maxMins <= 0 ? styles.editRemainingDone : ''].join(' ')}>
-                  {maxMins > 0 ? fmtMins(maxMins) : maxMins === 0 ? '完了' : `${-maxMins}分超過`}
-                </span>
-              </div>
-            )}
-
-            {/* 入力値 + クイックボタン + テンキー */}
-            {selectedItem && (
-              <>
-                <div className={styles.minsDisplay}>
-                  <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
-                  {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
-                </div>
-                <div className={styles.quickBtns}>
-                  <button className={styles.quickBtn} onClick={() => setQuick(30)}>30分</button>
-                  <button className={styles.quickBtn} onClick={() => setQuick(60)}>1時間</button>
-                  <button className={styles.quickBtn} onClick={() => setQuick(120)}>2時間</button>
-                  <button
-                    className={[styles.quickBtn, styles.quickBtnAll, !maxMins || maxMins <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
-                    disabled={!maxMins || maxMins <= 0}
-                    onClick={() => maxMins > 0 && setQuick(maxMins)}
-                  >残りすべて</button>
-                </div>
-                <div className={styles.timeNumGrid}>
-                  {NUM_KEYS.map((k, i) => (
+            <div className={styles.editSplit}>
+              {/* 左列：業務アイテム選択 */}
+              <div className={styles.editItemList}>
+                {editableItems.map(item => {
+                  const v = parseInt(inputs[item] || '0') || 0
+                  const isSel = selectedItem === item
+                  return (
                     <button
-                      key={i}
-                      className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : '', k === 'C' ? styles.timeNumClear : ''].join(' ')}
-                      onClick={() => pressKey(k)}
-                    >{k}</button>
-                  ))}
+                      key={item}
+                      className={[
+                        styles.editItemBtn,
+                        isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
+                      ].join(' ')}
+                      onClick={() => setSelectedItem(item)}
+                    >
+                      <span className={styles.editItemName}>{item}</span>
+                      {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* 右列：入力エリア */}
+              <div className={styles.editInputArea}>
+                <div className={styles.editSelectedTitle}>
+                  {selectedItem ? `${selectedItem}` : '業務を選択'}
                 </div>
-                {isOver && (
-                  <div className={styles.minsError}>残り時間を{currentValue - maxMins}分超えています</div>
+
+                {workingMinutes != null && selectedItem && (
+                  <div className={styles.editRemainingRow}>
+                    <span className={styles.editRemainingLabel}>残り</span>
+                    <span className={[styles.editRemainingValue, maxMins <= 0 ? styles.editRemainingDone : ''].join(' ')}>
+                      {maxMins > 0 ? fmtMins(maxMins) : maxMins === 0 ? '完了' : `${-maxMins}分超過`}
+                    </span>
+                  </div>
                 )}
-              </>
-            )}
+
+                {selectedItem && (
+                  <>
+                    <div className={styles.minsDisplay}>
+                      <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
+                      {currentValue > 0 && <div className={styles.minsDisplaySecondary}>{currentValue}分</div>}
+                    </div>
+                    <div className={styles.quickBtns}>
+                      <button className={styles.quickBtn} onClick={() => setQuick(30)}>30分</button>
+                      <button className={styles.quickBtn} onClick={() => setQuick(60)}>1時間</button>
+                      <button
+                        className={[styles.quickBtn, styles.quickBtnAll, !maxMins || maxMins <= 0 ? styles.quickBtnDisabled : ''].join(' ')}
+                        disabled={!maxMins || maxMins <= 0}
+                        onClick={() => maxMins > 0 && setQuick(maxMins)}
+                      >残り全て</button>
+                    </div>
+                    <div className={styles.timeNumGrid}>
+                      {NUM_KEYS.map((k, i) => (
+                        <button
+                          key={i}
+                          className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : '', k === 'C' ? styles.timeNumClear : ''].join(' ')}
+                          onClick={() => pressKey(k)}
+                        >{k}</button>
+                      ))}
+                    </div>
+                    {isOver && (
+                      <div className={styles.minsError}>残り時間を{currentValue - maxMins}分超えています</div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
 
             <div className={styles.workEditActions}>
               <button className={styles.modalClose} onClick={() => setEditing(false)}>キャンセル</button>
