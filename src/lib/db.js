@@ -1262,28 +1262,26 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const totalTypePay = summaryTypeEntries.reduce((s, [, v]) => s + v.pay, 0)
     let sumRows = ''
     sumRows += `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 業務別集計')}</t></is></c></row>`
-    sumRows += `<row r="2" ht="36">${shdrCell('A', 2, '単価種別')}${shdrCell('B', 2, '勤務時間')}${shdrCell('C', 2, '時間合計')}${shdrCell('D', 2, '金額合計')}</row>`
+    sumRows += `<row r="2" ht="36">${shdrCell('A', 2, '単価種別')}${shdrCell('B', 2, '時間合計')}${shdrCell('C', 2, '金額合計')}</row>`
     let sr = 3
     for (const [label, v] of summaryTypeEntries) {
       sumRows += `<row r="${sr}">` +
         `<c r="A${sr}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(label)}</t></is></c>` +
-        `<c r="B${sr}" s="${S.tot_hrs}"><v>${summaryData.totalClockMins / 1440}</v></c>` +
-        `<c r="C${sr}" s="${S.tot_hrs}"><v>${v.mins / 1440}</v></c>` +
-        `<c r="D${sr}" s="${S.tot_pay}"><v>${v.pay}</v></c>` +
+        `<c r="B${sr}" s="${S.tot_hrs}"><v>${v.mins / 1440}</v></c>` +
+        `<c r="C${sr}" s="${S.tot_pay}"><v>${v.pay}</v></c>` +
         `</row>`
       sr++
     }
     sumRows += `<row r="${sr}">` +
       `<c r="A${sr}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      `<c r="B${sr}" s="${S.tot_hrs}"><v>${summaryData.totalClockMins / 1440}</v></c>` +
-      `<c r="C${sr}" s="${S.tot_hrs}"><v>${totalTypeMins / 1440}</v></c>` +
-      `<c r="D${sr}" s="${S.tot_pay}"><v>${totalTypePay}</v></c>` +
+      `<c r="B${sr}" s="${S.tot_hrs}"><f>SUM(B3:B${sr - 1})</f><v>0</v></c>` +
+      `<c r="C${sr}" s="${S.tot_pay}"><f>SUM(C3:C${sr - 1})</f><v>0</v></c>` +
       `</row>`
     const summarySheetXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<worksheet xmlns="${WB_NS_S}" xmlns:r="${WB_REL_S}">` +
       `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
-      `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="5" width="14" customWidth="1"/></cols>` +
+      `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="3" width="14" customWidth="1"/></cols>` +
       `<sheetData>${sumRows}</sheetData></worksheet>`
     sheetXmls.unshift(summarySheetXml)
   }
