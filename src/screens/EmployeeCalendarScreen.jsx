@@ -240,14 +240,14 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             return (
               <div
                 key={d}
-                className={[styles.cell, worked ? styles.worked : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
+                className={[styles.cell, hasNoWorkType ? styles.noWork : worked ? styles.worked : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
                 onClick={() => worked && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
                 {inTime && <div className={styles.inTime}>出 {inTime}</div>}
                 {inTime && outTime && <div className={styles.timeSpacer} />}
                 {outTime && <div className={styles.outTime}>退 {outTime}</div>}
-                {hasNoWorkType && <div className={styles.noWorkDot} />}
+                {hasNoWorkType && <div className={styles.noWorkBadge}>未入力</div>}
               </div>
             )
           })}
