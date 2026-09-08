@@ -388,11 +388,11 @@ export async function getTodayStatuses() {
   return result
 }
 
-export async function saveLogManual({ userId, workType, logType, date, time }) {
+export async function saveLogManual({ userId, workType, logType, date, time, firstWork, lastWork }) {
   const [y, mo, d] = date.split('-').map(Number)
   const [h, m] = time.split(':').map(Number)
   const dt = new Date(y, mo - 1, d, h, m, 0)
-  await addDoc(logsCol, {
+  const data = {
     user_id: userId,
     work_type: workType || '',
     log_type: logType,
@@ -400,7 +400,10 @@ export async function saveLogManual({ userId, workType, logType, date, time }) {
     date,
     time: time + ':00',
     synced: 0
-  })
+  }
+  if (firstWork) data.first_work = firstWork
+  if (lastWork) data.last_work = lastWork
+  await addDoc(logsCol, data)
 }
 
 export async function setApprovedTime(logId, approvedTime) {
@@ -748,7 +751,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             else t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"/>`)
             t1c.push(breakMins > 0 ? `<c r="E${r1sal}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>` : `<c r="E${r1sal}" s="${S.hours[dt]}"/>`)
             t1c.push(inStr && outStr ? `<c r="F${r1sal}" s="${S.hours[dt]}"><f>MAX(0,D${r1sal}-C${r1sal}-E${r1sal})</f></c>` : `<c r="F${r1sal}" s="${S.hours[dt]}"/>`)
-            t1c.push(isFirst && (inStr || outStr) ? `<c r="G${r1sal}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1sal}" s="${S.hours[dt]}"/>`)
+            t1c.push((inStr || outStr) ? `<c r="G${r1sal}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1sal}" s="${S.hours[dt]}"/>`)
             t1c.push(inStr && outStr ? `<c r="H${r1sal}" s="${S.hours[dt]}"><f>F${r1sal}+G${r1sal}</f></c>` : `<c r="H${r1sal}" s="${S.hours[dt]}"/>`)
           } else {
             t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"/>`, `<c r="D${r1sal}" s="${S.time[dt]}"/>`)
@@ -1025,8 +1028,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           const breakMins = wi['休憩'] || 0
           t1c.push(breakMins > 0 ? `<c r="E${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>` : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
           t1c.push(inStr && outStr ? `<c r="F${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1}-E${r1})</f></c>` : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
-          // 準備時間: 10分/日、その日の最初のセッション行のみ
-          t1c.push(isFirst && hasAtt ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
+          // 準備時間: 10分/セッション（出退勤のたびに前後5分）
+          t1c.push(hasAtt ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
           t1c.push(hasAtt ? `<c r="H${r1}" s="${S.hours[dt]}"><f>F${r1}+G${r1}</f></c>` : `<c r="H${r1}" s="${S.hours[dt]}"/>`)
 
           const approvedInStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')

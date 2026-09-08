@@ -863,15 +863,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       } else if (log.log_type === '退勤') {
         const inHM = initHM(pendingIn?.time?.substring(0, 5))
         const outHM = initHM(log.time?.substring(0, 5))
-        result.push({ inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m })
+        result.push({ inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m, firstWork: log.first_work || null, lastWork: log.last_work || null })
         pendingIn = null
       }
     }
     if (pendingIn) {
       const inHM = initHM(pendingIn.time?.substring(0, 5))
-      result.push({ inH: inHM.h, inM: inHM.m, outH: '', outM: '' })
+      result.push({ inH: inHM.h, inM: inHM.m, outH: '', outM: '', firstWork: null, lastWork: null })
     }
-    if (result.length === 0) result.push({ inH: '', inM: '', outH: '', outM: '' })
+    if (result.length === 0) result.push({ inH: '', inM: '', outH: '', outM: '', firstWork: null, lastWork: null })
     return result
   }
 
@@ -913,7 +913,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   }
 
   function addSession() {
-    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '' }])
+    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', firstWork: null, lastWork: null }])
   }
 
   function removeSession(si) {
@@ -976,7 +976,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       const { inTime, outTime } = sessionTimes[si]
       const isLast = si === sessions.length - 1
       if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
-      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: (!isSalaried && isLast) ? buildWorkTypeStr() : '' })
+      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: (!isSalaried && isLast) ? buildWorkTypeStr() : '', firstWork: sessions[si].firstWork || null, lastWork: sessions[si].lastWork || null })
     }
     if (isSalaried) {
       const otMins = (parseInt(overtimeH) || 0) * 60 + (parseInt(overtimeM) || 0)
@@ -1099,6 +1099,24 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         )}
                       </div>
                     </div>
+                    {outTime && (
+                      <div className={styles.boundarySelectRow}>
+                        <div className={styles.formGroup}>
+                          <label className={styles.formLabel}>開始側の控除業務</label>
+                          <select className={styles.boundarySelect} value={s.firstWork || ''} onChange={e => updateSession(si, 'firstWork', e.target.value || null)}>
+                            <option value="">なし</option>
+                            {userWorkItems.filter(item => item !== '休憩').map(item => <option key={item} value={item}>{item}</option>)}
+                          </select>
+                        </div>
+                        <div className={styles.formGroup}>
+                          <label className={styles.formLabel}>終了側の控除業務</label>
+                          <select className={styles.boundarySelect} value={s.lastWork || ''} onChange={e => updateSession(si, 'lastWork', e.target.value || null)}>
+                            <option value="">なし</option>
+                            {userWorkItems.filter(item => item !== '休憩').map(item => <option key={item} value={item}>{item}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}

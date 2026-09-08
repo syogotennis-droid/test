@@ -3050,6 +3050,15 @@
   gap: 4px;
 }
 
+.boundarySelectRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .boundarySelect {
   font-size: 0.82rem;
   padding: 3px 6px;
