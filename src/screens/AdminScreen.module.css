@@ -1792,6 +1792,24 @@
 
 .kinmuboDetailTotPay { font-size: 0.95rem; }
 
+/* Multi-period pay table grouping */
+.kinmuboDetailGroupHeader {
+  background: #1a3f6f;
+}
+.kinmuboDetailGroupTd {
+  padding: 5px 16px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+}
+.kinmuboDetailSubRow { background: #f8fafc; }
+.kinmuboDetailSubTd {
+  padding-left: 28px;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
 /* ─── User edit modal ─── */
 .itemRatesList {
   display: flex;
@@ -3050,6 +3068,59 @@
   border-radius: 4px;
   padding: 1px 5px;
   white-space: nowrap;
+}
+
+/* 日付セル（rowSpan用） */
+.kinmuboDailyDateTd {
+  vertical-align: top;
+  font-weight: 700;
+  font-size: 0.84rem;
+  color: #1e293b;
+  padding-top: 8px;
+}
+
+/* 複数打刻バッジ */
+.multiSessionBadge {
+  display: inline-block;
+  margin-left: 5px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+/* 同一日複数セッション */
+.kinmuboDailyGroupFirst .kinmuboDailyTd,
+.kinmuboDailyGroupFirst .kinmuboDailyTdAppr {
+  border-top: 2px solid #e2e8f0;
+}
+.kinmuboDailyGroupExtra .kinmuboDailyTd,
+.kinmuboDailyGroupExtra .kinmuboDailyTdAppr {
+  background: #f8fafc;
+}
+
+/* 控除なし・調整なしラベル */
+.noAdjustLabel {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+/* 15分未満・要確認バッジ */
+.shortWorkBadge {
+  display: inline-block;
+  margin-left: 6px;
+  background: #fef9c3;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 /* ─── KinmuboTab global work-type summary ─── */

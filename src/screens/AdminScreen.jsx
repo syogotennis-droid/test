@@ -1575,23 +1575,23 @@ function KinmuboTab({ today }) {
             if (ds >= fromDate && ds <= toDate && tm[type]) { cutWd += tm[type].wd; cutWe += tm[type].we }
           })
           const adjWd = Math.max(0, wdM - cutWd), adjWe = Math.max(0, weM - cutWe)
-          const rangeLabel = multiPeriod ? `（${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}）` : ''
+          const periodRangeLabel = multiPeriod ? `${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}` : ''
           if (hasSunday) {
-            if (adjWd > 0) rows.push({ label: type + rangeLabel, mins: adjWd, days: null, rate: normalRate, pay: Math.round(adjWd / 60 * normalRate) })
-            if (adjWe > 0) rows.push({ label: type + rangeLabel + '（日曜）', mins: adjWe, days: null, rate: sundayRate, pay: Math.round(adjWe / 60 * sundayRate) })
+            if (adjWd > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: adjWd, days: null, rate: normalRate, pay: Math.round(adjWd / 60 * normalRate) })
+            if (adjWe > 0) rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : type + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: adjWe, days: null, rate: sundayRate, pay: Math.round(adjWe / 60 * sundayRate) })
           } else {
             const adj = adjWd + adjWe
-            if (adj > 0) rows.push({ label: type + rangeLabel, mins: adj, days: null, rate: normalRate, pay: Math.round(adj / 60 * normalRate) })
+            if (adj > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: adj, days: null, rate: normalRate, pay: Math.round(adj / 60 * normalRate) })
           }
         }
       }
       const transport = Number(itemRates['交通費']?.amount) || 0
       if (transport > 0 && workingDays > 0) {
-        rows.push({ label: '交通費', mins: null, days: workingDays, rate: transport, pay: Math.round(workingDays * transport) })
+        rows.push({ label: '交通費', parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: workingDays, rate: transport, pay: Math.round(workingDays * transport) })
       }
       if (workingDays > 0 && minWage > 0) {
         const prepMins = workingDays * 10
-        rows.push({ label: '準備時間', mins: prepMins, days: null, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
+        rows.push({ label: '準備時間', parentType: '準備時間', isMultiPeriod: false, dayType: null, mins: prepMins, days: null, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
       }
       const totalWorkMins = rows.reduce((s, r) => s + (r.mins || 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
@@ -1873,8 +1873,8 @@ function KinmuboTab({ today }) {
                                 <th className={styles.kinmuboDailyTh}>日付</th>
                                 <th className={styles.kinmuboDailyTh}>打刻時間</th>
                                 <th className={styles.kinmuboDailyTh}>承認時間</th>
-                                <th className={styles.kinmuboDailyTh}>最初の業務</th>
-                                <th className={styles.kinmuboDailyTh}>最後の業務</th>
+                                <th className={styles.kinmuboDailyTh}>開始側の控除業務</th>
+                                <th className={styles.kinmuboDailyTh}>終了側の控除業務</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1884,6 +1884,7 @@ function KinmuboTab({ today }) {
                                 const dowLabel = ['日','月','火','水','木','金','土'][dow]
                                 const isSun = dow === 0, isSat = dow === 6
                                 const entry = byDate[ds]
+                                const numSessions = entry.sessions.length
                                 return entry.sessions.map((session, si) => {
                                   const inStr = session.inLog?.time?.substring(0, 5) || ''
                                   const outStr = session.outLog?.time?.substring(0, 5) || ''
@@ -1902,9 +1903,22 @@ function KinmuboTab({ today }) {
                                   const resolvedLast = boundEdit.lastWork ?? session.lastWork
                                   const workTypeOptions = Object.keys(session.workItems).filter(t => !new Set(['休憩']).has(t) && session.workItems[t] > 0)
                                   const showBoundary = workTypeOptions.length >= 1 && outLogId
+                                  const approvedWorkMins = (inApprMins !== null && outApprMins !== null) ? outApprMins - inApprMins : null
+                                  const isShortWork = approvedWorkMins !== null && approvedWorkMins >= 0 && approvedWorkMins < 15
+                                  const isNegativeWork = approvedWorkMins !== null && approvedWorkMins < 0
                                   return (
-                                    <tr key={`${ds}-${si}`} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].join(' ')}>
-                                      <td className={styles.kinmuboDailyTd}>{si === 0 ? `${mo}/${d}（${dowLabel}）` : ''}</td>
+                                    <tr key={`${ds}-${si}`} className={[
+                                      styles.kinmuboDailyRow,
+                                      isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : '',
+                                      si === 0 && numSessions > 1 ? styles.kinmuboDailyGroupFirst : '',
+                                      si > 0 ? styles.kinmuboDailyGroupExtra : '',
+                                    ].filter(Boolean).join(' ')}>
+                                      {si === 0 && (
+                                        <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')} rowSpan={numSessions}>
+                                          <span>{`${mo}/${d}（${dowLabel}）`}</span>
+                                          {numSessions > 1 && <span className={styles.multiSessionBadge}>{numSessions}回</span>}
+                                        </td>
+                                      )}
                                       <td className={styles.kinmuboDailyTd}>
                                         {inStr && outStr ? `${inStr} ～ ${outStr}` : inStr || outStr || '—'}
                                       </td>
@@ -1913,51 +1927,49 @@ function KinmuboTab({ today }) {
                                           <span className={styles.apprCtrl}>
                                             <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, Math.max(0, (inApprMins ?? 0) - 15))}>−</button>
                                             <span className={styles.apprTimeVal}>{inApprMins !== null ? minsToTimeStrK(inApprMins) : '—'}</span>
-                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, (inApprMins ?? 0) + 15)}>+</button>
+                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, Math.min((inApprMins ?? 0) + 15, outApprMins ?? Infinity))}>+</button>
                                           </span>
                                         )}
                                         {inStr && outStr && <span className={styles.apprSep}>〜</span>}
                                         {outStr && (
                                           <span className={styles.apprCtrl}>
-                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, Math.max(0, (outApprMins ?? 0) - 15))}>−</button>
+                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, Math.max((outApprMins ?? 0) - 15, inApprMins ?? 0))}>−</button>
                                             <span className={styles.apprTimeVal}>{outApprMins !== null ? minsToTimeStrK(outApprMins) : '—'}</span>
                                             <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, (outApprMins ?? 0) + 15)}>+</button>
                                           </span>
                                         )}
+                                        {isShortWork && <span className={styles.shortWorkBadge}>15分未満・要確認</span>}
+                                        {isNegativeWork && <span className={styles.shortWorkBadge}>時刻逆転・要確認</span>}
                                       </td>
                                       <td className={styles.kinmuboDailyTd}>
-                                        {showBoundary ? (
+                                        {startCut > 0 && showBoundary ? (
                                           <div className={styles.boundarySelectWrap}>
+                                            <span className={styles.cutBadge}>−{fmtMins(startCut)}</span>
                                             <select
                                               className={styles.boundarySelect}
                                               value={resolvedFirst || ''}
                                               onChange={e => handleBoundaryChange(outLogId, 'firstWork', e.target.value || null)}
                                             >
-                                              <option value="">—</option>
+                                              <option value="">— 未設定 —</option>
                                               {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
-                                            {startCut > 0 && resolvedFirst && (
-                                              <span className={styles.cutBadge}>−{fmtMins(startCut)}</span>
-                                            )}
                                           </div>
-                                        ) : '—'}
+                                        ) : <span className={styles.noAdjustLabel}>調整なし</span>}
                                       </td>
                                       <td className={styles.kinmuboDailyTd}>
-                                        {showBoundary ? (
+                                        {endCut > 0 && showBoundary ? (
                                           <div className={styles.boundarySelectWrap}>
+                                            <span className={styles.cutBadge}>−{fmtMins(endCut)}</span>
                                             <select
                                               className={styles.boundarySelect}
                                               value={resolvedLast || ''}
                                               onChange={e => handleBoundaryChange(outLogId, 'lastWork', e.target.value || null)}
                                             >
-                                              <option value="">—</option>
+                                              <option value="">— 未設定 —</option>
                                               {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
                                             </select>
-                                            {endCut > 0 && resolvedLast && (
-                                              <span className={styles.cutBadge}>−{fmtMins(endCut)}</span>
-                                            )}
                                           </div>
-                                        ) : '—'}
+                                        ) : <span className={styles.noAdjustLabel}>調整なし</span>}
                                       </td>
                                     </tr>
                                   )
@@ -1980,14 +1992,25 @@ function KinmuboTab({ today }) {
                             </tr>
                           </thead>
                           <tbody>
-                            {rows.map((r, i) => (
-                              <tr key={i} className={styles.kinmuboDetailRow}>
-                                <td className={styles.kinmuboDetailTd}>{r.label}</td>
-                                <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{fmtTimeOrDays(r)}</td>
-                                <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{r.rate > 0 ? r.rate.toLocaleString() + '円' : '—'}</td>
-                                <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{r.pay > 0 ? r.pay.toLocaleString() + '円' : '—'}</td>
-                              </tr>
-                            ))}
+                            {rows.map((r, i) => {
+                              const prevParent = i > 0 ? rows[i - 1].parentType : null
+                              const needsGroupHeader = r.isMultiPeriod && r.parentType !== prevParent
+                              return (
+                                <React.Fragment key={i}>
+                                  {needsGroupHeader && (
+                                    <tr className={styles.kinmuboDetailGroupHeader}>
+                                      <td colSpan={4} className={styles.kinmuboDetailGroupTd}>{r.parentType}</td>
+                                    </tr>
+                                  )}
+                                  <tr className={[styles.kinmuboDetailRow, r.isMultiPeriod ? styles.kinmuboDetailSubRow : ''].join(' ')}>
+                                    <td className={[styles.kinmuboDetailTd, r.isMultiPeriod ? styles.kinmuboDetailSubTd : ''].join(' ')}>{r.label}</td>
+                                    <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{fmtTimeOrDays(r)}</td>
+                                    <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{r.rate > 0 ? r.rate.toLocaleString() + '円' : '—'}</td>
+                                    <td className={[styles.kinmuboDetailTd, styles.kinmuboDetailRight].join(' ')}>{r.pay > 0 ? r.pay.toLocaleString() + '円' : '—'}</td>
+                                  </tr>
+                                </React.Fragment>
+                              )
+                            })}
                           </tbody>
                           <tfoot>
                             <tr>
