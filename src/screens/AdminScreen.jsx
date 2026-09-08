@@ -3060,41 +3060,25 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [pin, setPin] = useState(user.pin || '')
   const [pinError, setPinError] = useState('')
   const [workItems, setWorkItems] = useState(user.workItems || [])
-  const [itemRates, setItemRates] = useState(() => {
-    const r = {}
-    ASSIGNABLE_ITEMS.forEach(item => {
-      const ur = user.itemRates?.[item] || {}
-      r[item] = {
-        normal: ur.normal != null ? String(ur.normal) : '',
-        sunday: ur.sunday != null ? String(ur.sunday) : '',
-        amount: ur.amount != null ? String(ur.amount) : '',
-      }
-    })
-    return r
-  })
-  const [multipliers, setMultipliers] = useState(() => {
-    const m = {}
-    ASSIGNABLE_ITEMS.forEach(item => {
-      const ur = user.itemRates?.[item]
-      if (ur?.sunday != null && String(ur.sunday) !== '') {
-        if (ur.multiplier != null) {
-          m[item] = String(ur.multiplier)
-        } else if (ur.normal && Number(ur.normal) > 0) {
-          m[item] = String(Math.round((Number(ur.sunday) / Number(ur.normal)) * 100) / 100)
-        } else {
-          m[item] = '1.1'
-        }
-      }
-    })
-    return m
-  })
   const [rateHistory, setRateHistory] = useState(() => {
     const h = {}
-    ASSIGNABLE_ITEMS.forEach(item => { h[item] = user.itemRates?.[item]?.rateHistory || [] })
+    ASSIGNABLE_ITEMS.forEach(item => {
+      if (item === '交通費') return
+      const ur = user.itemRates?.[item] || {}
+      const hist = ur.rateHistory || []
+      if (hist.length === 0 && ur.normal != null) {
+        h[item] = [{ from: null, normal: Number(ur.normal), ...(ur.sunday != null ? { sunday: Number(ur.sunday) } : {}) }]
+      } else {
+        h[item] = hist
+      }
+    })
     return h
   })
-  const [rateHistoryOpen, setRateHistoryOpen] = useState({}) // { item: bool }
-  const [addRateForm, setAddRateForm] = useState(null) // { item, date, normal, sunday }
+  const [transportAmount, setTransportAmount] = useState(
+    user.itemRates?.['交通費']?.amount != null ? String(user.itemRates['交通費'].amount) : ''
+  )
+  const [historyModalItem, setHistoryModalItem] = useState(null)
+  const [addRateForm, setAddRateForm] = useState(null) // { item, date, normalStr, multiplierStr, sundayStr }
   const [employeeType, setEmployeeType] = useState(user.employeeType || 'hourly')
   const [fixedStartTime, setFixedStartTime] = useState(user.fixedStartTime || '09:00')
   const [fixedEndTime, setFixedEndTime] = useState(user.fixedEndTime || '18:00')
@@ -3109,7 +3093,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setIsDirty(true)
-  }, [name, pin, workItems, itemRates, multipliers, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal])
+  }, [name, pin, workItems, transportAmount, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal])
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -3126,89 +3110,53 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     )
   }
 
-  function setRate(item, field, val) {
-    if (field === 'multiplier') {
-      setMultipliers(prev => ({ ...prev, [item]: val }))
-      setItemRates(prev => {
-        const normalVal = prev[item]?.normal
-        const sunday = normalVal === '' || normalVal == null || val === ''
-          ? '' : String(Math.round(Number(normalVal) * Number(val)))
-        return { ...prev, [item]: { ...prev[item], sunday } }
-      })
-    } else {
-      setItemRates(prev => {
-        const updated = { ...prev, [item]: { ...prev[item], [field]: val } }
-        if (field === 'normal' && multipliers[item] != null) {
-          updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * Number(multipliers[item])))
-        }
-        return updated
-      })
-    }
-  }
-
   function buildItemRates() {
     const result = {}
     ASSIGNABLE_ITEMS.forEach(item => {
-      const r = itemRates[item] || {}
       if (item === '交通費') {
-        if (r.amount !== '') result[item] = { amount: Number(r.amount) }
-      } else {
-        const entry = {}
-        if (r.normal !== '') entry.normal = Number(r.normal)
-        if (r.sunday !== '') entry.sunday = Number(r.sunday)
-        if (multipliers[item] != null) entry.multiplier = Number(multipliers[item])
-        const hist = rateHistory[item] || []
-        if (hist.length > 0) entry.rateHistory = hist
-        if (Object.keys(entry).length > 0) result[item] = entry
+        if (transportAmount !== '') result[item] = { amount: Number(transportAmount) }
+        return
       }
+      const hist = rateHistory[item] || []
+      if (hist.length === 0) return
+      const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+      const latest = sorted[sorted.length - 1]
+      result[item] = { normal: Number(latest.normal) || 0, sunday: Number(latest.sunday) || 0, rateHistory: hist }
     })
     return result
+  }
+
+  function prevDay(dateStr) {
+    if (!dateStr) return '—'
+    const d = new Date(dateStr); d.setDate(d.getDate() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
   }
 
   function openAddRateForm(item) {
     const today = new Date()
     const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-    const r = itemRates[item] || {}
-    setAddRateForm({ item, date: dateStr, normal: r.normal || '', sunday: r.sunday || '' })
+    setAddRateForm({ item, date: dateStr, normalStr: '', multiplierStr: '', sundayStr: '' })
   }
 
   function commitAddRate() {
     if (!addRateForm) return
-    const { item, date, normal, sunday } = addRateForm
-    if (!date || !normal) return
-    const newEntry = { from: date, normal: Number(normal) }
-    if (sunday !== '' && sunday != null) newEntry.sunday = Number(sunday)
+    const { item, date, normalStr, multiplierStr, sundayStr } = addRateForm
+    if (!normalStr) return
+    const normalVal = Number(normalStr)
+    const sunday = sundayStr !== '' ? Number(sundayStr) : (multiplierStr !== '' ? Math.round(normalVal * Number(multiplierStr)) : undefined)
+    const newEntry = { from: date || null, normal: normalVal }
+    if (sunday != null && sunday > 0) newEntry.sunday = sunday
     setRateHistory(prev => {
       const existing = prev[item] || []
-      // Initialize history with current rate if this is the first change
-      let base = existing
-      if (base.length === 0) {
-        const r = itemRates[item] || {}
-        const firstEntry = { from: null }
-        if (r.normal !== '') firstEntry.normal = Number(r.normal)
-        if (r.sunday !== '') firstEntry.sunday = Number(r.sunday)
-        base = [firstEntry]
-      }
-      const filtered = base.filter(e => e.from !== date)
-      return { ...prev, [item]: [...filtered, newEntry].sort((a, b) => { if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) }) }
+      const filtered = existing.filter(e => e.from !== (date || null))
+      const updated = [...filtered, newEntry].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+      return { ...prev, [item]: updated }
     })
-    // Update current rate inputs to the new rate
-    setItemRates(prev => {
-      const updated = { ...prev, [item]: { ...prev[item], normal, sunday: sunday || prev[item]?.sunday || '' } }
-      return updated
-    })
-    if (sunday !== '' && sunday != null && itemRates[item]?.normal && Number(itemRates[item].normal) > 0) {
-      setMultipliers(prev => ({ ...prev, [item]: String(Math.round(Number(sunday) / Number(normal) * 100) / 100) }))
-    }
     setAddRateForm(null)
   }
 
-  function deleteRateHistoryEntry(item, idx) {
-    setRateHistory(prev => {
-      const updated = (prev[item] || []).filter((_, i) => i !== idx)
-      // If deleting all history, reset to original normal/sunday
-      return { ...prev, [item]: updated }
-    })
+  function deleteRateHistoryEntry(item, entryFrom) {
+    setRateHistory(prev => ({ ...prev, [item]: (prev[item] || []).filter(e => e.from !== entryFrom) }))
   }
 
   async function handleSaveAll() {
@@ -3438,203 +3386,224 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           )}
 
           {/* 作業項目・時給 */}
-          {employeeType !== 'salaried' && <div className={styles.userEditSection}>
-            <div className={styles.userEditSectionTitle}>作業項目・時給</div>
-            <div className={styles.workItemTableWrap}>
-              <table className={styles.workItemTable}>
-                <thead>
-                  <tr>
-                    <th className={styles.workItemTh} style={{width:44}}>使用</th>
-                    <th className={styles.workItemTh}>作業項目</th>
-                    <th className={styles.workItemTh} style={{width:140}}>基本時給</th>
-                    <th className={styles.workItemTh} style={{width:110}}>日曜倍率</th>
-                    <th className={styles.workItemTh} style={{width:120}}>日曜時給</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ASSIGNABLE_ITEMS.map(item => {
-                    const checked = workItems.includes(item)
-                    const r = itemRates[item] || {}
-                    const isTransport = item === '交通費'
-                    return (
-                      <React.Fragment key={item}>
-                      <tr className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
-                        <td className={styles.workItemTd}>
-                          <input
-                            type="checkbox"
-                            className={styles.workItemCheckbox}
-                            checked={checked}
-                            onChange={() => toggleWorkItem(item)}
-                          />
-                        </td>
-                        <td className={styles.workItemTd}>
-                          <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{item}</span>
-                        </td>
-                        {isTransport ? (
-                          <>
-                            <td className={styles.workItemTd}>
-                              <div className={styles.workItemInputWrap}>
-                                {isTablet ? (
-                                  <button
-                                    className={styles.numpadTriggerSm}
-                                    disabled={!checked}
-                                    onClick={() => checked && setNumpad({ title: `${item}（円/回）`, field: 'amount', item, maxLength: 6 })}
-                                  >{r.amount || '0'}</button>
-                                ) : (
-                                  <input
-                                    className={styles.workItemInput}
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder="0"
-                                    value={r.amount}
-                                    disabled={!checked}
-                                    onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
-                                  />
-                                )}
-                                <span className={styles.workItemUnit}>円/回</span>
-                              </div>
-                            </td>
-                            <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
-                            <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
-                          </>
-                        ) : (
-                          <>
-                            <td className={styles.workItemTd}>
-                              <div className={styles.workItemInputWrap}>
-                                {isTablet ? (
-                                  <button
-                                    className={styles.numpadTriggerSm}
-                                    disabled={!checked}
-                                    onClick={() => checked && setNumpad({ title: `${item} 基本時給`, field: 'normal', item, maxLength: 6 })}
-                                  >{r.normal || '0'}</button>
-                                ) : (
-                                  <input
-                                    className={styles.workItemInput}
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder="0"
-                                    value={r.normal}
-                                    disabled={!checked}
-                                    onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'normal', e.target.value) }}
-                                  />
-                                )}
-                                <span className={styles.workItemUnit}>円</span>
-                              </div>
-                            </td>
-                            <td className={styles.workItemTd}>
-                              <div className={styles.workItemInputWrap}>
-                                {isTablet ? (
-                                  <button
-                                    className={styles.numpadTriggerSm}
-                                    disabled={!checked}
-                                    onClick={() => checked && setNumpad({ title: `${item} 日曜倍率`, field: 'multiplier', item, maxLength: 5, decimal: true })}
-                                  >{multipliers[item] || '—'}</button>
-                                ) : (
-                                  <input
-                                    className={styles.workItemInput}
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="1.25"
-                                    value={multipliers[item] || ''}
-                                    disabled={!checked}
-                                    onChange={e => {
-                                      const v = e.target.value
-                                      if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v)
-                                    }}
-                                  />
-                                )}
-                                <span className={styles.workItemUnit}>倍</span>
-                              </div>
-                            </td>
-                            <td className={styles.workItemTd}>
-                              <span className={[styles.workItemSundayDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
-                                {r.sunday ? `${Number(r.sunday).toLocaleString()}円` : '—'}
-                              </span>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                      {checked && !isTransport && (
-                        <tr className={styles.rateHistoryRow}>
-                          <td />
-                          <td colSpan={4} className={styles.rateHistoryCell}>
-                            {(rateHistory[item] || []).length > 0 && (
-                              <div className={styles.rateHistoryList}>
-                                {[...(rateHistory[item] || [])].sort((a, b) => {
-                                  if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from)
-                                }).map((e, idx, arr) => (
-                                  <span key={idx} className={styles.rateHistoryEntry}>
-                                    <span className={styles.rateHistoryDate}>{e.from ? e.from : '当初'}</span>
-                                    <span className={styles.rateHistoryVal}>{Number(e.normal).toLocaleString()}円{e.sunday ? `／日曜${Number(e.sunday).toLocaleString()}円` : ''}</span>
-                                    <button className={styles.rateHistoryDel} onClick={() => deleteRateHistoryEntry(item, (rateHistory[item] || []).indexOf(e))}>✕</button>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            <button className={styles.addRateHistoryBtn} onClick={() => openAddRateForm(item)}>
-                              ＋ 日付から時給を変更
-                            </button>
+          {employeeType !== 'salaried' && (
+            <div className={styles.userEditSection}>
+              <div className={styles.userEditSectionTitle}>作業項目・時給</div>
+              <div className={styles.workItemTableWrap}>
+                <table className={styles.workItemTable}>
+                  <thead>
+                    <tr>
+                      <th className={styles.workItemTh} style={{width:44}}>使用</th>
+                      <th className={styles.workItemTh}>作業項目</th>
+                      <th className={styles.workItemTh} style={{width:110}}>適用開始日</th>
+                      <th className={styles.workItemTh} style={{width:110}}>基本時給</th>
+                      <th className={styles.workItemTh} style={{width:110}}>日曜時給</th>
+                      <th className={styles.workItemTh} style={{width:120}}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ASSIGNABLE_ITEMS.map(item => {
+                      const checked = workItems.includes(item)
+                      const isTransport = item === '交通費'
+                      const hist = rateHistory[item] || []
+                      const sortedHist = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+                      const latest = sortedHist[sortedHist.length - 1]
+                      return (
+                        <tr key={item} className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
+                          <td className={styles.workItemTd}>
+                            <input type="checkbox" className={styles.workItemCheckbox} checked={checked} onChange={() => toggleWorkItem(item)} />
                           </td>
+                          <td className={styles.workItemTd}>
+                            <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{item}</span>
+                          </td>
+                          {isTransport ? (
+                            <>
+                              <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
+                              <td className={styles.workItemTd}>
+                                <div className={styles.workItemInputWrap}>
+                                  {isTablet ? (
+                                    <button
+                                      className={styles.numpadTriggerSm}
+                                      disabled={!checked}
+                                      onClick={() => checked && setNumpad({ title: '交通費（円/回）', field: 'amount', maxLength: 6 })}
+                                    >{transportAmount || '0'}</button>
+                                  ) : (
+                                    <input
+                                      className={styles.workItemInput}
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="0"
+                                      value={transportAmount}
+                                      disabled={!checked}
+                                      onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setTransportAmount(e.target.value) }}
+                                    />
+                                  )}
+                                  <span className={styles.workItemUnit}>円/回</span>
+                                </div>
+                              </td>
+                              <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
+                              <td className={styles.workItemTd}></td>
+                            </>
+                          ) : (
+                            <>
+                              <td className={styles.workItemTd}>
+                                <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
+                                  {latest ? (latest.from ?? '当初') : '—'}
+                                </span>
+                              </td>
+                              <td className={styles.workItemTd}>
+                                <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
+                                  {latest?.normal ? `${Number(latest.normal).toLocaleString()}円` : '未設定'}
+                                </span>
+                              </td>
+                              <td className={styles.workItemTd}>
+                                <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
+                                  {latest?.sunday ? `${Number(latest.sunday).toLocaleString()}円` : '—'}
+                                </span>
+                              </td>
+                              <td className={styles.workItemTd}>
+                                <button
+                                  className={styles.rateHistoryBtn}
+                                  disabled={!checked}
+                                  onClick={() => { if (checked) { setHistoryModalItem(item); setAddRateForm(null) } }}
+                                >
+                                  時給履歴・変更
+                                </button>
+                              </td>
+                            </>
+                          )}
                         </tr>
-                      )}
-                      </React.Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>}
+          )}
 
-          {/* 時給変更入力フォーム */}
-          {addRateForm && (
-            <div className={styles.modalOverlay} onClick={() => setAddRateForm(null)}>
-              <div className={styles.modalSm} onClick={e => e.stopPropagation()}>
-                <div className={styles.modalHeader}>
-                  <div className={styles.modalHeaderTitle}>{addRateForm.item} 時給変更</div>
-                  <button className={styles.modalCloseBtn} onClick={() => setAddRateForm(null)} tabIndex={-1}>✕</button>
+          {/* 時給履歴モーダル */}
+          {historyModalItem && (
+            <div className={styles.modalOverlay} onClick={() => { setHistoryModalItem(null); setAddRateForm(null) }}>
+              <div className={styles.rateHistoryModal} onClick={e => e.stopPropagation()}>
+                <div className={styles.rateHistoryModalHeader}>
+                  <div className={styles.rateHistoryModalTitle}>{historyModalItem} の時給履歴</div>
+                  <button className={styles.modalCloseBtn} onClick={() => { setHistoryModalItem(null); setAddRateForm(null) }}>✕</button>
                 </div>
-                <div className={styles.modalBody}>
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>変更日</label>
-                    <input
-                      type="date"
-                      className={styles.dateInput}
-                      value={addRateForm.date}
-                      onChange={e => setAddRateForm(f => ({ ...f, date: e.target.value }))}
-                    />
-                  </div>
-                  <div className={styles.formGroup} style={{ marginTop: 12 }}>
-                    <label className={styles.formLabel}>基本時給（円）</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className={styles.dateInput}
-                      placeholder="例: 1600"
-                      value={addRateForm.normal}
-                      onChange={e => {
-                        const v = e.target.value.replace(/[^\d]/g, '')
-                        const sunday = multipliers[addRateForm.item] && v ? String(Math.round(Number(v) * Number(multipliers[addRateForm.item]))) : addRateForm.sunday
-                        setAddRateForm(f => ({ ...f, normal: v, sunday }))
-                      }}
-                    />
-                  </div>
-                  {itemRates[addRateForm.item]?.sunday != null && itemRates[addRateForm.item]?.sunday !== '' && (
-                    <div className={styles.formGroup} style={{ marginTop: 12 }}>
-                      <label className={styles.formLabel}>日曜時給（円）</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        className={styles.dateInput}
-                        placeholder="例: 1760"
-                        value={addRateForm.sunday || ''}
-                        onChange={e => setAddRateForm(f => ({ ...f, sunday: e.target.value.replace(/[^\d]/g, '') }))}
-                      />
+                <div className={styles.rateHistoryModalBody}>
+                  {(() => {
+                    const hist = rateHistory[historyModalItem] || []
+                    const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from) })
+                    if (sorted.length === 0) return <p className={styles.rateHistoryEmpty}>時給の登録がありません。「新しい時給を追加」から登録してください。</p>
+                    return (
+                      <div className={styles.rateHistoryTableWrap}>
+                        <table className={styles.rateHistoryTable}>
+                          <thead>
+                            <tr>
+                              <th className={styles.rateHistoryTh}>適用開始日</th>
+                              <th className={styles.rateHistoryTh}>適用終了日</th>
+                              <th className={styles.rateHistoryTh}>基本時給</th>
+                              <th className={styles.rateHistoryTh}>日曜倍率</th>
+                              <th className={styles.rateHistoryTh}>日曜時給</th>
+                              <th className={styles.rateHistoryTh}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sorted.map((entry, idx) => {
+                              const toDisplay = idx === 0 ? '現在' : prevDay(sorted[idx - 1].from)
+                              const fromDisplay = entry.from ?? '当初'
+                              const mult = entry.normal && entry.sunday
+                                ? `${Math.round(entry.sunday / entry.normal * 100) / 100}倍`
+                                : '—'
+                              return (
+                                <tr key={idx} className={[styles.rateHistoryTr, idx === 0 ? styles.rateHistoryCurrentRow : ''].join(' ')}>
+                                  <td className={styles.rateHistoryTd}>{fromDisplay}</td>
+                                  <td className={styles.rateHistoryTd}>{toDisplay}</td>
+                                  <td className={styles.rateHistoryTd}>{entry.normal ? `${Number(entry.normal).toLocaleString()}円` : '—'}</td>
+                                  <td className={styles.rateHistoryTd}>{mult}</td>
+                                  <td className={styles.rateHistoryTd}>{entry.sunday ? `${Number(entry.sunday).toLocaleString()}円` : '—'}</td>
+                                  <td className={styles.rateHistoryTd}>
+                                    <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
+
+                  {addRateForm ? (
+                    <div className={styles.addRateFormPanel}>
+                      <div className={styles.addRateFormTitle}>新しい時給を追加</div>
+                      <div className={styles.addRateFormGrid}>
+                        <div>
+                          <label className={styles.formLabel}>適用開始日</label>
+                          <input
+                            type="date"
+                            className={styles.dateInput}
+                            value={addRateForm.date}
+                            onChange={e => setAddRateForm(f => ({ ...f, date: e.target.value }))}
+                          />
+                          <div className={styles.userEditHintText}>空欄にすると「当初から」の扱いになります</div>
+                        </div>
+                        <div>
+                          <label className={styles.formLabel}>基本時給（円）</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className={styles.dateInput}
+                            placeholder="例: 1600"
+                            value={addRateForm.normalStr}
+                            onChange={e => {
+                              const v = e.target.value.replace(/[^\d]/g, '')
+                              const sunday = addRateForm.multiplierStr && v
+                                ? String(Math.round(Number(v) * Number(addRateForm.multiplierStr)))
+                                : addRateForm.sundayStr
+                              setAddRateForm(f => ({ ...f, normalStr: v, sundayStr: sunday }))
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className={styles.formLabel}>日曜倍率（任意）</label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            className={styles.dateInput}
+                            placeholder="例: 1.25"
+                            value={addRateForm.multiplierStr}
+                            onChange={e => {
+                              const v = e.target.value
+                              if (!/^[\d.]{0,5}$/.test(v) || (v.match(/\./g)||[]).length > 1) return
+                              const sunday = v && addRateForm.normalStr
+                                ? String(Math.round(Number(addRateForm.normalStr) * Number(v)))
+                                : addRateForm.sundayStr
+                              setAddRateForm(f => ({ ...f, multiplierStr: v, sundayStr: sunday }))
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className={styles.formLabel}>日曜時給（円）</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className={styles.dateInput}
+                            placeholder="自動計算（任意）"
+                            value={addRateForm.sundayStr}
+                            onChange={e => setAddRateForm(f => ({ ...f, sundayStr: e.target.value.replace(/[^\d]/g, ''), multiplierStr: '' }))}
+                          />
+                        </div>
+                      </div>
+                      <div className={styles.addRateFormActions}>
+                        <button className={styles.cancelBtn} onClick={() => setAddRateForm(null)}>キャンセル</button>
+                        <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.normalStr}>追加</button>
+                      </div>
                     </div>
+                  ) : (
+                    <button className={styles.addRateHistoryBtn} onClick={() => openAddRateForm(historyModalItem)}>
+                      ＋ 新しい時給を追加
+                    </button>
                   )}
-                </div>
-                <div className={styles.modalFooter}>
-                  <button className={styles.cancelBtn} onClick={() => setAddRateForm(null)}>キャンセル</button>
-                  <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.date || !addRateForm.normal}>追加</button>
                 </div>
               </div>
             </div>
@@ -3696,18 +3665,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       {isTablet && numpad && (
         <NumpadOverlay
           title={numpad.title}
-          initialValue={
-            numpad.field === 'pin' ? ''
-            : numpad.field === 'multiplier' ? (multipliers[numpad.item] || '')
-            : (itemRates[numpad.item]?.[numpad.field] || '')
-          }
+          initialValue={numpad.field === 'pin' ? '' : transportAmount}
           maxLength={numpad.maxLength}
-          decimal={!!numpad.decimal}
+          decimal={false}
           pinMode={!!numpad.pinMode}
           onConfirm={val => {
-            if (numpad.field === 'pin') { setPin(val) }
-            else if (numpad.field === 'multiplier') { setRate(numpad.item, 'multiplier', val) }
-            else { setRate(numpad.item, numpad.field, val) }
+            if (numpad.field === 'pin') { setPin(val); setPinError('') }
+            else setTransportAmount(val)
           }}
           onClose={() => setNumpad(null)}
         />

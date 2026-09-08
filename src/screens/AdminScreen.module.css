@@ -3182,6 +3182,141 @@
 }
 .addRateHistoryBtn:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
 
+/* 作業項目テーブルの読み取り専用表示 */
+.workItemRateDisplay {
+  font-size: 0.88rem;
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 時給履歴ボタン */
+.rateHistoryBtn {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #2563eb;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.rateHistoryBtn:hover { background: #eff6ff; }
+.rateHistoryBtn:disabled { border-color: #cbd5e1; color: #94a3b8; cursor: default; background: #fff; }
+
+/* 時給履歴モーダル */
+.rateHistoryModal {
+  background: #fff;
+  border-radius: 16px;
+  width: min(700px, 92vw);
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+
+.rateHistoryModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.rateHistoryModalTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.rateHistoryModalBody {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rateHistoryEmpty {
+  color: #64748b;
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+.rateHistoryTableWrap {
+  overflow-x: auto;
+}
+
+.rateHistoryTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.rateHistoryTh {
+  background: #1a3f6f;
+  color: #fff;
+  font-weight: 700;
+  padding: 7px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border: 1px solid #1a3f6f;
+}
+
+.rateHistoryTr:nth-child(even) { background: #f8fafc; }
+
+.rateHistoryCurrentRow { background: #f0fdf4 !important; }
+
+.rateHistoryTd {
+  padding: 7px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rateHistoryDelBtn {
+  background: none;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+}
+.rateHistoryDelBtn:hover { background: #fef2f2; }
+
+/* 新しい時給追加フォーム */
+.addRateFormPanel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.addRateFormTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.addRateFormGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.addRateFormActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .dateInput {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
