@@ -3311,15 +3311,27 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   function openAddRateForm(item) {
     const today = new Date()
     const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-    setAddRateForm({ item, date: dateStr, normalStr: '', multiplierStr: '', sundayStr: '' })
+    setAddRateForm({ item, date: dateStr, normalStr: '', showMultiplierInput: false, customMultiplierStr: '' })
+  }
+
+  function getInheritedEntry(item, selectedDate) {
+    const hist = rateHistory[item] || []
+    const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from) })
+    if (!selectedDate) return sorted[sorted.length - 1] || null
+    return sorted.find(e => !e.from || e.from < selectedDate) || null
   }
 
   function commitAddRate() {
     if (!addRateForm) return
-    const { item, date, normalStr, multiplierStr, sundayStr } = addRateForm
+    const { item, date, normalStr, showMultiplierInput, customMultiplierStr } = addRateForm
     if (!normalStr) return
     const normalVal = Number(normalStr)
-    const sunday = sundayStr !== '' ? Number(sundayStr) : (multiplierStr !== '' ? Math.round(normalVal * Number(multiplierStr)) : undefined)
+    const inherited = getInheritedEntry(item, date)
+    const inheritedMult = inherited && inherited.normal && inherited.sunday
+      ? Math.round(inherited.sunday / inherited.normal * 100) / 100
+      : null
+    const effectiveMult = showMultiplierInput && customMultiplierStr ? Number(customMultiplierStr) : inheritedMult
+    const sunday = normalVal && effectiveMult ? Math.round(normalVal * effectiveMult) : undefined
     const newEntry = { from: date || null, normal: normalVal }
     if (sunday != null && sunday > 0) newEntry.sunday = sunday
     setRateHistory(prev => {
@@ -3685,6 +3697,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     const hist = rateHistory[historyModalItem] || []
                     const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from) })
                     if (sorted.length === 0) return <p className={styles.rateHistoryEmpty}>時給の登録がありません。「新しい時給を追加」から登録してください。</p>
+                    const todayStr = new Date().toISOString().slice(0, 10)
+                    const currentIdx = sorted.findIndex(e => !e.from || e.from <= todayStr)
                     return (
                       <div className={styles.rateHistoryTableWrap}>
                         <table className={styles.rateHistoryTable}>
@@ -3705,15 +3719,19 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                               const mult = entry.normal && entry.sunday
                                 ? `${Math.round(entry.sunday / entry.normal * 100) / 100}倍`
                                 : '—'
+                              const isCurrent = idx === currentIdx
                               return (
-                                <tr key={idx} className={[styles.rateHistoryTr, idx === 0 ? styles.rateHistoryCurrentRow : ''].join(' ')}>
+                                <tr key={idx} className={[styles.rateHistoryTr, isCurrent ? styles.rateHistoryCurrentRow : ''].join(' ')}>
                                   <td className={styles.rateHistoryTd}>{fromDisplay}</td>
                                   <td className={styles.rateHistoryTd}>{toDisplay}</td>
                                   <td className={styles.rateHistoryTd}>{entry.normal ? `${Number(entry.normal).toLocaleString()}円` : '—'}</td>
                                   <td className={styles.rateHistoryTd}>{mult}</td>
                                   <td className={styles.rateHistoryTd}>{entry.sunday ? `${Number(entry.sunday).toLocaleString()}円` : '—'}</td>
                                   <td className={styles.rateHistoryTd}>
-                                    <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>
+                                    {isCurrent
+                                      ? <span className={styles.rateHistoryCurrentBadge}>現在適用中</span>
+                                      : <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>
+                                    }
                                   </td>
                                 </tr>
                               )
@@ -3727,68 +3745,95 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                   {addRateForm ? (
                     <div className={styles.addRateFormPanel}>
                       <div className={styles.addRateFormTitle}>新しい時給を追加</div>
-                      <div className={styles.addRateFormGrid}>
-                        <div>
-                          <label className={styles.formLabel}>適用開始日</label>
-                          <input
-                            type="date"
-                            className={styles.dateInput}
-                            value={addRateForm.date}
-                            onChange={e => setAddRateForm(f => ({ ...f, date: e.target.value }))}
-                          />
-                          <div className={styles.userEditHintText}>空欄にすると「当初から」の扱いになります</div>
-                        </div>
-                        <div>
-                          <label className={styles.formLabel}>基本時給（円）</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className={styles.dateInput}
-                            placeholder="例: 1600"
-                            value={addRateForm.normalStr}
-                            onChange={e => {
-                              const v = e.target.value.replace(/[^\d]/g, '')
-                              const sunday = addRateForm.multiplierStr && v
-                                ? String(Math.round(Number(v) * Number(addRateForm.multiplierStr)))
-                                : addRateForm.sundayStr
-                              setAddRateForm(f => ({ ...f, normalStr: v, sundayStr: sunday }))
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className={styles.formLabel}>日曜倍率（任意）</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className={styles.dateInput}
-                            placeholder="例: 1.25"
-                            value={addRateForm.multiplierStr}
-                            onChange={e => {
-                              const v = e.target.value
-                              if (!/^[\d.]{0,5}$/.test(v) || (v.match(/\./g)||[]).length > 1) return
-                              const sunday = v && addRateForm.normalStr
-                                ? String(Math.round(Number(addRateForm.normalStr) * Number(v)))
-                                : addRateForm.sundayStr
-                              setAddRateForm(f => ({ ...f, multiplierStr: v, sundayStr: sunday }))
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className={styles.formLabel}>日曜時給（円）</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className={styles.dateInput}
-                            placeholder="自動計算（任意）"
-                            value={addRateForm.sundayStr}
-                            onChange={e => setAddRateForm(f => ({ ...f, sundayStr: e.target.value.replace(/[^\d]/g, ''), multiplierStr: '' }))}
-                          />
-                        </div>
-                      </div>
-                      <div className={styles.addRateFormActions}>
-                        <button className={styles.cancelBtn} onClick={() => setAddRateForm(null)}>キャンセル</button>
-                        <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.normalStr}>追加</button>
-                      </div>
+                      {(() => {
+                        const inherited = getInheritedEntry(addRateForm.item, addRateForm.date)
+                        const hasSunday = !!(inherited && inherited.sunday)
+                        const inheritedMult = hasSunday
+                          ? Math.round(inherited.sunday / inherited.normal * 100) / 100
+                          : null
+                        const effectiveMult = addRateForm.showMultiplierInput && addRateForm.customMultiplierStr
+                          ? Number(addRateForm.customMultiplierStr)
+                          : inheritedMult
+                        const newNormal = addRateForm.normalStr ? Number(addRateForm.normalStr) : null
+                        const computedSunday = newNormal && effectiveMult ? Math.round(newNormal * effectiveMult) : null
+                        const prevNormal = inherited?.normal || null
+                        const previewDateStr = addRateForm.date
+                          ? (() => { const d = new Date(addRateForm.date); return `${d.getMonth()+1}月${d.getDate()}日` })()
+                          : '当初'
+                        return (
+                          <>
+                            <div className={styles.addRateFormGrid}>
+                              <div>
+                                <label className={styles.formLabel}>適用開始日</label>
+                                <input
+                                  type="date"
+                                  className={styles.dateInput}
+                                  value={addRateForm.date}
+                                  onChange={e => setAddRateForm(f => ({ ...f, date: e.target.value }))}
+                                />
+                              </div>
+                              <div>
+                                <label className={styles.formLabel}>新しい基本時給（円）</label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  className={styles.dateInput}
+                                  placeholder="例: 1600"
+                                  value={addRateForm.normalStr}
+                                  onChange={e => setAddRateForm(f => ({ ...f, normalStr: e.target.value.replace(/[^\d]/g, '') }))}
+                                />
+                              </div>
+                            </div>
+                            <div className={styles.addRateSundayInfo}>
+                              {hasSunday ? (
+                                <>
+                                  <div className={styles.addRateInfoRow}>
+                                    <span className={styles.addRateInfoLabel}>日曜倍率</span>
+                                    {addRateForm.showMultiplierInput ? (
+                                      <>
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          className={styles.addRateMultInput}
+                                          placeholder="例: 1.25"
+                                          value={addRateForm.customMultiplierStr}
+                                          onChange={e => {
+                                            const v = e.target.value
+                                            if (!/^[\d.]{0,5}$/.test(v) || (v.match(/\./g)||[]).length > 1) return
+                                            setAddRateForm(f => ({ ...f, customMultiplierStr: v }))
+                                          }}
+                                        />
+                                        <button className={styles.addRateCancelMult} onClick={() => setAddRateForm(f => ({ ...f, showMultiplierInput: false, customMultiplierStr: '' }))}>引き継ぎに戻す</button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className={styles.addRateInfoValue}>{inheritedMult}倍（現在の設定を引き継ぎます）</span>
+                                        <button className={styles.addRateChangeMult} onClick={() => setAddRateForm(f => ({ ...f, showMultiplierInput: true, customMultiplierStr: String(inheritedMult ?? '') }))}>日曜倍率も変更する</button>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className={styles.addRateInfoRow}>
+                                    <span className={styles.addRateInfoLabel}>日曜時給</span>
+                                    <span className={styles.addRateInfoValue}>{computedSunday ? `${computedSunday.toLocaleString()}円（自動計算）` : '—'}</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <span className={styles.addRateNoSunday}>日曜設定なし</span>
+                              )}
+                            </div>
+                            {newNormal && (
+                              <div className={styles.addRatePreview}>
+                                {previewDateStr}から{prevNormal ? ` ${prevNormal.toLocaleString()}円 → ` : ' '}{newNormal.toLocaleString()}円
+                                {computedSunday ? `（日曜：${computedSunday.toLocaleString()}円）` : ''}
+                              </div>
+                            )}
+                            <div className={styles.addRateFormActions}>
+                              <button className={styles.cancelBtn} onClick={() => setAddRateForm(null)}>キャンセル</button>
+                              <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.normalStr}>この内容で時給を変更</button>
+                            </div>
+                          </>
+                        )
+                      })()}
                     </div>
                   ) : (
                     <button className={styles.addRateHistoryBtn} onClick={() => openAddRateForm(historyModalItem)}>

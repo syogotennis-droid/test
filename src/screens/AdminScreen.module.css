@@ -3397,6 +3397,92 @@
   gap: 8px;
 }
 
+.addRateSundayInfo {
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.addRateInfoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.addRateInfoLabel {
+  font-weight: 600;
+  color: #475569;
+  min-width: 60px;
+}
+
+.addRateInfoValue {
+  color: #1e293b;
+}
+
+.addRateChangeMult {
+  background: none;
+  border: 1px solid #94a3b8;
+  border-radius: 5px;
+  color: #475569;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  margin-left: auto;
+}
+.addRateChangeMult:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+
+.addRateCancelMult {
+  background: none;
+  border: 1px solid #94a3b8;
+  border-radius: 5px;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+}
+.addRateCancelMult:hover { border-color: #475569; background: #f1f5f9; }
+
+.addRateMultInput {
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.88rem;
+  width: 90px;
+  outline: none;
+}
+.addRateMultInput:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
+
+.addRateNoSunday {
+  color: #94a3b8;
+  font-size: 0.83rem;
+  font-style: italic;
+}
+
+.addRatePreview {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.rateHistoryCurrentBadge {
+  font-size: 0.73rem;
+  color: #16a34a;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
 .dateInput {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
