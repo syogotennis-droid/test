@@ -2192,12 +2192,64 @@ function AddUserModal({ onClose, onAdded }) {
   const [pin, setPin] = useState('')
   const [pinError, setPinError] = useState('')
   const [employeeType, setEmployeeType] = useState('hourly')
+  const [workItems, setWorkItems] = useState([])
+  const [itemRates, setItemRates] = useState(() => {
+    const r = {}
+    ASSIGNABLE_ITEMS.forEach(item => { r[item] = { normal: '', sunday: '', amount: '' } })
+    return r
+  })
+  const [multipliers, setMultipliers] = useState({})
+  const [fixedStartTime, setFixedStartTime] = useState('09:00')
+  const [fixedEndTime, setFixedEndTime] = useState('18:00')
+  const [monthlySalary, setMonthlySalary] = useState('')
+  const [overtimeRateSal, setOvertimeRateSal] = useState('')
   const [saving, setSaving] = useState(false)
 
   function handlePinChange(e) {
     const v = e.target.value.replace(/\D/g, '').slice(0, 4)
     setPin(v)
     setPinError('')
+  }
+
+  function toggleWorkItem(item) {
+    setWorkItems(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])
+  }
+
+  function setRate(item, field, val) {
+    if (field === 'multiplier') {
+      setMultipliers(prev => ({ ...prev, [item]: val }))
+      setItemRates(prev => {
+        const normalVal = prev[item]?.normal
+        const sunday = normalVal === '' || normalVal == null || val === ''
+          ? '' : String(Math.round(Number(normalVal) * Number(val)))
+        return { ...prev, [item]: { ...prev[item], sunday } }
+      })
+    } else {
+      setItemRates(prev => {
+        const updated = { ...prev, [item]: { ...prev[item], [field]: val } }
+        if (field === 'normal' && multipliers[item] != null) {
+          updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * Number(multipliers[item])))
+        }
+        return updated
+      })
+    }
+  }
+
+  function buildItemRates() {
+    const result = {}
+    ASSIGNABLE_ITEMS.forEach(item => {
+      const r = itemRates[item] || {}
+      if (item === '交通費') {
+        if (r.amount !== '') result[item] = { amount: Number(r.amount) }
+      } else {
+        const entry = {}
+        if (r.normal !== '') entry.normal = Number(r.normal)
+        if (r.sunday !== '') entry.sunday = Number(r.sunday)
+        if (multipliers[item] != null) entry.multiplier = Number(multipliers[item])
+        if (Object.keys(entry).length > 0) result[item] = entry
+      }
+    })
+    return result
   }
 
   async function handleAdd() {
@@ -2213,7 +2265,16 @@ function AddUserModal({ onClose, onAdded }) {
           return
         }
       }
-      const newUser = { id: addId.trim(), name: addName.trim(), pin, employeeType }
+      const newUser = {
+        id: addId.trim(), name: addName.trim(), pin, employeeType,
+        workItems: employeeType === 'salaried' ? [] : workItems,
+        itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
+        ...(employeeType === 'salaried' ? {
+          fixedStartTime, fixedEndTime,
+          monthlySalary: Number(monthlySalary) || 0,
+          overtimeRate: Number(overtimeRateSal) || 0,
+        } : {}),
+      }
       await upsertUser(newUser)
       onAdded(newUser)
     } catch(e) {
@@ -2249,7 +2310,7 @@ function AddUserModal({ onClose, onAdded }) {
                     type="button"
                     className={[styles.empTypeBtn, employeeType === 'hourly' ? styles.empTypeBtnActive : ''].join(' ')}
                     onClick={() => setEmployeeType('hourly')}
-                  >アルバイト</button>
+                  >アルバイト・パート</button>
                   <button
                     type="button"
                     className={[styles.empTypeBtn, employeeType === 'salaried' ? styles.empTypeBtnActive : ''].join(' ')}
@@ -2295,12 +2356,157 @@ function AddUserModal({ onClose, onAdded }) {
                 }
               </div>
             </div>
-            <p className={styles.userEditHintText}>
-              {employeeType === 'salaried'
-                ? '月給・固定時間・残業時給は追加後に「編集」から設定できます。'
-                : '作業項目・時給は追加後に「編集」から設定できます。'}
-            </p>
           </div>
+
+          {/* 社員設定 */}
+          {employeeType === 'salaried' && (
+            <div className={styles.userEditSection}>
+              <div className={styles.userEditSectionTitle}>社員設定</div>
+              <div className={styles.userEditGrid2}>
+                <div>
+                  <label className={styles.userEditLabel}>固定出勤時刻</label>
+                  <input
+                    type="time"
+                    className={styles.userEditInput}
+                    value={fixedStartTime}
+                    onChange={e => setFixedStartTime(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>固定退勤時刻</label>
+                  <input
+                    type="time"
+                    className={styles.userEditInput}
+                    value={fixedEndTime}
+                    onChange={e => setFixedEndTime(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>月給（円）</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className={styles.userEditInput}
+                    value={monthlySalary}
+                    onChange={e => setMonthlySalary(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>残業時給（円）</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className={styles.userEditInput}
+                    value={overtimeRateSal}
+                    onChange={e => setOvertimeRateSal(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 作業項目・時給 */}
+          {employeeType !== 'salaried' && (
+            <div className={styles.userEditSection}>
+              <div className={styles.userEditSectionTitle}>作業項目・時給</div>
+              <div className={styles.workItemTableWrap}>
+                <table className={styles.workItemTable}>
+                  <thead>
+                    <tr>
+                      <th className={styles.workItemTh} style={{width:44}}>使用</th>
+                      <th className={styles.workItemTh}>作業項目</th>
+                      <th className={styles.workItemTh} style={{width:140}}>基本時給</th>
+                      <th className={styles.workItemTh} style={{width:110}}>日曜倍率</th>
+                      <th className={styles.workItemTh} style={{width:120}}>日曜時給</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ASSIGNABLE_ITEMS.map(item => {
+                      const checked = workItems.includes(item)
+                      const r = itemRates[item] || {}
+                      const isTransport = item === '交通費'
+                      return (
+                        <tr key={item} className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
+                          <td className={styles.workItemTd}>
+                            <input
+                              type="checkbox"
+                              className={styles.workItemCheckbox}
+                              checked={checked}
+                              onChange={() => toggleWorkItem(item)}
+                            />
+                          </td>
+                          <td className={styles.workItemTd}>
+                            <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{item}</span>
+                          </td>
+                          {isTransport ? (
+                            <>
+                              <td className={styles.workItemTd}>
+                                <div className={styles.workItemInputWrap}>
+                                  <input
+                                    className={styles.workItemInput}
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    value={r.amount}
+                                    disabled={!checked}
+                                    onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'amount', e.target.value) }}
+                                  />
+                                  <span className={styles.workItemUnit}>円/回</span>
+                                </div>
+                              </td>
+                              <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
+                              <td className={styles.workItemTd}><span className={styles.workItemDash}>—</span></td>
+                            </>
+                          ) : (
+                            <>
+                              <td className={styles.workItemTd}>
+                                <div className={styles.workItemInputWrap}>
+                                  <input
+                                    className={styles.workItemInput}
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    value={r.normal}
+                                    disabled={!checked}
+                                    onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) setRate(item, 'normal', e.target.value) }}
+                                  />
+                                  <span className={styles.workItemUnit}>円</span>
+                                </div>
+                              </td>
+                              <td className={styles.workItemTd}>
+                                <div className={styles.workItemInputWrap}>
+                                  <input
+                                    className={styles.workItemInput}
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="1.25"
+                                    value={multipliers[item] || ''}
+                                    disabled={!checked}
+                                    onChange={e => {
+                                      const v = e.target.value
+                                      if (/^[\d.]{0,5}$/.test(v) && (v.match(/\./g)||[]).length <= 1) setRate(item, 'multiplier', v)
+                                    }}
+                                  />
+                                  <span className={styles.workItemUnit}>倍</span>
+                                </div>
+                              </td>
+                              <td className={styles.workItemTd}>
+                                <span className={[styles.workItemSundayDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
+                                  {r.sunday ? `${Number(r.sunday).toLocaleString()}円` : '—'}
+                                </span>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
         <div className={styles.userEditFooter}>
           <div />
@@ -3136,7 +3342,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     type="button"
                     className={[styles.empTypeBtn, employeeType === 'hourly' ? styles.empTypeBtnActive : ''].join(' ')}
                     onClick={() => setEmployeeType('hourly')}
-                  >アルバイト</button>
+                  >アルバイト・パート</button>
                   <button
                     type="button"
                     className={[styles.empTypeBtn, employeeType === 'salaried' ? styles.empTypeBtnActive : ''].join(' ')}
