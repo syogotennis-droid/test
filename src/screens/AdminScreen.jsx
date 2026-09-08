@@ -7,7 +7,7 @@ import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, setApprovedTime, setFirstLastWork, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
-  getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp
+  getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -1428,6 +1428,8 @@ function KinmuboTab({ today }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [approvedEdits, setApprovedEdits] = useState({})
   const [workBoundaryEdits, setWorkBoundaryEdits] = useState({})
+  const [salariedDayEdits, setSalariedDayEdits] = useState({}) // { [userId_date]: { breakMins, overtimeMins } }
+  const [salariedDaysData, setSalariedDaysData] = useState({})
 
   function timeStrToMinsK(s) {
     const [h, m] = s.split(':').map(Number)
@@ -1457,17 +1459,19 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage()])
-      .then(([logs, users, minWage]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo)])
+      .then(([logs, users, minWage, salDays]) => {
         if (cancelled) return
-        setPreview(buildPreview(logs, users, minWage))
+        setSalariedDaysData(salDays)
+        setSalariedDayEdits({})
+        setPreview(buildPreview(logs, users, minWage, salDays))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWage) {
+  function buildPreview(logs, users, minWage, salariedDays = {}) {
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
     const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
     return userEntries.map(user => {
@@ -1496,6 +1500,48 @@ function KinmuboTab({ today }) {
           entry.pendingIn = null
         }
       })
+
+      // ─── Salaried employee handling ───
+      if (user.employeeType === 'salaried') {
+        const regularHoursMins = user.regularHours || 0
+        const standardBreakMinsVal = user.standardBreakMins || 0
+        const monthlySal = user.monthlySalary || 0
+        const overtimeRate = user.overtimeRate || 0
+
+        const dailySalariedRows = []
+        let salWorkingDays = 0
+        Object.keys(byDate).sort().forEach(ds => {
+          const entry = byDate[ds]
+          const completedSessions = entry.sessions.filter(s => s.inLog && s.outLog)
+          const hasIn = entry.sessions.some(s => s.inLog)
+          if (completedSessions.length > 0) {
+            salWorkingDays++
+            const firstIn = completedSessions[0].inLog.time.substring(0, 5)
+            const lastOut = completedSessions[completedSessions.length - 1].outLog.time.substring(0, 5)
+            const dayData = salariedDays[`${user.id}_${ds}`] || {}
+            const breakMins = dayData.breakMins ?? standardBreakMinsVal
+            const overtimeMins = dayData.overtimeMins || 0
+            dailySalariedRows.push({ ds, firstIn, lastOut, breakMins, overtimeMins, completed: true })
+          } else if (hasIn) {
+            const firstIn = (entry.sessions[0].inLog?.time || '').substring(0, 5)
+            dailySalariedRows.push({ ds, firstIn, lastOut: null, breakMins: 0, overtimeMins: 0, completed: false })
+          }
+        })
+
+        const totalOvertimeMins = dailySalariedRows.filter(r => r.completed).reduce((s, r) => s + r.overtimeMins, 0)
+        const totalWorkMins = salWorkingDays * regularHoursMins + totalOvertimeMins
+        const rows = []
+        if (monthlySal > 0) rows.push({ label: '基本給', parentType: '基本給', isMultiPeriod: false, dayType: null, mins: null, days: null, rate: 0, pay: monthlySal })
+        for (const { ds, overtimeMins } of dailySalariedRows.filter(r => r.completed && r.overtimeMins > 0)) {
+          const [, mo, dd] = ds.split('-').map(Number)
+          rows.push({ label: `残業（${mo}/${dd}）`, parentType: '残業', isMultiPeriod: false, dayType: null, mins: overtimeMins, days: null, rate: overtimeRate, pay: Math.round(overtimeMins / 60 * overtimeRate) })
+        }
+        const transport = Number(user.itemRates?.['交通費']?.amount) || 0
+        if (transport > 0 && salWorkingDays > 0) rows.push({ label: '交通費', parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: salWorkingDays, rate: transport, pay: Math.round(salWorkingDays * transport) })
+        const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
+        return { user, workingDays: salWorkingDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows }
+      }
+
       const monthlyWdMins = {}, monthlyWeMins = {}
       Object.entries(byDate).forEach(([dateStr, entry]) => {
         const [yr, mo, d] = dateStr.split('-').map(Number)
@@ -1658,6 +1704,15 @@ function KinmuboTab({ today }) {
         await setFirstLastWork(outLogId, fw, lw)
       } catch {}
     }
+  }
+
+  async function handleSalariedDayChange(userId, ds, field, value) {
+    const key = `${userId}_${ds}`
+    setSalariedDayEdits(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
+    setSalariedDaysData(prev => ({ ...prev, [key]: { ...prev[key], userId, date: ds, [field]: value } }))
+    // Debounce save
+    const cur = { ...(salariedDaysData[key] || {}), [field]: value }
+    try { await saveSalariedDay(userId, ds, { breakMins: cur.breakMins ?? 0, overtimeMins: cur.overtimeMins ?? 0 }) } catch {}
   }
 
   async function handleCreate() {
@@ -1856,7 +1911,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当する従業員がいません。</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay, byDate }) => {
+            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -1881,8 +1936,111 @@ function KinmuboTab({ today }) {
 
                   {isOpen && (
                     <div className={styles.kinmuboAccordionBody}>
-                      {/* Daily punch & approved time table */}
-                      {Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0) && (
+                      {/* Salaried employee: per-day break/overtime inputs */}
+                      {isSalariedUser && dailySalariedRows && dailySalariedRows.length > 0 && (
+                        <div className={styles.kinmuboDailySection}>
+                          <div className={styles.kinmuboDailySectionTitle}>打刻・勤怠管理</div>
+                          <table className={styles.kinmuboDailyTable}>
+                            <thead>
+                              <tr>
+                                <th className={styles.kinmuboDailyTh}>日付</th>
+                                <th className={styles.kinmuboDailyTh}>QR出勤</th>
+                                <th className={styles.kinmuboDailyTh}>QR退勤</th>
+                                <th className={styles.kinmuboDailyTh}>状態</th>
+                                <th className={styles.kinmuboDailyTh}>休憩時間（分）</th>
+                                <th className={styles.kinmuboDailyTh}>残業 時間</th>
+                                <th className={styles.kinmuboDailyTh}>残業 分</th>
+                                <th className={styles.kinmuboDailyTh}>合計（所定＋残業）</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {dailySalariedRows.map(({ ds, firstIn, lastOut, completed }) => {
+                                const [y, mo, d] = ds.split('-').map(Number)
+                                const dow = new Date(y, mo - 1, d).getDay()
+                                const dowLabel = ['日','月','火','水','木','金','土'][dow]
+                                const isSun = dow === 0, isSat = dow === 6
+                                const key = `${user.id}_${ds}`
+                                const edits = salariedDayEdits[key] || {}
+                                const baseData = salariedDaysData[key] || {}
+                                const breakMins = edits.breakMins ?? baseData.breakMins ?? (user.standardBreakMins || 0)
+                                const overtimeMins = edits.overtimeMins ?? baseData.overtimeMins ?? 0
+                                const overH = Math.floor(overtimeMins / 60)
+                                const overM = overtimeMins % 60
+                                const regularHoursMins = user.regularHours || 0
+                                const totalMins = completed ? regularHoursMins + overtimeMins : 0
+                                return (
+                                  <tr key={ds} className={[
+                                    styles.kinmuboDailyRow,
+                                    isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : '',
+                                  ].filter(Boolean).join(' ')}>
+                                    <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>
+                                      {`${mo}/${d}（${dowLabel}）`}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd} style={{ color: '#2e7d32', fontWeight: 600 }}>
+                                      {firstIn || '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd} style={{ color: '#c62828', fontWeight: 600 }}>
+                                      {lastOut || (completed ? '—' : '')}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {completed
+                                        ? <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.8rem' }}>出勤確定</span>
+                                        : <span style={{ color: '#b45309', fontWeight: 700, fontSize: '0.8rem' }}>打刻未完了</span>}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {completed ? (
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="480"
+                                          className={styles.salDayInput}
+                                          value={breakMins}
+                                          onChange={e => handleSalariedDayChange(user.id, ds, 'breakMins', parseInt(e.target.value) || 0)}
+                                        />
+                                      ) : '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {completed ? (
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="23"
+                                          className={styles.salDayInput}
+                                          value={overH}
+                                          onChange={e => {
+                                            const newH = parseInt(e.target.value) || 0
+                                            handleSalariedDayChange(user.id, ds, 'overtimeMins', newH * 60 + overM)
+                                          }}
+                                        />
+                                      ) : '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {completed ? (
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="59"
+                                          className={styles.salDayInput}
+                                          value={overM}
+                                          onChange={e => {
+                                            const newM = parseInt(e.target.value) || 0
+                                            handleSalariedDayChange(user.id, ds, 'overtimeMins', overH * 60 + newM)
+                                          }}
+                                        />
+                                      ) : '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd} style={{ fontWeight: 700 }}>
+                                      {completed && totalMins > 0 ? fmtMins(totalMins) : '—'}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {/* Hide existing daily punch table for salaried employees */}
+                      {!isSalariedUser && Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0) && (
                         <div className={styles.kinmuboDailySection}>
                           <div className={styles.kinmuboDailySectionTitle}>打刻・承認時間</div>
                           <table className={styles.kinmuboDailyTable}>
@@ -2241,6 +2399,9 @@ function AddUserModal({ onClose, onAdded }) {
   const [fixedEndTime, setFixedEndTime] = useState('18:00')
   const [monthlySalary, setMonthlySalary] = useState('')
   const [overtimeRateSal, setOvertimeRateSal] = useState('')
+  const [regularHoursH, setRegularHoursH] = useState('8')   // hours part
+  const [regularHoursM, setRegularHoursM] = useState('0')    // minutes part
+  const [standardBreakMins, setStandardBreakMins] = useState('60')
   const [saving, setSaving] = useState(false)
 
   function handlePinChange(e) {
@@ -2311,6 +2472,8 @@ function AddUserModal({ onClose, onAdded }) {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
           overtimeRate: Number(overtimeRateSal) || 0,
+          regularHours: (parseInt(regularHoursH) || 0) * 60 + (parseInt(regularHoursM) || 0),
+          standardBreakMins: parseInt(standardBreakMins) || 0,
         } : {}),
       }
       await upsertUser(newUser)
@@ -2440,6 +2603,19 @@ function AddUserModal({ onClose, onAdded }) {
                     onChange={e => setOvertimeRateSal(e.target.value)}
                     placeholder="0"
                   />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>所定労働時間</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="number" min="0" max="23" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursH} onChange={e => setRegularHoursH(e.target.value)} placeholder="8" />
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>時間</span>
+                    <input type="number" min="0" max="59" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursM} onChange={e => setRegularHoursM(e.target.value)} placeholder="0" />
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>分</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>標準休憩時間（分）</label>
+                  <input type="number" min="0" className={styles.userEditInput} value={standardBreakMins} onChange={e => setStandardBreakMins(e.target.value)} placeholder="60" />
                 </div>
               </div>
             </div>
@@ -3122,6 +3298,9 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [fixedEndTime, setFixedEndTime] = useState(user.fixedEndTime || '18:00')
   const [monthlySalary, setMonthlySalary] = useState(user.monthlySalary != null ? String(user.monthlySalary) : '')
   const [overtimeRateSal, setOvertimeRateSal] = useState(user.overtimeRate != null ? String(user.overtimeRate) : '')
+  const [regularHoursH, setRegularHoursH] = useState(String(Math.floor((user.regularHours || 0) / 60)))
+  const [regularHoursM, setRegularHoursM] = useState(String((user.regularHours || 0) % 60))
+  const [standardBreakMins, setStandardBreakMins] = useState(user.standardBreakMins != null ? String(user.standardBreakMins) : '60')
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -3131,7 +3310,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setIsDirty(true)
-  }, [name, pin, workItems, transportAmount, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal])
+  }, [name, pin, workItems, transportAmount, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -3219,6 +3398,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
           overtimeRate: Number(overtimeRateSal) || 0,
+          regularHours: (parseInt(regularHoursH) || 0) * 60 + (parseInt(regularHoursM) || 0),
+          standardBreakMins: parseInt(standardBreakMins) || 0,
         } : {}),
       })
       setIsDirty(false)
