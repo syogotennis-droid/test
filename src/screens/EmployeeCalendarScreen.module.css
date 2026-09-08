@@ -351,6 +351,18 @@
   flex-shrink: 0;
 }
 
+.confirmWarning {
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fffbeb;
+  border-top: 1px solid #fde68a;
+  border-bottom: 1px solid #fde68a;
+  padding: 8px 20px;
+  flex-shrink: 0;
+}
+
 /* 業務内訳リスト（長い場合だけスクロール） */
 .confirmBreakdown {
   flex: 1;
@@ -519,6 +531,18 @@
   color: #1a5fa8;
 }
 
+.editStatZero {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #16a34a;
+}
+
+.editStatOver {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #dc2626;
+}
+
 /* ボディ */
 .editBody {
   display: flex;
@@ -671,59 +695,62 @@
   line-height: 1.3;
 }
 
-/* 入力値表示 */
-.minsDisplay {
-  background: #f0f7ff;
-  border-radius: 10px;
-  padding: 8px 12px;
-  text-align: center;
-  border: 1.5px solid #dbeafe;
+/* 時間：分 入力ボックス */
+.hmDisplayRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-.minsDisplayPrimary {
-  font-size: 1.9rem;
+.hmBox {
+  font-size: 2.2rem;
   font-weight: 900;
   color: #1a3f6f;
+  background: #f0f7ff;
+  border: 2px solid #dbeafe;
+  border-radius: 10px;
+  min-width: 72px;
+  padding: 6px 10px;
+  text-align: center;
+  cursor: pointer;
   line-height: 1;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.minsDisplaySecondary {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #64748b;
-  margin-top: 2px;
-}
-
-/* クイックボタン */
-.quickBtns {
-  display: flex;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.quickBtn {
-  flex: 1;
-  padding: 7px 3px;
-  border: 1.5px solid #bfdbfe;
-  border-radius: 8px;
+.hmBoxActive {
+  border-color: #2563eb;
   background: #eff6ff;
-  color: #1a5fa8;
-  font-size: 0.75rem;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+}
+
+.hmUnit {
+  font-size: 1rem;
   font-weight: 700;
+  color: #475569;
+}
+
+/* 残りを入力ボタン */
+.fillRemainingBtnBig {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 9px;
+  background: #16a34a;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.quickBtn:active { background: #dbeafe; }
+.fillRemainingBtnBig:active { background: #15803d; }
 
-.quickBtnDisabled {
-  background: #f1f5f9 !important;
-  color: #cbd5e1 !important;
-  border-color: #e2e8f0 !important;
+.fillRemainingBtnDisabled {
+  background: #d1fae5 !important;
+  color: #86efac !important;
   cursor: not-allowed;
 }
 

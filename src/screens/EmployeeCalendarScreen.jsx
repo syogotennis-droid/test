@@ -4,12 +4,6 @@ import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
-const QUICK_PRESETS = [
-  { label: '30分', mins: 30 },
-  { label: '1時間', mins: 60 },
-  { label: '2時間', mins: 120 },
-]
-
 const NUM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
 
 function getMonthRange(year, month) {
@@ -93,7 +87,11 @@ function ConfirmSaveModal({ year, month, day, workingMinutes, totalInputMinutes,
   const isComplete = remaining === 0
 
   const enteredItems = editableItems
-    .map(item => ({ name: item, mins: parseInt(inputs[item] || '0') || 0 }))
+    .map(item => {
+      const v = inputs[item]
+      const mins = v ? (v.h ?? 0) * 60 + (v.m ?? 0) : 0
+      return { name: item, mins }
+    })
     .filter(e => e.mins > 0)
 
   return (
@@ -127,6 +125,11 @@ function ConfirmSaveModal({ year, month, day, workingMinutes, totalInputMinutes,
 
         {isComplete && (
           <div className={styles.confirmComplete}>勤務時間の入力が完了しています</div>
+        )}
+        {remaining !== null && remaining > 0 && (
+          <div className={styles.confirmWarning}>
+            残り{fmtMins(remaining)}が未入力のまま保存されます
+          </div>
         )}
 
         {/* 業務内訳（長い場合だけスクロール） */}
@@ -174,8 +177,9 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const canEdit = editableItems.length > 0 && entry?.outLog && user?.employeeType !== 'salaried'
 
   const [editing, setEditing] = useState(false)
-  const [inputs, setInputs] = useState({})
+  const [inputs, setInputs] = useState({}) // inputs[item] = { h: number, m: number }
   const [selectedItem, setSelectedItem] = useState(null)
+  const [numpadField, setNumpadField] = useState('h') // 'h' | 'm'
   const [saving, setSaving] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
@@ -185,39 +189,55 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     if (!editing) return
     const initial = {}
     parseWorkType(entry?.workType || '').forEach(({ type, mins }) => {
-      if (mins) initial[type] = String(mins)
+      if (mins != null) initial[type] = { h: Math.floor(mins / 60), m: mins % 60 }
     })
     setInputs(initial)
     setSelectedItem(editableItems[0] || null)
+    setNumpadField('h')
   }, [editing])
 
-  const currentValue = parseInt(inputs[selectedItem] || '0') || 0
+  const getHM = item => inputs[item] || { h: 0, m: 0 }
+  const currentH = getHM(selectedItem).h ?? 0
+  const currentM = getHM(selectedItem).m ?? 0
+  const currentValue = currentH * 60 + currentM
+
   const otherMins = editableItems
     .filter(i => i !== selectedItem)
-    .reduce((s, i) => s + (parseInt(inputs[i] || '0') || 0), 0)
+    .reduce((s, i) => { const v = getHM(i); return s + (v.h ?? 0) * 60 + (v.m ?? 0) }, 0)
   const maxMins = workingMinutes != null ? workingMinutes - otherMins : null
   const isOver = maxMins !== null && currentValue > maxMins
 
   const totalInputMinutes = editableItems.reduce(
-    (s, item) => s + (parseInt(inputs[item] || '0') || 0), 0
+    (s, item) => { const v = getHM(item); return s + (v.h ?? 0) * 60 + (v.m ?? 0) }, 0
   )
   const headerRemaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
 
   function pressKey(k) {
     if (!selectedItem) return
     setInputs(prev => {
-      const cur = prev[selectedItem] || ''
-      if (k === '⌫') return { ...prev, [selectedItem]: cur.slice(0, -1) }
-      if (k === 'C') return { ...prev, [selectedItem]: '' }
-      const next = cur + k
-      if (parseInt(next) > 9999) return prev
-      return { ...prev, [selectedItem]: next }
+      const cur = prev[selectedItem] || { h: 0, m: 0 }
+      if (k === 'C') return { ...prev, [selectedItem]: { h: 0, m: 0 } }
+      if (k === '⌫') {
+        const curVal = cur[numpadField] ?? 0
+        const s = String(curVal)
+        const newVal = s.length > 1 ? parseInt(s.slice(0, -1)) : 0
+        return { ...prev, [selectedItem]: { ...cur, [numpadField]: newVal } }
+      }
+      const curVal = cur[numpadField] ?? 0
+      const s = (curVal === 0 ? '' : String(curVal)) + k
+      const newVal = parseInt(s)
+      if (numpadField === 'h' && newVal > 99) return prev
+      if (numpadField === 'm' && newVal > 59) return prev
+      return { ...prev, [selectedItem]: { ...cur, [numpadField]: newVal } }
     })
   }
 
-  function setQuick(v) {
-    if (!selectedItem) return
-    setInputs(prev => ({ ...prev, [selectedItem]: String(v) }))
+  function fillRemaining() {
+    if (!selectedItem || maxMins === null || maxMins <= 0) return
+    setInputs(prev => ({
+      ...prev,
+      [selectedItem]: { h: Math.floor(maxMins / 60), m: maxMins % 60 }
+    }))
   }
 
   function handleSave() {
@@ -228,8 +248,9 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     setSaving(true)
     const workItems = {}
     editableItems.forEach(item => {
-      const v = parseInt(inputs[item] || '0')
-      if (v > 0) workItems[item] = v
+      const v = getHM(item)
+      const mins = (v.h ?? 0) * 60 + (v.m ?? 0)
+      if (mins > 0) workItems[item] = mins
     })
     try {
       await updateLogWorkItems(entry.outLog.id, workItems)
@@ -303,9 +324,14 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                   </span>
                   <span className={styles.editStatItem}>
                     <span className={styles.editStatLabel}>残り</span>
-                    <span className={[styles.editStatValue, styles.editStatRemaining].join(' ')}>
+                    <span className={[
+                      styles.editStatValue,
+                      headerRemaining === 0 ? styles.editStatZero :
+                      headerRemaining !== null && headerRemaining < 0 ? styles.editStatOver :
+                      styles.editStatRemaining
+                    ].join(' ')}>
                       {headerRemaining != null
-                        ? (headerRemaining > 0 ? fmtMins(headerRemaining) : '完了')
+                        ? (headerRemaining > 0 ? fmtMins(headerRemaining) : headerRemaining === 0 ? '0分' : `超過 ${fmtMins(-headerRemaining)}`)
                         : '—'}
                     </span>
                   </span>
@@ -320,7 +346,8 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                   <p className={styles.editColTitle}>業務を選択</p>
                   <div className={styles.editItemGrid}>
                     {editableItems.map(item => {
-                      const v = parseInt(inputs[item] || '0') || 0
+                      const hm = getHM(item)
+                      const v = (hm.h ?? 0) * 60 + (hm.m ?? 0)
                       const isSel = selectedItem === item
                       return (
                         <button
@@ -329,7 +356,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                             styles.editItemBtn,
                             isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
                           ].join(' ')}
-                          onClick={() => setSelectedItem(item)}
+                          onClick={() => { setSelectedItem(item); setNumpadField('h') }}
                         >
                           <span className={styles.editItemName}>{item}</span>
                           {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
@@ -348,36 +375,37 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                     {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
                   </div>
 
-                  <div className={styles.minsDisplay}>
-                    <div className={styles.minsDisplayPrimary}>{fmtMinsDisplay(currentValue)}</div>
-                    {currentValue >= 60 && (
-                      <div className={styles.minsDisplaySecondary}>{currentValue}分</div>
-                    )}
+                  {/* 時間：分 入力ボックス */}
+                  <div className={styles.hmDisplayRow}>
+                    <div
+                      className={[styles.hmBox, numpadField === 'h' ? styles.hmBoxActive : ''].join(' ')}
+                      onClick={() => setNumpadField('h')}
+                    >
+                      {currentH}
+                    </div>
+                    <span className={styles.hmUnit}>時間</span>
+                    <div
+                      className={[styles.hmBox, numpadField === 'm' ? styles.hmBoxActive : ''].join(' ')}
+                      onClick={() => setNumpadField('m')}
+                    >
+                      {String(currentM).padStart(2, '0')}
+                    </div>
+                    <span className={styles.hmUnit}>分</span>
                   </div>
 
-                  <div className={styles.quickBtns}>
-                    {QUICK_PRESETS.map(opt => {
-                      const isDisabled = !selectedItem || (maxMins !== null && opt.mins > maxMins)
-                      return (
-                        <button
-                          key={opt.label}
-                          className={[styles.quickBtn, isDisabled ? styles.quickBtnDisabled : ''].join(' ')}
-                          disabled={isDisabled}
-                          onClick={() => !isDisabled && setQuick(opt.mins)}
-                        >{opt.label}</button>
-                      )
-                    })}
-                    <button
-                      className={[
-                        styles.quickBtn,
-                        (!selectedItem || !maxMins || maxMins <= 0) ? styles.quickBtnDisabled : ''
-                      ].join(' ')}
-                      disabled={!selectedItem || !maxMins || maxMins <= 0}
-                      onClick={() => maxMins > 0 && setQuick(maxMins)}
-                    >
-                      {maxMins > 0 ? `残り${fmtMins(maxMins)}` : '残り全て'}
-                    </button>
-                  </div>
+                  {/* 残りを一括入力ボタン */}
+                  <button
+                    className={[
+                      styles.fillRemainingBtnBig,
+                      (!selectedItem || maxMins === null || maxMins <= 0) ? styles.fillRemainingBtnDisabled : ''
+                    ].join(' ')}
+                    disabled={!selectedItem || maxMins === null || maxMins <= 0}
+                    onClick={fillRemaining}
+                  >
+                    {maxMins !== null && maxMins > 0
+                      ? `残り${fmtMins(maxMins)}を入力`
+                      : '残り全てを入力'}
+                  </button>
 
                   <div className={styles.timeNumGrid}>
                     {NUM_KEYS.map((k, i) => (
