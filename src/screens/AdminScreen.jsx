@@ -886,18 +886,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [editingWorkItemTablet, setEditingWorkItemTablet] = useState(null)
 
   const isSalaried = user?.employeeType === 'salaried'
-  const [overtimeH, setOvertimeH] = useState('')
-  const [overtimeM, setOvertimeM] = useState('')
 
   const firstInHRef = useRef(null)
   useEffect(() => { setTimeout(() => firstInHRef.current?.focus(), 60) }, [])
-
-  useEffect(() => {
-    if (!isSalaried) return
-    getOvertimeApp(user.id, dateStr).then(mins => {
-      if (mins > 0) { setOvertimeH(String(Math.floor(mins / 60))); setOvertimeM(String(mins % 60)) }
-    })
-  }, [])
 
   function hmToTimeStr(h, m) {
     if (h === '') return ''
@@ -977,10 +968,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       const isLast = si === sessions.length - 1
       if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
       if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: (!isSalaried && isLast) ? buildWorkTypeStr() : '', firstWork: sessions[si].firstWork || null, lastWork: sessions[si].lastWork || null })
-    }
-    if (isSalaried) {
-      const otMins = (parseInt(overtimeH) || 0) * 60 + (parseInt(overtimeM) || 0)
-      await saveOvertimeApp(user.id, dateStr, otMins)
     }
     onSaved()
   }
@@ -1289,34 +1276,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                       </div>
                     )}
                   </div>)}
-                  {isSalaried && (
-                    <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>残業申請</label>
-                      <div className={styles.timeHmRow}>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={2}
-                          value={overtimeH}
-                          onChange={e => setOvertimeH(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                          placeholder="0"
-                          className={styles.timeHmNum}
-                        />
-                        <span className={styles.timeHmUnit}>時間</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={2}
-                          value={overtimeM}
-                          onChange={e => setOvertimeM(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                          placeholder="0"
-                          className={styles.timeHmNum}
-                        />
-                        <span className={styles.timeHmUnit}>分</span>
-                      </div>
-                      <div className={styles.overtimeHint}>残業がない場合は空白のまま</div>
-                    </div>
-                  )}
                 </>
               )}
 
@@ -3599,6 +3558,19 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     onChange={e => setOvertimeRateSal(e.target.value)}
                     placeholder="0"
                   />
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>所定労働時間</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="number" min="0" max="23" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursH} onChange={e => setRegularHoursH(e.target.value)} placeholder="8" />
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>時間</span>
+                    <input type="number" min="0" max="59" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursM} onChange={e => setRegularHoursM(e.target.value)} placeholder="0" />
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>分</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={styles.userEditLabel}>標準休憩時間（分）</label>
+                  <input type="number" min="0" className={styles.userEditInput} value={standardBreakMins} onChange={e => setStandardBreakMins(e.target.value)} placeholder="60" />
                 </div>
               </div>
             </div>
