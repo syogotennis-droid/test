@@ -49,6 +49,24 @@ function toHalf(s) {
   return String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
 }
 
+function getTodayJst() {
+  const now = new Date()
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+  return jst.toISOString().slice(0, 10)
+}
+
+function fmtJaDate(dateStr) {
+  if (!dateStr) return '—'
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  return `${y}年${mo}月${d}日`
+}
+
+function fmtJaDateShort(dateStr) {
+  if (!dateStr) return '—'
+  const [, mo, d] = dateStr.split('-').map(Number)
+  return `${mo}月${d}日`
+}
+
 const SIDEBAR_ITEMS = [
   {
     key: 'calendar',
@@ -3362,6 +3380,12 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     if (!addRateForm) return
     const { item, date, normalStr, showMultiplierInput, customMultiplierStr } = addRateForm
     if (!normalStr) return
+    if (!date) { alert('適用開始日を入力してください'); return }
+    const existing = rateHistory[item] || []
+    if (existing.some(e => e.from === date)) {
+      alert(`${fmtJaDate(date)}の時給はすでに登録されています。削除してから再登録してください。`)
+      return
+    }
     const normalVal = Number(normalStr)
     const inherited = getInheritedEntry(item, date)
     const inheritedMult = inherited && inherited.normal && inherited.sunday
@@ -3369,18 +3393,22 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       : null
     const effectiveMult = showMultiplierInput && customMultiplierStr ? Number(customMultiplierStr) : inheritedMult
     const sunday = normalVal && effectiveMult ? Math.round(normalVal * effectiveMult) : undefined
-    const newEntry = { from: date || null, normal: normalVal }
+    const newEntry = { from: date, normal: normalVal }
     if (sunday != null && sunday > 0) newEntry.sunday = sunday
     setRateHistory(prev => {
-      const existing = prev[item] || []
-      const filtered = existing.filter(e => e.from !== (date || null))
-      const updated = [...filtered, newEntry].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+      const prevExisting = prev[item] || []
+      const updated = [...prevExisting, newEntry].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
       return { ...prev, [item]: updated }
     })
     setAddRateForm(null)
   }
 
   function deleteRateHistoryEntry(item, entryFrom) {
+    const todayStr = getTodayJst()
+    if (!entryFrom || entryFrom <= todayStr) {
+      alert('現在適用中・過去の時給履歴は削除できません')
+      return
+    }
     setRateHistory(prev => ({ ...prev, [item]: (prev[item] || []).filter(e => e.from !== entryFrom) }))
   }
 
@@ -3635,8 +3663,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     <tr>
                       <th className={styles.workItemTh} style={{width:44}}>使用</th>
                       <th className={styles.workItemTh}>作業項目</th>
-                      <th className={styles.workItemTh} style={{width:110}}>適用開始日</th>
-                      <th className={styles.workItemTh} style={{width:110}}>基本時給</th>
+                      <th className={styles.workItemTh} style={{width:170}}>基本時給（現在）</th>
                       <th className={styles.workItemTh} style={{width:110}}>日曜時給</th>
                       <th className={styles.workItemTh} style={{width:120}}></th>
                     </tr>
@@ -3646,8 +3673,10 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                       const checked = workItems.includes(item)
                       const isTransport = item === '交通費'
                       const hist = rateHistory[item] || []
-                      const sortedHist = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
-                      const latest = sortedHist[sortedHist.length - 1]
+                      const todayStr = getTodayJst()
+                      const sortedHistAsc = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+                      const currentEntry = sortedHistAsc.filter(e => !e.from || e.from <= todayStr).pop() || null
+                      const nextEntry = sortedHistAsc.find(e => e.from && e.from > todayStr) || null
                       return (
                         <tr key={item} className={[styles.workItemRow, checked ? styles.workItemRowActive : ''].join(' ')}>
                           <td className={styles.workItemTd}>
@@ -3687,18 +3716,20 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                           ) : (
                             <>
                               <td className={styles.workItemTd}>
-                                <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
-                                  {latest ? (latest.from ?? '当初') : '—'}
-                                </span>
+                                <div>
+                                  <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
+                                    {currentEntry?.normal ? `${Number(currentEntry.normal).toLocaleString()}円` : '未設定'}
+                                  </span>
+                                  {nextEntry && currentEntry?.normal && checked && (
+                                    <div className={styles.rateChangePending}>
+                                      {fmtJaDateShort(nextEntry.from)}から{Number(nextEntry.normal).toLocaleString()}円に変更予定
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                               <td className={styles.workItemTd}>
                                 <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
-                                  {latest?.normal ? `${Number(latest.normal).toLocaleString()}円` : '未設定'}
-                                </span>
-                              </td>
-                              <td className={styles.workItemTd}>
-                                <span className={[styles.workItemRateDisplay, !checked ? styles.workItemNameDim : ''].join(' ')}>
-                                  {latest?.sunday ? `${Number(latest.sunday).toLocaleString()}円` : '—'}
+                                  {currentEntry?.sunday ? `${Number(currentEntry.sunday).toLocaleString()}円` : '—'}
                                 </span>
                               </td>
                               <td className={styles.workItemTd}>
@@ -3732,9 +3763,16 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                 <div className={styles.rateHistoryModalBody}>
                   {(() => {
                     const hist = rateHistory[historyModalItem] || []
-                    const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from) })
+                    // Descending order: newest first, null (oldest, no known start) last
+                    const sorted = [...hist].sort((a, b) => {
+                      if (!a.from && !b.from) return 0
+                      if (!a.from) return 1
+                      if (!b.from) return -1
+                      return b.from.localeCompare(a.from)
+                    })
                     if (sorted.length === 0) return <p className={styles.rateHistoryEmpty}>時給の登録がありません。「新しい時給を追加」から登録してください。</p>
-                    const todayStr = new Date().toISOString().slice(0, 10)
+                    const todayStr = getTodayJst()
+                    // Current: first in descending order where from <= today, or from is null
                     const currentIdx = sorted.findIndex(e => !e.from || e.from <= todayStr)
                     return (
                       <div className={styles.rateHistoryTableWrap}>
@@ -3746,28 +3784,32 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                               <th className={styles.rateHistoryTh}>基本時給</th>
                               <th className={styles.rateHistoryTh}>日曜倍率</th>
                               <th className={styles.rateHistoryTh}>日曜時給</th>
-                              <th className={styles.rateHistoryTh}></th>
+                              <th className={styles.rateHistoryTh}>状態</th>
                             </tr>
                           </thead>
                           <tbody>
                             {sorted.map((entry, idx) => {
-                              const toDisplay = idx === 0 ? '現在' : prevDay(sorted[idx - 1].from)
-                              const fromDisplay = entry.from ?? '当初'
+                              // End date = day before the newer entry's from (sorted[idx-1] is newer in descending order)
+                              const toDateStr2 = idx === 0 ? null : prevDay(sorted[idx - 1].from)
+                              const toDisplay = toDateStr2 ? fmtJaDate(toDateStr2) : '—'
+                              const fromDisplay = entry.from ? fmtJaDate(entry.from) : '—'
                               const mult = entry.normal && entry.sunday
                                 ? `${Math.round(entry.sunday / entry.normal * 100) / 100}倍`
                                 : '—'
+                              const isFuture = !!(entry.from && entry.from > todayStr)
                               const isCurrent = idx === currentIdx
+                              const status = isFuture ? '変更予定' : isCurrent ? '現在適用中' : '過去'
                               return (
-                                <tr key={idx} className={[styles.rateHistoryTr, isCurrent ? styles.rateHistoryCurrentRow : ''].join(' ')}>
+                                <tr key={idx} className={[styles.rateHistoryTr, isCurrent ? styles.rateHistoryCurrentRow : '', isFuture ? styles.rateHistoryFutureRow : ''].join(' ')}>
                                   <td className={styles.rateHistoryTd}>{fromDisplay}</td>
                                   <td className={styles.rateHistoryTd}>{toDisplay}</td>
                                   <td className={styles.rateHistoryTd}>{entry.normal ? `${Number(entry.normal).toLocaleString()}円` : '—'}</td>
                                   <td className={styles.rateHistoryTd}>{mult}</td>
                                   <td className={styles.rateHistoryTd}>{entry.sunday ? `${Number(entry.sunday).toLocaleString()}円` : '—'}</td>
                                   <td className={styles.rateHistoryTd}>
-                                    {isCurrent
-                                      ? <span className={styles.rateHistoryCurrentBadge}>現在適用中</span>
-                                      : <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>
+                                    {isFuture
+                                      ? <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>
+                                      : <span className={isCurrent ? styles.rateHistoryCurrentBadge : styles.rateHistoryPastBadge}>{status}</span>
                                     }
                                   </td>
                                 </tr>
@@ -3794,9 +3836,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                         const newNormal = addRateForm.normalStr ? Number(addRateForm.normalStr) : null
                         const computedSunday = newNormal && effectiveMult ? Math.round(newNormal * effectiveMult) : null
                         const prevNormal = inherited?.normal || null
-                        const previewDateStr = addRateForm.date
-                          ? (() => { const d = new Date(addRateForm.date); return `${d.getMonth()+1}月${d.getDate()}日` })()
-                          : '当初'
+                        const previewDateStr = fmtJaDateShort(addRateForm.date)
                         return (
                           <>
                             <div className={styles.addRateFormGrid}>

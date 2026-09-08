@@ -3986,6 +3986,24 @@
   white-space: nowrap;
 }
 
+.rateHistoryPastBadge {
+  font-size: 0.73rem;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.rateHistoryFutureRow { background: #eff6ff !important; }
+
+.rateChangePending {
+  font-size: 0.75rem;
+  color: #1d4ed8;
+  margin-top: 3px;
+}
+
 .dateInput {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
