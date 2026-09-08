@@ -1611,15 +1611,38 @@ function KinmuboTab({ today }) {
 
   async function handleSalariedDayChange(userId, ds, field, value) {
     const key = `${userId}_${ds}`
+    const merged = {
+      breakMins: salariedDayEdits[key]?.breakMins ?? salariedDaysData[key]?.breakMins ?? 0,
+      overtimeMins: salariedDayEdits[key]?.overtimeMins ?? salariedDaysData[key]?.overtimeMins ?? 0,
+      [field]: value,
+    }
     setSalariedDayEdits(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
     setSalariedDaysData(prev => ({ ...prev, [key]: { ...prev[key], userId, date: ds, [field]: value } }))
-    // Debounce save
-    const cur = { ...(salariedDaysData[key] || {}), [field]: value }
-    try { await saveSalariedDay(userId, ds, { breakMins: cur.breakMins ?? 0, overtimeMins: cur.overtimeMins ?? 0 }) } catch {}
+    try { await saveSalariedDay(userId, ds, { breakMins: merged.breakMins, overtimeMins: merged.overtimeMins }) } catch {}
   }
 
   async function handleCreate() {
     if (exporting) return
+
+    // Warn if any salaried user has 打刻未完了 days
+    if (preview) {
+      const incomplete = []
+      for (const p of preview) {
+        if (p.isSalariedUser && p.dailySalariedRows) {
+          for (const row of p.dailySalariedRows) {
+            if (!row.completed) {
+              const [, mo, dd] = row.ds.split('-').map(Number)
+              incomplete.push(`${p.user.name}（${mo}/${dd}）`)
+            }
+          }
+        }
+      }
+      if (incomplete.length > 0) {
+        const msg = `以下の打刻未完了があります：\n${incomplete.join('\n')}\n\nこのまま出力しますか？`
+        if (!window.confirm(msg)) return
+      }
+    }
+
     setExporting(true)
     try {
       const [y, m] = selectedYM.split('-').map(Number)
@@ -1850,9 +1873,9 @@ function KinmuboTab({ today }) {
                                 <th className={styles.kinmuboDailyTh}>QR出勤</th>
                                 <th className={styles.kinmuboDailyTh}>QR退勤</th>
                                 <th className={styles.kinmuboDailyTh}>状態</th>
-                                <th className={styles.kinmuboDailyTh}>休憩時間（分）</th>
-                                <th className={styles.kinmuboDailyTh}>残業 時間</th>
-                                <th className={styles.kinmuboDailyTh}>残業 分</th>
+                                <th className={styles.kinmuboDailyTh}>休憩時間</th>
+                                <th className={styles.kinmuboDailyTh}>所定労働時間</th>
+                                <th className={styles.kinmuboDailyTh}>残業時間</th>
                                 <th className={styles.kinmuboDailyTh}>合計（所定＋残業）</th>
                               </tr>
                             </thead>
@@ -1865,8 +1888,10 @@ function KinmuboTab({ today }) {
                                 const key = `${user.id}_${ds}`
                                 const edits = salariedDayEdits[key] || {}
                                 const baseData = salariedDaysData[key] || {}
-                                const breakMins = edits.breakMins ?? baseData.breakMins ?? (user.standardBreakMins || 0)
+                                const breakMins = edits.breakMins ?? baseData.breakMins ?? (user.standardBreakMins ?? 0)
                                 const overtimeMins = edits.overtimeMins ?? baseData.overtimeMins ?? 0
+                                const breakH = Math.floor(breakMins / 60)
+                                const breakM = breakMins % 60
                                 const overH = Math.floor(overtimeMins / 60)
                                 const overM = overtimeMins % 60
                                 const regularHoursMins = user.regularHours || 0
@@ -1892,44 +1917,53 @@ function KinmuboTab({ today }) {
                                     </td>
                                     <td className={styles.kinmuboDailyTd}>
                                       {completed ? (
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          max="480"
-                                          className={styles.salDayInput}
-                                          value={breakMins}
-                                          onChange={e => handleSalariedDayChange(user.id, ds, 'breakMins', parseInt(e.target.value) || 0)}
-                                        />
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                          <input
+                                            type="number" min="0" max="23" className={styles.salDayInput}
+                                            value={breakH}
+                                            onChange={e => {
+                                              const newH = parseInt(e.target.value) || 0
+                                              handleSalariedDayChange(user.id, ds, 'breakMins', newH * 60 + breakM)
+                                            }}
+                                          />
+                                          <span style={{ fontSize: '0.75rem' }}>時間</span>
+                                          <input
+                                            type="number" min="0" max="59" className={styles.salDayInput}
+                                            value={breakM}
+                                            onChange={e => {
+                                              const newM = parseInt(e.target.value) || 0
+                                              handleSalariedDayChange(user.id, ds, 'breakMins', breakH * 60 + newM)
+                                            }}
+                                          />
+                                          <span style={{ fontSize: '0.75rem' }}>分</span>
+                                        </span>
                                       ) : '—'}
+                                    </td>
+                                    <td className={styles.kinmuboDailyTd} style={{ fontSize: '0.85rem' }}>
+                                      {completed ? fmtMins(regularHoursMins) : '—'}
                                     </td>
                                     <td className={styles.kinmuboDailyTd}>
                                       {completed ? (
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          max="23"
-                                          className={styles.salDayInput}
-                                          value={overH}
-                                          onChange={e => {
-                                            const newH = parseInt(e.target.value) || 0
-                                            handleSalariedDayChange(user.id, ds, 'overtimeMins', newH * 60 + overM)
-                                          }}
-                                        />
-                                      ) : '—'}
-                                    </td>
-                                    <td className={styles.kinmuboDailyTd}>
-                                      {completed ? (
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          max="59"
-                                          className={styles.salDayInput}
-                                          value={overM}
-                                          onChange={e => {
-                                            const newM = parseInt(e.target.value) || 0
-                                            handleSalariedDayChange(user.id, ds, 'overtimeMins', overH * 60 + newM)
-                                          }}
-                                        />
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                          <input
+                                            type="number" min="0" max="23" className={styles.salDayInput}
+                                            value={overH}
+                                            onChange={e => {
+                                              const newH = parseInt(e.target.value) || 0
+                                              handleSalariedDayChange(user.id, ds, 'overtimeMins', newH * 60 + overM)
+                                            }}
+                                          />
+                                          <span style={{ fontSize: '0.75rem' }}>時間</span>
+                                          <input
+                                            type="number" min="0" max="59" className={styles.salDayInput}
+                                            value={overM}
+                                            onChange={e => {
+                                              const newM = parseInt(e.target.value) || 0
+                                              handleSalariedDayChange(user.id, ds, 'overtimeMins', overH * 60 + newM)
+                                            }}
+                                          />
+                                          <span style={{ fontSize: '0.75rem' }}>分</span>
+                                        </span>
                                       ) : '—'}
                                     </td>
                                     <td className={styles.kinmuboDailyTd} style={{ fontWeight: 700 }}>

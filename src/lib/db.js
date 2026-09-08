@@ -571,6 +571,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     pay:   { wd: 17, sa: 18, su: 19 },
     tot_lbl: 20, tot_hrs: 21, tot_pay: 22,
     pay_lbl: 23, pay_rate: 24,
+    timeWrap: 25,
   }
 
   const STYLES_XML = [
@@ -603,7 +604,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>',
     '</borders>',
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>',
-    '<cellXfs count="25">',
+    '<cellXfs count="26">',
     // 0 default
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
     // 1 title
@@ -644,6 +645,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left"/></xf>',
     // 24 pay row hourly rate: bordered, #,##0 format, center
     '<xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    // 25 multi-session text cell: bordered, center, wrapText
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>',
     '</cellXfs>',
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',
     '</styleSheet>',
@@ -727,6 +730,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     // Salaried employees: T1 (attendance) + T3 (base salary), skip T2
     if (user.employeeType === 'salaried') {
+      // Validate required salaried settings before generating Excel
+      const missingFields = []
+      if (!user.regularHours) missingFields.push('所定労働時間')
+      if (user.standardBreakMins == null) missingFields.push('標準休憩時間')
+      if (missingFields.length > 0) {
+        throw new Error(`「${user.name}」の設定が未入力です：${missingFields.join('、')}。ユーザー管理で設定してください。`)
+      }
+
       const WB_NS_SAL = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
       const WB_REL_SAL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
       const hdrCellSal = (col, rn, text) => `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
@@ -767,23 +778,32 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         t1c.push(`<c r="A${r1sal}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
         t1c.push(`<c r="B${r1sal}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
 
+        let rowHtAttr = ''
         if (hasCompleted) {
           workingDaysSal++
-          const firstIn = completedSessions[0].inLog.time.substring(0, 5)
-          const lastOut = completedSessions[completedSessions.length - 1].outLog.time.substring(0, 5)
+          const allInTimes = completedSessions.map(s => s.inLog.time.substring(0, 5))
+          const allOutTimes = completedSessions.map(s => s.outLog.time.substring(0, 5))
           const dayData = salariedDaysData[`${user.id}_${ds}`] || {}
           const breakMinsVal = dayData.breakMins ?? standardBreakMins
           const overtimeMinsVal = dayData.overtimeMins || 0
           if (overtimeMinsVal > 0) completedOvertimeByDate[ds] = overtimeMinsVal
 
-          const [ih, im] = firstIn.split(':').map(Number)
-          const [oh, om] = lastOut.split(':').map(Number)
-          t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"><v>${excelTime(ih, im)}</v></c>`)
-          t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"><v>${excelTime(oh, om)}</v></c>`)
+          if (allInTimes.length === 1) {
+            const [ih, im] = allInTimes[0].split(':').map(Number)
+            const [oh, om] = allOutTimes[0].split(':').map(Number)
+            t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"><v>${excelTime(ih, im)}</v></c>`)
+            t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"><v>${excelTime(oh, om)}</v></c>`)
+          } else {
+            rowHtAttr = ` ht="${15 * allInTimes.length + 5}" customHeight="1"`
+            const inXml = allInTimes.map(t => esc(t)).join('&#10;')
+            const outXml = allOutTimes.map(t => esc(t)).join('&#10;')
+            t1c.push(`<c r="C${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${inXml}</t></is></c>`)
+            t1c.push(`<c r="D${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${outXml}</t></is></c>`)
+          }
           t1c.push(breakMinsVal > 0 ? `<c r="E${r1sal}" s="${S.hours[dt]}"><v>${breakMinsVal / 1440}</v></c>` : `<c r="E${r1sal}" s="${S.hours[dt]}"/>`)
-          t1c.push(regularHoursMins > 0 ? `<c r="F${r1sal}" s="${S.hours[dt]}"><v>${regularHoursMins / 1440}</v></c>` : `<c r="F${r1sal}" s="${S.hours[dt]}"/>`)
+          t1c.push(`<c r="F${r1sal}" s="${S.hours[dt]}"><v>${regularHoursMins / 1440}</v></c>`)
           t1c.push(overtimeMinsVal > 0 ? `<c r="G${r1sal}" s="${S.hours[dt]}"><v>${overtimeMinsVal / 1440}</v></c>` : `<c r="G${r1sal}" s="${S.hours[dt]}"/>`)
-          t1c.push(regularHoursMins > 0 ? `<c r="H${r1sal}" s="${S.hours[dt]}"><f>F${r1sal}+G${r1sal}</f></c>` : `<c r="H${r1sal}" s="${S.hours[dt]}"/>`)
+          t1c.push(`<c r="H${r1sal}" s="${S.hours[dt]}"><f>F${r1sal}+G${r1sal}</f></c>`)
         } else {
           // Incomplete or no attendance
           const hasIn = sessions.some(s => s.inLog)
@@ -798,7 +818,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           t1c.push(`<c r="E${r1sal}" s="${S.hours[dt]}"/>`, `<c r="F${r1sal}" s="${S.hours[dt]}"/>`)
           t1c.push(`<c r="G${r1sal}" s="${S.hours[dt]}"/>`, `<c r="H${r1sal}" s="${S.hours[dt]}"/>`)
         }
-        t1RowsSal.push(`<row r="${r1sal}">${t1c.join('')}</row>`)
+        t1RowsSal.push(`<row r="${r1sal}"${rowHtAttr}>${t1c.join('')}</row>`)
         r1sal++
       }
 
