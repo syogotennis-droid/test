@@ -277,6 +277,58 @@ export async function getClockInTimeForDate(userId, date) {
   return logs.length > 0 ? logs[logs.length - 1] : null
 }
 
+// ─── Work Reports (業務時間申告) ────────────────────────────────────────────────
+
+export async function saveWorkReport(userId, dateStr, items) {
+  const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
+  const docRef = doc(db, 'work_reports', `${userId}_${dateStr}`)
+  await setDoc(docRef, { userId, date: dateStr, items: filtered, updatedAt: new Date().toISOString() })
+}
+
+export async function getWorkReport(userId, dateStr) {
+  const snap = await getDoc(doc(db, 'work_reports', `${userId}_${dateStr}`))
+  return snap.exists() ? (snap.data().items || {}) : {}
+}
+
+export async function getWorkReportsForRange(dateFrom, dateTo) {
+  const q = query(collection(db, 'work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))
+  const snap = await getDocs(q)
+  const result = {}
+  snap.docs.forEach(d => { result[d.id] = d.data().items || {} })
+  return result
+}
+
+export async function migrateSessionWorkToReports() {
+  const snap = await getDocs(logsCol)
+  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  const byUserDate = {}
+  logs.forEach(log => {
+    if (!log.work_type && !log.work_items) return
+    const key = `${log.user_id}_${log.date}`
+    if (!byUserDate[key]) byUserDate[key] = { userId: log.user_id, date: log.date, items: {} }
+    const items = log.work_items && typeof log.work_items === 'object'
+      ? log.work_items
+      : (log.work_type ? { [log.work_type]: log.work_minutes || 0 } : {})
+    Object.entries(items).forEach(([type, mins]) => {
+      byUserDate[key].items[type] = (byUserDate[key].items[type] || 0) + Number(mins)
+    })
+  })
+  const batch = writeBatch(db)
+  let count = 0
+  for (const [key, data] of Object.entries(byUserDate)) {
+    const ref = doc(db, 'work_reports', key)
+    const existing = await getDoc(ref)
+    if (!existing.exists()) {
+      const filtered = Object.fromEntries(Object.entries(data.items).filter(([, m]) => m > 0))
+      batch.set(ref, { userId: data.userId, date: data.date, items: filtered, updatedAt: new Date().toISOString() })
+      count++
+      if (count % 400 === 0) await batch.commit()
+    }
+  }
+  if (count % 400 !== 0) await batch.commit()
+  return count
+}
+
 export async function isCheckedIn(userId) {
   const today = getTodayDate()
   const q = query(logsCol, where('user_id', '==', userId))
@@ -696,6 +748,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       salariedDaysData[`${data.userId}_${data.date}`] = data
     })
   } catch {}
+
+  // Fetch work_reports for all hourly employees in this date range
+  const allWorkReports = await getWorkReportsForRange(dateFrom || '', dateTo || '')
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)

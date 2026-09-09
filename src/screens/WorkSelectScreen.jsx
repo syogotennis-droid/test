@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { getClockInTime } from '../lib/db'
+import React, { useState } from 'react'
 import styles from './WorkSelectScreen.module.css'
 
 const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
@@ -133,7 +132,7 @@ function fmtMinutes(mins) {
 
 const TIME_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 
-function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTime, onClose }) {
+function TimeInputModal({ item, workTimes, onSetTime, onClose }) {
   const initial = workTimes[item] || { h: 0, m: 0 }
   const [hStr, setHStr] = useState(initial.h > 0 ? String(initial.h) : '')
   const [mStr, setMStr] = useState(initial.m > 0 ? String(initial.m) : '')
@@ -141,17 +140,6 @@ function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTim
 
   const h = parseInt(hStr) || 0
   const m = parseInt(mStr) || 0
-
-  const otherMins = activeItems
-    .filter(id => id !== item)
-    .reduce((sum, id) => {
-      const t = workTimes[id] || { h: 0, m: 0 }
-      return sum + t.h * 60 + t.m
-    }, 0)
-  const remaining = workingMinutes != null ? workingMinutes - otherMins : null
-  const rh = remaining != null ? Math.floor(remaining / 60) : 0
-  const rm = remaining != null ? remaining % 60 : 0
-  const alreadySet = remaining != null && h * 60 + m === remaining
 
   function pressKey(k) {
     if (k === '⌫') {
@@ -181,14 +169,6 @@ function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTim
     <div className={styles.timeModalOverlay} onClick={onClose}>
       <div className={styles.timeModal} onClick={e => e.stopPropagation()}>
         <div className={styles.timeModalTitle}>{item}の時間を入力</div>
-        {workingMinutes !== null && (
-          <div className={styles.timeModalHint}>
-            勤務時間合計: {fmtMinutes(workingMinutes)}
-            {activeItems.filter(id => id !== item).length > 0 && (
-              <> / 他の合計: {fmtMinutes(otherMins)}</>
-            )}
-          </div>
-        )}
         <div className={styles.timeDisplayRow}>
           <button
             className={[styles.timeDisplayBox, focus === 'h' ? styles.timeDisplayActive : ''].join(' ')}
@@ -205,14 +185,6 @@ function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTim
             <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
             <span className={styles.timeDisplayUnit}>分</span>
           </button>
-          {remaining != null && remaining > 0 && !alreadySet && (
-            <button
-              className={styles.remainingBtn}
-              onClick={() => { setHStr(rh > 0 ? String(rh) : ''); setMStr(rm > 0 ? String(rm) : '') }}
-            >
-              残り{fmtMinutes(remaining)}
-            </button>
-          )}
         </div>
         <div className={styles.timeNumGrid}>
           {TIME_KEYS.map((k, i) => (
@@ -230,16 +202,11 @@ function TimeInputModal({ item, workTimes, workingMinutes, activeItems, onSetTim
   )
 }
 
-function SubPickerModal({ groupKey, members, workTimes, workingMinutes, onSetTime, onClear, onClose }) {
+function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onClose }) {
   const [editing, setEditing] = useState(null)
   const [hStr, setHStr] = useState('')
   const [mStr, setMStr] = useState('')
   const [focus, setFocus] = useState('h')
-
-  const otherTotal = Object.entries(workTimes)
-    .filter(([k]) => k !== editing)
-    .reduce((sum, [, t]) => sum + (t?.h || 0) * 60 + (t?.m || 0), 0)
-  const remainingMins = workingMinutes != null ? Math.max(0, workingMinutes - otherTotal) : null
 
   function commitCurrent() {
     if (editing) {
@@ -325,18 +292,6 @@ function SubPickerModal({ groupKey, members, workTimes, workingMinutes, onSetTim
                   <span className={styles.timeDisplayNum}>{mStr || '0'}</span>
                   <span className={styles.timeDisplayUnit}>分</span>
                 </button>
-                {remainingMins != null && (
-                  <button
-                    className={styles.remainingBtn}
-                    onClick={() => {
-                      const rh = Math.floor(remainingMins / 60)
-                      const rm = remainingMins % 60
-                      setHStr(rh > 0 ? String(rh) : '')
-                      setMStr(rm > 0 ? String(rm) : '')
-                      setFocus(rh > 0 ? 'h' : 'm')
-                    }}
-                  >残り{fmtMinutes(remainingMins)}</button>
-                )}
               </div>
               <div className={styles.timeNumGrid}>
                 {TIME_KEYS.map((k, i) => (
@@ -363,27 +318,11 @@ const BREAK_TYPES = new Set(['休憩'])
 export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   const [workTimes, setWorkTimes] = useState({})
   const [saving, setSaving] = useState(false)
-  const [workingMinutes, setWorkingMinutes] = useState(null)
-  const [timeError, setTimeError] = useState('')
   const [editingItem, setEditingItem] = useState(null)
   const [subPickerGroup, setSubPickerGroup] = useState(null)
-  const [firstWork, setFirstWork] = useState(null)
-  const [lastWork, setLastWork] = useState(null)
-  const [confirmingBoundary, setConfirmingBoundary] = useState(false)
-  const [pendingWorkItems, setPendingWorkItems] = useState(null)
-  const clockOutRef = useRef(new Date())
 
   const displayCards = getDisplayCards(user.workItems)
   const allFlatItems = displayCards.flatMap(c => c.type === 'single' ? [c.id] : c.members)
-
-  useEffect(() => {
-    getClockInTime(user.id).then(log => {
-      if (log) {
-        const diff = Math.round((clockOutRef.current - new Date(log.timestamp)) / 60000)
-        setWorkingMinutes(Math.max(0, diff))
-      }
-    })
-  }, [user.id])
 
   function isActive(id) {
     const t = workTimes[id]
@@ -391,7 +330,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   }
 
   function handleCardTap(id) {
-    setTimeError('')
     if (!workTimes[id]) setWorkTimes(prev => ({ ...prev, [id]: { h: 0, m: 0 } }))
     setEditingItem(id)
   }
@@ -399,7 +337,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   function handleClear(id, e) {
     e.stopPropagation()
     setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
-    setTimeError('')
   }
 
   function setTime(id, field, val) {
@@ -407,51 +344,25 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   }
 
   const activeItems = allFlatItems.filter(id => isActive(id))
-  const workActiveItems = activeItems.filter(id => !BREAK_TYPES.has(id))
 
   const totalInputMinutes = activeItems.reduce((sum, id) => {
     const t = workTimes[id] || { h: 0, m: 0 }
     return sum + t.h * 60 + t.m
   }, 0)
 
-  const displayH = workingMinutes != null ? Math.floor(workingMinutes / 60) : 0
-  const displayM = workingMinutes != null ? workingMinutes % 60 : 0
-
-  // Auto-set firstWork/lastWork when only one work type
-  const resolvedFirstWork = workActiveItems.length === 1 ? workActiveItems[0] : firstWork
-  const resolvedLastWork = workActiveItems.length === 1 ? workActiveItems[0] : lastWork
+  const displayH = Math.floor(totalInputMinutes / 60)
+  const displayM = totalInputMinutes % 60
 
   async function handleConfirm() {
     if (saving) return
-    if (activeItems.length > 0 && workingMinutes !== null && totalInputMinutes !== workingMinutes) {
-      setTimeError(`合計が勤務時間と一致しません（勤務時間: ${fmtMinutes(workingMinutes)}）`)
-      return
-    }
     const workItemsObj = {}
     activeItems.forEach(id => {
       const t = workTimes[id] || { h: 0, m: 0 }
       workItemsObj[id] = t.h * 60 + t.m
     })
-    if (workActiveItems.length >= 2) {
-      setPendingWorkItems(workItemsObj)
-      setConfirmingBoundary(true)
-      return
-    }
     setSaving(true)
     try {
-      await onComplete(workItemsObj, workActiveItems[0] || null, workActiveItems[0] || null)
-    } catch (e) {
-      console.error(e)
-      setSaving(false)
-    }
-  }
-
-  async function handleBoundaryConfirm() {
-    if (!resolvedFirstWork || !resolvedLastWork) return
-    setSaving(true)
-    setConfirmingBoundary(false)
-    try {
-      await onComplete(pendingWorkItems, resolvedFirstWork, resolvedLastWork)
+      await onComplete(workItemsObj)
     } catch (e) {
       console.error(e)
       setSaving(false)
@@ -534,10 +445,9 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           <span className={styles.totalUnit}>分</span>
         </div>
 
-        {activeItems.length === 0 && !timeError && (
+        {activeItems.length === 0 && (
           <div className={styles.skipHint}>業務時間の入力は後で管理者が行えます</div>
         )}
-        {timeError && <div className={styles.timeError}>{timeError}</div>}
 
         <div className={styles.bottomRow}>
           <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
@@ -559,7 +469,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
           groupKey={subPickerGroup.key}
           members={subPickerGroup.members}
           workTimes={workTimes}
-          workingMinutes={workingMinutes}
           onSetTime={setTime}
           onClear={id => {
             setWorkTimes(prev => { const copy = { ...prev }; delete copy[id]; return copy })
@@ -573,55 +482,9 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
         <TimeInputModal
           item={editingItem}
           workTimes={workTimes}
-          workingMinutes={workingMinutes}
-          activeItems={activeItems}
           onSetTime={setTime}
           onClose={() => setEditingItem(null)}
         />
-      )}
-
-      {/* 最初/最後の業務確認モーダル */}
-      {confirmingBoundary && (
-        <div className={styles.boundaryOverlay}>
-          <div className={styles.boundaryModal}>
-            <div className={styles.boundaryModalTitle}>業務の順番を確認</div>
-            <div className={styles.boundaryModalDesc}>始業・終業時の業務を選択してください。</div>
-            <div className={styles.boundaryModalRows}>
-              <div className={styles.boundaryModalRow}>
-                <span className={styles.boundaryModalLabel}>最初の業務</span>
-                <div className={styles.boundaryBtns}>
-                  {workActiveItems.map(id => (
-                    <button
-                      key={id}
-                      className={[styles.boundaryBtn, resolvedFirstWork === id ? styles.boundaryBtnActive : ''].join(' ')}
-                      onClick={() => setFirstWork(id)}
-                    >{id}</button>
-                  ))}
-                </div>
-              </div>
-              <div className={styles.boundaryModalRow}>
-                <span className={styles.boundaryModalLabel}>最後の業務</span>
-                <div className={styles.boundaryBtns}>
-                  {workActiveItems.map(id => (
-                    <button
-                      key={id}
-                      className={[styles.boundaryBtn, resolvedLastWork === id ? styles.boundaryBtnActive : ''].join(' ')}
-                      onClick={() => setLastWork(id)}
-                    >{id}</button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className={styles.boundaryModalActions}>
-              <button className={styles.boundaryModalCancel} onClick={() => setConfirmingBoundary(false)}>戻る</button>
-              <button
-                className={[styles.boundaryModalOk, (!resolvedFirstWork || !resolvedLastWork) ? styles.boundaryModalOkDisabled : ''].join(' ')}
-                onClick={handleBoundaryConfirm}
-                disabled={!resolvedFirstWork || !resolvedLastWork}
-              >退勤を登録</button>
-            </div>
-          </div>
-        </div>
       )}
 
     </div>

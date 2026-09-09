@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN, saveWorkReport } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -134,15 +134,11 @@ export default function App() {
     }
   }
 
-  async function handleWorkComplete(workItems, firstWork, lastWork) {
+  async function handleWorkComplete(workItems) {
     const clockIn = await getClockInTime(currentUser.id)
-    await saveLog({
-      userId: currentUser.id,
-      workItems,
-      logType: '退勤',
-      ...(firstWork ? { firstWork } : {}),
-      ...(lastWork ? { lastWork } : {}),
-    })
+    const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    await saveLog({ userId: currentUser.id, logType: '退勤' })
+    await saveWorkReport(currentUser.id, today, workItems)
     setCompletedInfo({
       logType: '退勤',
       workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),

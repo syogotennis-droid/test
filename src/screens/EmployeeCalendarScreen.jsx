@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, updateLogWorkItems, CLOCK_OUT_HIDDEN } from '../lib/db'
+import { getLogs, saveWorkReport, getWorkReport, CLOCK_OUT_HIDDEN } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -82,10 +82,7 @@ function parseWorkType(wt) {
 }
 
 /* ─── 保存確認モーダル ─── */
-function ConfirmSaveModal({ year, month, day, workingMinutes, totalInputMinutes, editableItems, inputs, saving, onBack, onSave }) {
-  const remaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
-  const isComplete = remaining === 0
-
+function ConfirmSaveModal({ year, month, day, totalInputMinutes, editableItems, inputs, saving, onBack, onSave }) {
   const enteredItems = editableItems
     .map(item => {
       const v = inputs[item]
@@ -97,42 +94,11 @@ function ConfirmSaveModal({ year, month, day, workingMinutes, totalInputMinutes,
   return (
     <div className={styles.confirmOverlay}>
       <div className={styles.confirmModal}>
-        {/* ヘッダー */}
         <div className={styles.confirmHeader}>
           <span className={styles.confirmTitle}>入力内容を確認</span>
           <span className={styles.confirmDate}>{year}年{month + 1}月{day}日</span>
         </div>
 
-        {/* サマリー */}
-        <div className={styles.confirmSummary}>
-          <div className={styles.confirmStat}>
-            <span className={styles.confirmStatLabel}>勤務時間</span>
-            <span className={styles.confirmStatValue}>{workingMinutes != null ? fmtMins(workingMinutes) : '—'}</span>
-          </div>
-          <div className={styles.confirmStatDivider} />
-          <div className={styles.confirmStat}>
-            <span className={styles.confirmStatLabel}>入力済み</span>
-            <span className={styles.confirmStatValue}>{fmtMins(totalInputMinutes) || '0分'}</span>
-          </div>
-          <div className={styles.confirmStatDivider} />
-          <div className={styles.confirmStat}>
-            <span className={styles.confirmStatLabel}>残り時間</span>
-            <span className={[styles.confirmStatValue, isComplete ? styles.confirmStatZero : styles.confirmStatPending].join(' ')}>
-              {remaining != null ? (fmtMins(remaining) || '0分') : '—'}
-            </span>
-          </div>
-        </div>
-
-        {isComplete && (
-          <div className={styles.confirmComplete}>勤務時間の入力が完了しています</div>
-        )}
-        {remaining !== null && remaining > 0 && (
-          <div className={styles.confirmWarning}>
-            残り{fmtMins(remaining)}が未入力のまま保存されます
-          </div>
-        )}
-
-        {/* 業務内訳（長い場合だけスクロール） */}
         <div className={styles.confirmBreakdown}>
           {enteredItems.length === 0 ? (
             <div className={styles.confirmEmpty}>入力された業務はありません</div>
@@ -146,13 +112,11 @@ function ConfirmSaveModal({ year, month, day, workingMinutes, totalInputMinutes,
           )}
         </div>
 
-        {/* 合計 */}
         <div className={styles.confirmTotal}>
           <span>合計</span>
           <span>{fmtMins(totalInputMinutes) || '0分'}</span>
         </div>
 
-        {/* ボタン */}
         <div className={styles.confirmActions}>
           <button className={styles.confirmBackBtn} onClick={onBack} disabled={saving}>
             入力画面に戻る
@@ -171,25 +135,29 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
   const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
   const duration = timeDiff(inTime, outTime)
-  const workTypes = parseWorkType(entry?.workType || '')
 
   const editableItems = (user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item))
-  const canEdit = editableItems.length > 0 && entry?.outLog && user?.employeeType !== 'salaried'
+  const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried'
+
+  const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 
   const [editing, setEditing] = useState(false)
-  const [inputs, setInputs] = useState({}) // inputs[item] = { h: number, m: number }
+  const [inputs, setInputs] = useState({})
   const [selectedItem, setSelectedItem] = useState(null)
-  const [numpadField, setNumpadField] = useState('h') // 'h' | 'm'
+  const [numpadField, setNumpadField] = useState('h')
   const [saving, setSaving] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-
-  const workingMinutes = timeDiffMins(inTime, outTime)
+  const [loadedWorkItems, setLoadedWorkItems] = useState(null)
 
   useEffect(() => {
-    if (!editing) return
+    getWorkReport(user.id, dateStr).then(items => setLoadedWorkItems(items))
+  }, [user.id, dateStr])
+
+  useEffect(() => {
+    if (!editing || loadedWorkItems === null) return
     const initial = {}
-    parseWorkType(entry?.workType || '').forEach(({ type, mins }) => {
-      if (mins != null) initial[type] = { h: Math.floor(mins / 60), m: mins % 60 }
+    Object.entries(loadedWorkItems).forEach(([type, mins]) => {
+      initial[type] = { h: Math.floor(mins / 60), m: mins % 60 }
     })
     setInputs(initial)
     setSelectedItem(editableItems[0] || null)
@@ -199,18 +167,10 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
   const getHM = item => inputs[item] || { h: 0, m: 0 }
   const currentH = getHM(selectedItem).h ?? 0
   const currentM = getHM(selectedItem).m ?? 0
-  const currentValue = currentH * 60 + currentM
-
-  const otherMins = editableItems
-    .filter(i => i !== selectedItem)
-    .reduce((s, i) => { const v = getHM(i); return s + (v.h ?? 0) * 60 + (v.m ?? 0) }, 0)
-  const maxMins = workingMinutes != null ? workingMinutes - otherMins : null
-  const isOver = maxMins !== null && currentValue > maxMins
 
   const totalInputMinutes = editableItems.reduce(
     (s, item) => { const v = getHM(item); return s + (v.h ?? 0) * 60 + (v.m ?? 0) }, 0
   )
-  const headerRemaining = workingMinutes != null ? workingMinutes - totalInputMinutes : null
 
   function pressKey(k) {
     if (!selectedItem) return
@@ -232,14 +192,6 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     })
   }
 
-  function fillRemaining() {
-    if (!selectedItem || maxMins === null || maxMins <= 0) return
-    setInputs(prev => ({
-      ...prev,
-      [selectedItem]: { h: Math.floor(maxMins / 60), m: maxMins % 60 }
-    }))
-  }
-
   function handleSave() {
     setShowConfirm(true)
   }
@@ -253,7 +205,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
       if (mins > 0) workItems[item] = mins
     })
     try {
-      await updateLogWorkItems(entry.outLog.id, workItems)
+      await saveWorkReport(user.id, dateStr, workItems)
       setShowConfirm(false)
       setEditing(false)
       onSaved()
@@ -282,24 +234,26 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                 <span className={styles.modalRowLabel}>退勤</span>
                 <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
               </div>
-              <div className={styles.modalRow}>
-                <span className={styles.modalRowLabel}>勤務時間</span>
-                <span className={styles.modalRowValue}>{duration || '—'}</span>
-              </div>
-              {workTypes.length > 0 && (
+              {duration && (
+                <div className={styles.modalRow}>
+                  <span className={styles.modalRowLabel}>勤務時間</span>
+                  <span className={styles.modalRowValue}>{duration}</span>
+                </div>
+              )}
+              {loadedWorkItems && Object.keys(loadedWorkItems).length > 0 && (
                 <>
                   <div className={styles.modalDivider} />
-                  {workTypes.map(({ type, mins }) => (
+                  {Object.entries(loadedWorkItems).map(([type, mins]) => (
                     <div key={type} className={styles.modalRow}>
                       <span className={styles.modalRowLabel}>{type}</span>
-                      <span className={styles.modalRowValue}>{mins !== null ? fmtMins(mins) : '—'}</span>
+                      <span className={styles.modalRowValue}>{fmtMins(mins)}</span>
                     </div>
                   ))}
                 </>
               )}
               {canEdit && (
                 <button className={styles.editWorkBtn} onClick={() => setEditing(true)}>
-                  {workTypes.length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
+                  {loadedWorkItems && Object.keys(loadedWorkItems).length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
                 </button>
               )}
               <button className={styles.modalClose} onClick={onClose}>閉じる</button>
@@ -311,28 +265,9 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                 <div className={styles.editHeaderDate}>{year}年{month + 1}月{day}日</div>
                 <div className={styles.editHeaderStats}>
                   <span className={styles.editStatItem}>
-                    <span className={styles.editStatLabel}>勤務</span>
-                    <span className={styles.editStatValue}>
-                      {workingMinutes != null ? fmtMins(workingMinutes) : '—'}
-                    </span>
-                  </span>
-                  <span className={styles.editStatItem}>
                     <span className={styles.editStatLabel}>入力済み</span>
                     <span className={styles.editStatValue}>
                       {totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}
-                    </span>
-                  </span>
-                  <span className={styles.editStatItem}>
-                    <span className={styles.editStatLabel}>残り</span>
-                    <span className={[
-                      styles.editStatValue,
-                      headerRemaining === 0 ? styles.editStatZero :
-                      headerRemaining !== null && headerRemaining < 0 ? styles.editStatOver :
-                      styles.editStatRemaining
-                    ].join(' ')}>
-                      {headerRemaining != null
-                        ? (headerRemaining > 0 ? fmtMins(headerRemaining) : headerRemaining === 0 ? '0分' : `超過 ${fmtMins(-headerRemaining)}`)
-                        : '—'}
                     </span>
                   </span>
                 </div>
@@ -393,20 +328,6 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                     <span className={styles.hmUnit}>分</span>
                   </div>
 
-                  {/* 残りを一括入力ボタン */}
-                  <button
-                    className={[
-                      styles.fillRemainingBtnBig,
-                      (!selectedItem || maxMins === null || maxMins <= 0) ? styles.fillRemainingBtnDisabled : ''
-                    ].join(' ')}
-                    disabled={!selectedItem || maxMins === null || maxMins <= 0}
-                    onClick={fillRemaining}
-                  >
-                    {maxMins !== null && maxMins > 0
-                      ? `残り${fmtMins(maxMins)}を入力`
-                      : '残り全てを入力'}
-                  </button>
-
                   <div className={styles.timeNumGrid}>
                     {NUM_KEYS.map((k, i) => (
                       <button
@@ -420,12 +341,6 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                       >{k}</button>
                     ))}
                   </div>
-
-                  {isOver && (
-                    <div className={styles.minsError}>
-                      残り時間を{currentValue - maxMins}分超えています
-                    </div>
-                  )}
 
                   <div className={styles.editRightActions}>
                     <button className={styles.editCancelBtn} onClick={() => setEditing(false)}>
@@ -444,7 +359,6 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
           year={year}
           month={month}
           day={day}
-          workingMinutes={workingMinutes}
           totalInputMinutes={totalInputMinutes}
           editableItems={editableItems}
           inputs={inputs}
@@ -519,10 +433,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
             const worked = !!inTime
             const dow = new Date(year, month, d).getDay()
-            const hasNoWorkType =
-              entry?.outLog && !entry.workType &&
-              user?.employeeType !== 'salaried' &&
-              (user?.workItems || []).filter(i => !CLOCK_OUT_HIDDEN.has(i)).length > 0
+            const hasNoWorkType = false
             return (
               <div
                 key={d}
