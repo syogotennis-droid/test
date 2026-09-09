@@ -7,7 +7,8 @@ import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, setApprovedTime, setFirstLastWork, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
-  getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth
+  getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
+  saveWorkReport, getWorkReport, migrateSessionWorkToReports
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -861,24 +862,14 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
   const dow = new Date(year, month, day).getDay()
   const dateLabel = `${year}年${month + 1}月${day}日（${DOW_LABELS[dow]}）`
-
   const hasExisting = dayLogs.length > 0
+  const isSalaried = user?.employeeType === 'salaried'
 
   function initHM(timeStr) {
     if (!timeStr) return { h: '', m: '' }
     const [hStr, mStr] = timeStr.split(':')
     const hv = parseInt(hStr), mv = parseInt(mStr)
     return { h: isNaN(hv) ? '' : String(hv), m: isNaN(mv) ? '' : String(mv) }
-  }
-
-  function parseWorkTypeToRows(wtStr) {
-    if (!wtStr) return []
-    return wtStr.split(',').map(e => {
-      const [type, minsStr] = e.split(':')
-      if (!type?.trim()) return null
-      const mins = parseInt(minsStr) || 0
-      return { item: type.trim(), h: Math.floor(mins / 60), m: mins % 60 }
-    }).filter(Boolean)
   }
 
   function initSessions() {
@@ -891,50 +882,40 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       } else if (log.log_type === '退勤') {
         const inHM = initHM(pendingIn?.time?.substring(0, 5))
         const outHM = initHM(log.time?.substring(0, 5))
-        const workRows = parseWorkTypeToRows(log.work_type || '')
         result.push({ inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
           origInTime: pendingIn?.time?.substring(0, 5) || '',
-          origOutTime: log.time?.substring(0, 5) || '',
-          firstWork: log.first_work || null, lastWork: log.last_work || null, workRows })
+          origOutTime: log.time?.substring(0, 5) || '' })
         pendingIn = null
       }
     }
     if (pendingIn) {
       const inHM = initHM(pendingIn.time?.substring(0, 5))
       result.push({ inH: inHM.h, inM: inHM.m, outH: '', outM: '',
-        origInTime: pendingIn.time?.substring(0, 5) || '', origOutTime: '',
-        firstWork: null, lastWork: null, workRows: [] })
+        origInTime: pendingIn.time?.substring(0, 5) || '', origOutTime: '' })
     }
-    if (result.length === 0) result.push({ inH: '', inM: '', outH: '', outM: '', origInTime: '', origOutTime: '', firstWork: null, lastWork: null, workRows: [] })
+    if (result.length === 0) result.push({ inH: '', inM: '', outH: '', outM: '', origInTime: '', origOutTime: '' })
     return result
   }
 
   const [sessions, setSessions] = useState(() => initSessions())
+  const [workItems, setWorkItems] = useState({}) // { [workType]: minutes }
+  const [workItemsLoaded, setWorkItemsLoaded] = useState(false)
   const [step, setStep] = useState('form')
   const [saving, setSaving] = useState(false)
   const [editingTimeField, setEditingTimeField] = useState(null)
-  const [collapsedSessions, setCollapsedSessions] = useState(() => new Set())
 
   useEffect(() => {
-    const toCollapse = new Set()
-    sessions.forEach((s, si) => {
-      const inT = hmToTimeStr(s.inH, s.inM)
-      const outT = hmToTimeStr(s.outH, s.outM)
-      if (!inT || !outT) return
-      const [h1, m1] = inT.split(':').map(Number)
-      const [h2, m2] = outT.split(':').map(Number)
-      const sesMins = (h2 * 60 + m2) - (h1 * 60 + m1)
-      if (sesMins <= 0) return
-      const allocatedMins = s.workRows.reduce((sum, r) => sum + r.h * 60 + r.m, 0)
-      if (allocatedMins > 0 && allocatedMins === sesMins) toCollapse.add(si)
+    if (isSalaried) { setWorkItemsLoaded(true); return }
+    getWorkReport(user.id, dateStr).then(items => {
+      setWorkItems(items)
+      setWorkItemsLoaded(true)
     })
-    if (toCollapse.size > 0) setCollapsedSessions(toCollapse)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const isSalaried = user?.employeeType === 'salaried'
+  }, [user.id, dateStr, isSalaried])
 
   const firstInHRef = useRef(null)
   useEffect(() => { setTimeout(() => firstInHRef.current?.focus(), 60) }, [])
+
+  const userWorkItems = useMemo(() => getWorkItemsForUser(user?.workItems), [user])
 
   function hmToTimeStr(h, m) {
     if (h === '') return ''
@@ -950,52 +931,32 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   }
 
   function addSession() {
-    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', firstWork: null, lastWork: null, workRows: [] }])
+    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', origInTime: '', origOutTime: '' }])
   }
 
   function removeSession(si) {
     setSessions(prev => prev.filter((_, i) => i !== si))
-    setCollapsedSessions(prev => new Set([...prev].filter(i => i !== si).map(i => i > si ? i - 1 : i)))
   }
 
-  function addWorkRow(si) {
-    const firstItem = userWorkItems[0] || ''
-    setSessions(prev => prev.map((s, i) => i !== si ? s : { ...s, workRows: [...s.workRows, { item: firstItem, h: 0, m: 0 }] }))
-  }
-
-  function updateWorkRow(si, ri, field, val) {
-    setSessions(prev => prev.map((s, i) => i !== si ? s : { ...s, workRows: s.workRows.map((r, j) => j !== ri ? r : { ...r, [field]: val }) }))
-  }
-
-  function removeWorkRow(si, ri) {
-    setSessions(prev => prev.map((s, i) => i !== si ? s : { ...s, workRows: s.workRows.filter((_, j) => j !== ri) }))
-  }
-
-  function fillRemainingIntoRow(si, ri) {
-    setSessions(prev => {
-      const s = prev[si]
-      const inT = hmToTimeStr(s.inH, s.inM)
-      const outT = hmToTimeStr(s.outH, s.outM)
-      if (!inT || !outT) return prev
-      const [h1, m1] = inT.split(':').map(Number)
-      const [h2, m2] = outT.split(':').map(Number)
-      const sesMins = (h2 * 60 + m2) - (h1 * 60 + m1)
-      if (sesMins <= 0) return prev
-      const otherMins = s.workRows.filter((_, j) => j !== ri).reduce((sum, r) => sum + r.h * 60 + r.m, 0)
-      const rem = Math.max(0, sesMins - otherMins)
-      return prev.map((sess, i) => i !== si ? sess : {
-        ...sess,
-        workRows: sess.workRows.map((r, j) => j !== ri ? r : { ...r, h: Math.floor(rem / 60), m: rem % 60 })
-      })
+  function setWorkItemTime(type, field, val) {
+    setWorkItems(prev => {
+      const cur = prev[type] || { h: 0, m: 0 }
+      const updated = { ...cur, [field]: val }
+      if (updated.h === 0 && updated.m === 0) {
+        const copy = { ...prev }; delete copy[type]; return copy
+      }
+      return { ...prev, [type]: updated }
     })
   }
 
-  function toggleCollapse(si) {
-    setCollapsedSessions(prev => {
-      const next = new Set(prev)
-      if (next.has(si)) next.delete(si); else next.add(si)
-      return next
-    })
+  function addWorkItemRow() {
+    const unused = userWorkItems.find(item => !workItems[item])
+    if (!unused) return
+    setWorkItems(prev => ({ ...prev, [unused]: { h: 0, m: 0 } }))
+  }
+
+  function removeWorkItem(type) {
+    setWorkItems(prev => { const copy = { ...prev }; delete copy[type]; return copy })
   }
 
   const sessionTimes = sessions.map(s => ({
@@ -1003,63 +964,13 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     outTime: hmToTimeStr(s.outH, s.outM),
   }))
 
-  const sessionStats = sessions.map((s, si) => {
-    const { inTime, outTime } = sessionTimes[si]
-    let sessionMins = null
-    if (inTime && outTime) {
-      const [h1, m1] = inTime.split(':').map(Number)
-      const [h2, m2] = outTime.split(':').map(Number)
-      const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
-      if (diff > 0) sessionMins = diff
-    }
-    const allocatedMins = s.workRows.reduce((sum, r) => sum + r.h * 60 + r.m, 0)
-    const remaining = sessionMins !== null ? sessionMins - allocatedMins : null
-    const complete = sessionMins !== null && remaining === 0 && allocatedMins > 0
-    const exceeded = sessionMins !== null && allocatedMins > sessionMins
-    return { sessionMins, allocatedMins, remaining, complete, exceeded }
-  })
-
-  const workingMinutes = useMemo(() => {
-    let total = 0
-    for (const { inTime, outTime } of sessionTimes) {
-      if (!inTime || !outTime) continue
-      const [h1, m1] = inTime.split(':').map(Number)
-      const [h2, m2] = outTime.split(':').map(Number)
-      const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
-      if (diff > 0) total += diff
-    }
-    return total > 0 ? total : null
-  }, [JSON.stringify(sessionTimes)])
-
-  const userWorkItems = useMemo(() => getWorkItemsForUser(user?.workItems), [user])
-  const hasAnyOut = sessionTimes.some(st => st.outTime)
   const hasAnyTime = sessionTimes.some(st => st.inTime || st.outTime)
+  const canSave = hasAnyTime
 
-  const allSessionsComplete = sessions.every((s, si) => {
-    const { outTime } = sessionTimes[si]
-    if (!outTime) return true
-    const stats = sessionStats[si]
-    return stats.sessionMins === null || stats.complete
-  })
-  const isAnyExceeded = sessionStats.some(st => st.exceeded)
-
-  const dayWorkTypeTotals = {}
-  sessions.forEach(s => {
-    s.workRows.forEach(r => {
-      if (r.item) dayWorkTypeTotals[r.item] = (dayWorkTypeTotals[r.item] || 0) + r.h * 60 + r.m
-    })
-  })
-  const totalAllocatedMins = Object.values(dayWorkTypeTotals).reduce((s, m) => s + m, 0)
-
-  const canSave = isSalaried ? hasAnyTime : (hasAnyTime && !isAnyExceeded && (workingMinutes === null || allSessionsComplete))
-
-  function buildSessionWorkTypeStr(si) {
-    if (isSalaried) return ''
-    return sessions[si].workRows
-      .filter(r => r.item && (r.h > 0 || r.m > 0))
-      .map(r => `${r.item}:${r.h * 60 + r.m}`)
-      .join(',')
-  }
+  const totalWorkMins = Object.values(workItems).reduce((sum, t) => {
+    if (typeof t === 'object') return sum + (t.h || 0) * 60 + (t.m || 0)
+    return sum + (Number(t) || 0)
+  }, 0)
 
   async function handleConfirm() {
     if (saving) return
@@ -1068,7 +979,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     for (let si = 0; si < sessions.length; si++) {
       const { inTime, outTime } = sessionTimes[si]
       if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
-      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: buildSessionWorkTypeStr(si), firstWork: sessions[si].firstWork || null, lastWork: sessions[si].lastWork || null })
+      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: '' })
+    }
+    if (!isSalaried) {
+      const flatItems = {}
+      Object.entries(workItems).forEach(([type, t]) => {
+        const mins = typeof t === 'object' ? (t.h || 0) * 60 + (t.m || 0) : Number(t) || 0
+        if (mins > 0) flatItems[type] = mins
+      })
+      await saveWorkReport(user.id, dateStr, flatItems)
     }
     onSaved()
   }
@@ -1092,194 +1011,114 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalBody}>
-              {sessions.map((s, si) => {
-                const { inTime, outTime } = sessionTimes[si]
-                const stats = sessionStats[si]
-                const isCollapsed = collapsedSessions.has(si)
-                const sessionLabel = sessions.length > 1 ? `${si + 1}回目` : '勤務'
-                const inHInvalid = s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)
-                const inMInvalid = s.inM !== '' && parseInt(s.inM) > 59
-                const outHInvalid = s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)
-                const outMInvalid = s.outM !== '' && parseInt(s.outM) > 59
-                const sessionWorkItems = s.workRows.map(r => r.item).filter((v, i, a) => v && a.indexOf(v) === i)
-
-                return (
-                  <div key={si} className={styles.dayEditCard}>
-                    {/* Card header — always visible, click to collapse/expand */}
-                    <div className={styles.dayEditCardHeader} onClick={() => toggleCollapse(si)} style={{ cursor: 'pointer' }}>
-                      <div className={styles.dayEditCardCollapseArea}>
+              {/* ── セクション1: QR打刻記録 ── */}
+              <div className={styles.dayEditSection}>
+                <div className={styles.dayEditSectionTitle}>QR打刻記録</div>
+                {sessions.map((s, si) => {
+                  const { inTime, outTime } = sessionTimes[si]
+                  const sessionLabel = sessions.length > 1 ? `${si + 1}回目` : '勤務'
+                  const inHInvalid = s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)
+                  const inMInvalid = s.inM !== '' && parseInt(s.inM) > 59
+                  const outHInvalid = s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)
+                  const outMInvalid = s.outM !== '' && parseInt(s.outM) > 59
+                  return (
+                    <div key={si} className={styles.dayEditCard}>
+                      <div className={styles.dayEditCardHeader}>
                         <span className={styles.dayEditSessionLabel}>{sessionLabel}</span>
-                        {(s.origInTime || s.origOutTime) ? (
+                        {(s.origInTime || s.origOutTime) && (
                           <span className={styles.dayEditTimeRange}>
                             打刻 {s.origInTime || '──:──'}{s.origOutTime ? `～${s.origOutTime}` : ''}
                           </span>
-                        ) : (inTime || outTime) ? (
-                          <span className={styles.dayEditTimeRange}>
-                            {inTime || '──:──'}{outTime ? `～${outTime}` : ''}
-                          </span>
-                        ) : null}
-                        {isCollapsed && s.workRows.some(r => r.h > 0 || r.m > 0) && (
-                          <span className={styles.dayEditCollapsedSummary}>
-                            {s.workRows.filter(r => r.h > 0 || r.m > 0).map(r => `${r.item} ${fmtMinutes(r.h * 60 + r.m)}`).join(' / ')}
-                          </span>
                         )}
-                        {!outTime ? (
-                          <span className={styles.sessionStatusIncomplete}>打刻未完了</span>
-                        ) : stats.exceeded ? (
-                          <span className={styles.sessionStatusOver}>{fmtMinutes(stats.allocatedMins - stats.sessionMins)}超過</span>
-                        ) : stats.complete ? (
-                          <span className={styles.sessionStatusDone}>割当完了</span>
-                        ) : (stats.remaining !== null && stats.remaining > 0) ? (
-                          <span className={styles.sessionStatusRemaining}>残り{fmtMinutes(stats.remaining)}</span>
-                        ) : null}
-                        <span className={styles.dayEditCollapseIcon}>{isCollapsed ? '▼' : '▲'}</span>
-                      </div>
-                      <div className={styles.dayEditCardBtns} onClick={e => e.stopPropagation()}>
+                        {!outTime && <span className={styles.sessionStatusIncomplete}>退勤未打刻</span>}
                         {sessions.length > 1 && (
                           <button className={styles.sessionRemoveBtn} onClick={() => removeSession(si)}>✕</button>
                         )}
                       </div>
-                    </div>
-
-                    {!isCollapsed && (
-                      <div className={[styles.dayEditCardContent, isSalaried ? styles.dayEditSingle : ''].join(' ')}>
-                        {/* LEFT: time inputs */}
-                        <div className={styles.dayEditLeft}>
-                          {(s.origInTime || s.origOutTime) && (inTime !== s.origInTime || outTime !== s.origOutTime) && (
-                            <div className={styles.punchTimeDisplay}>
-                              <span className={styles.punchTimeLabel}>打刻時間</span>
-                              <span className={styles.punchTimeValue}>{s.origInTime || '──:──'} ～ {s.origOutTime || '──:──'}</span>
-                            </div>
-                          )}
-
-                          <div className={styles.timeInputRow}>
-                            <span className={styles.timeInputLabel}>出勤時刻</span>
-                            {isTablet ? (
-                              <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
-                            ) : (
-                              <div className={styles.timeHmRow}>
-                                <input ref={si === 0 ? firstInHRef : null} type="text" inputMode="numeric" maxLength={2} value={s.inH}
-                                  onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.timeHmNumPc, inHInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
-                                <span className={styles.timeHmUnitPc}>時</span>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.inM}
-                                  onChange={e => updateSession(si, 'inM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.timeHmNumPc, inMInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
-                                <span className={styles.timeHmUnitPc}>分</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className={styles.timeInputRow}>
-                            <span className={styles.timeInputLabel}>退勤時刻</span>
-                            {isTablet ? (
-                              <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'out' })}>{outTime || '──:──'}</button>
-                            ) : (
-                              <div className={styles.timeHmRow}>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.outH}
-                                  onChange={e => updateSession(si, 'outH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.timeHmNumPc, outHInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
-                                <span className={styles.timeHmUnitPc}>時</span>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.outM}
-                                  onChange={e => updateSession(si, 'outM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.timeHmNumPc, outMInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
-                                <span className={styles.timeHmUnitPc}>分</span>
-                              </div>
-                            )}
-                          </div>
-
-                          {stats.sessionMins !== null && (
-                            <div className={styles.sessionWorkTimeRow}>
-                              勤務時間：<strong>{fmtMinutes(stats.sessionMins)}</strong>
-                            </div>
-                          )}
-
-                          {outTime && !isSalaried && (
-                            <div className={styles.boundarySection}>
-                              <div className={styles.boundarySectionTitle}>時間調整</div>
-                              {sessionWorkItems.filter(item => item !== '休憩').length === 0 ? (
-                                <div className={styles.boundaryNone}>割り振り業務がありません</div>
-                              ) : (
-                                <>
-                                  <div className={styles.boundaryRow}>
-                                    <span className={styles.boundaryLabel}>開始側</span>
-                                    <select className={styles.boundarySelect} value={s.firstWork || ''} onChange={e => updateSession(si, 'firstWork', e.target.value || null)}>
-                                      <option value="">なし</option>
-                                      {sessionWorkItems.filter(item => item !== '休憩').map(item => <option key={item} value={item}>{item}</option>)}
-                                    </select>
-                                  </div>
-                                  <div className={styles.boundaryRow}>
-                                    <span className={styles.boundaryLabel}>終了側</span>
-                                    <select className={styles.boundarySelect} value={s.lastWork || ''} onChange={e => updateSession(si, 'lastWork', e.target.value || null)}>
-                                      <option value="">なし</option>
-                                      {sessionWorkItems.filter(item => item !== '休憩').map(item => <option key={item} value={item}>{item}</option>)}
-                                    </select>
-                                  </div>
-                                </>
-                              )}
+                      <div className={styles.dayEditCardContent}>
+                        <div className={styles.timeInputRow}>
+                          <span className={styles.timeInputLabel}>出勤</span>
+                          {isTablet ? (
+                            <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
+                          ) : (
+                            <div className={styles.timeHmRow}>
+                              <input ref={si === 0 ? firstInHRef : null} type="text" inputMode="numeric" maxLength={2} value={s.inH}
+                                onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+                                onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+                                className={[styles.timeHmNumPc, inHInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
+                              <span className={styles.timeHmUnitPc}>時</span>
+                              <input type="text" inputMode="numeric" maxLength={2} value={s.inM}
+                                onChange={e => updateSession(si, 'inM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+                                onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+                                className={[styles.timeHmNumPc, inMInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
+                              <span className={styles.timeHmUnitPc}>分</span>
                             </div>
                           )}
                         </div>
-
-                        {/* RIGHT: work allocation */}
-                        {!isSalaried && (
-                          <div className={styles.dayEditRight}>
-                            <div className={styles.dayEditRightLabel}>業務割り振り</div>
-                            {stats.sessionMins !== null && (
-                              <div className={styles.sessionStatBoxes}>
-                                <div className={styles.sessionStatBox}>
-                                  <div className={styles.sessionStatBoxLabel}>勤務時間</div>
-                                  <div className={styles.sessionStatBoxValue}>{fmtMinutes(stats.sessionMins)}</div>
-                                </div>
-                                <div className={styles.sessionStatBox}>
-                                  <div className={styles.sessionStatBoxLabel}>割当済み</div>
-                                  <div className={styles.sessionStatBoxValue}>{fmtMinutes(stats.allocatedMins)}</div>
-                                </div>
-                                <div className={[styles.sessionStatBox, stats.exceeded ? styles.sessionStatBoxOver : stats.complete ? styles.sessionStatBoxDone : (stats.remaining !== null && stats.remaining > 0) ? styles.sessionStatBoxRemaining : ''].join(' ')}>
-                                  <div className={styles.sessionStatBoxLabel}>残り時間</div>
-                                  <div className={styles.sessionStatBoxValue}>
-                                    {stats.exceeded ? `-${fmtMinutes(stats.allocatedMins - stats.sessionMins)}` : fmtMinutes(stats.remaining ?? 0)}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            <div className={styles.workRowList}>
-                              {s.workRows.map((row, ri) => (
-                                <div key={ri} className={styles.workRowItem}>
-                                  <select className={styles.workRowSelect} value={row.item} onChange={e => updateWorkRow(si, ri, 'item', e.target.value)}>
-                                    {userWorkItems.map(item => <option key={item} value={item}>{item}</option>)}
-                                  </select>
-                                  <input type="number" min="0" className={styles.workRowNum} value={row.h > 0 ? row.h : ''} placeholder="0"
-                                    onChange={e => updateWorkRow(si, ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                                    onFocus={e => e.target.select()} />
-                                  <span className={styles.workRowUnit}>時間</span>
-                                  <input type="number" min="0" max="59" className={styles.workRowNum} value={row.m > 0 ? row.m : ''} placeholder="0"
-                                    onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')) || 0; if (n > 59) return; updateWorkRow(si, ri, 'm', n) }}
-                                    onFocus={e => e.target.select()} />
-                                  <span className={styles.workRowUnit}>分</span>
-                                  {stats.sessionMins !== null && stats.remaining !== null && stats.remaining > 0 && (
-                                    <button className={styles.workRowFillBtn} onClick={() => fillRemainingIntoRow(si, ri)}>
-                                      残り{fmtMinutes(stats.remaining)}を入力
-                                    </button>
-                                  )}
-                                  <button className={styles.workRowDelBtn} onClick={() => removeWorkRow(si, ri)}>×</button>
-                                </div>
-                              ))}
+                        <div className={styles.timeInputRow}>
+                          <span className={styles.timeInputLabel}>退勤</span>
+                          {isTablet ? (
+                            <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'out' })}>{outTime || '──:──'}</button>
+                          ) : (
+                            <div className={styles.timeHmRow}>
+                              <input type="text" inputMode="numeric" maxLength={2} value={s.outH}
+                                onChange={e => updateSession(si, 'outH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+                                onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+                                className={[styles.timeHmNumPc, outHInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
+                              <span className={styles.timeHmUnitPc}>時</span>
+                              <input type="text" inputMode="numeric" maxLength={2} value={s.outM}
+                                onChange={e => updateSession(si, 'outM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+                                onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+                                className={[styles.timeHmNumPc, outMInvalid ? styles.timeHmNumPcErr : ''].join(' ')} />
+                              <span className={styles.timeHmUnitPc}>分</span>
                             </div>
-                            <button className={styles.addWorkRowBtn} onClick={() => addWorkRow(si)}>＋ 業務を追加</button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )
-              })}
+                    </div>
+                  )
+                })}
+                <button className={styles.addSessionBtn} onClick={addSession}>＋ セッション追加</button>
+              </div>
 
-              <button className={styles.addSessionBtn} onClick={addSession}>＋ セッション追加</button>
+              {/* ── セクション2: 業務時間申告（時給従業員のみ） ── */}
+              {!isSalaried && (
+                <div className={styles.dayEditSection}>
+                  <div className={styles.dayEditSectionTitle}>業務時間申告</div>
+                  {!workItemsLoaded ? (
+                    <div className={styles.dayEditSectionLoading}>読込中...</div>
+                  ) : (
+                    <>
+                      <div className={styles.workRowList}>
+                        {Object.entries(workItems).map(([type, t]) => {
+                          const h = typeof t === 'object' ? (t.h || 0) : 0
+                          const m = typeof t === 'object' ? (t.m || 0) : 0
+                          return (
+                            <div key={type} className={styles.workRowItem}>
+                              <span className={styles.workRowTypeName}>{type}</span>
+                              <input type="number" min="0" className={styles.workRowNum} value={h > 0 ? h : ''} placeholder="0"
+                                onChange={e => setWorkItemTime(type, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                                onFocus={e => e.target.select()} />
+                              <span className={styles.workRowUnit}>時間</span>
+                              <input type="number" min="0" max="59" className={styles.workRowNum} value={m > 0 ? m : ''} placeholder="0"
+                                onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')) || 0; if (n > 59) return; setWorkItemTime(type, 'm', n) }}
+                                onFocus={e => e.target.select()} />
+                              <span className={styles.workRowUnit}>分</span>
+                              <button className={styles.workRowDelBtn} onClick={() => removeWorkItem(type)}>×</button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {userWorkItems.some(item => !workItems[item]) && (
+                        <button className={styles.addWorkRowBtn} onClick={addWorkItemRow}>＋ 業務を追加</button>
+                      )}
+                      {totalWorkMins > 0 && (
+                        <div className={styles.workItemsTotal}>合計：{fmtMinutes(totalWorkMins)}</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               {isTablet && editingTimeField && (
                 <TimeNumpadOverlay
@@ -1299,18 +1138,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 />
               )}
 
-              {!isSalaried && hasAnyOut && (
-                <div className={styles.daySummaryPanel}>
-                  <div className={styles.daySummaryTitle}>1日合計</div>
-                  {workingMinutes !== null && (
-                    <div className={styles.daySummaryRow}><span>勤務時間合計</span><strong>{fmtMinutes(workingMinutes)}</strong></div>
-                  )}
-                  {Object.entries(dayWorkTypeTotals).filter(([, m]) => m > 0).map(([type, mins]) => (
-                    <div key={type} className={styles.daySummaryRow}><span>{type}</span><strong>{fmtMinutes(mins)}</strong></div>
-                  ))}
-                </div>
-              )}
-
               {hasExisting && (
                 <>
                   <hr className={styles.modalDivider} />
@@ -1321,11 +1148,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
             <div className={styles.modalFooter}>
               {!hasAnyTime && <span className={styles.modalSaveHint}>出勤または退勤時刻を入力してください</span>}
-              {!isSalaried && hasAnyTime && workingMinutes !== null && (
-                <span className={[styles.footerStatus, allSessionsComplete && !isAnyExceeded ? styles.footerStatusDone : isAnyExceeded ? styles.footerStatusOver : ''].join(' ')}>
-                  {isAnyExceeded ? '超過あり' : allSessionsComplete ? '入力完了' : `1日全体の未割当：${fmtMinutes(workingMinutes - totalAllocatedMins)}`}
-                </span>
-              )}
               <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
               <button className={styles.saveBtn} onClick={() => setStep('confirm')} disabled={!canSave}>保存する</button>
             </div>
@@ -1348,24 +1170,16 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     <React.Fragment key={si}>
                       {inTime && <div className={styles.confirmRow}><span>{label}出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
                       {outTime && <div className={styles.confirmRow}><span>{label}退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
-                      {!isSalaried && outTime && s.workRows.filter(r => r.h > 0 || r.m > 0).map(r => (
-                        <div key={`${si}-${r.item}`} className={styles.confirmRow}>
-                          <span>{label}{r.item}</span>
-                          <strong>{fmtMinutes(r.h * 60 + r.m)}</strong>
-                        </div>
-                      ))}
                     </React.Fragment>
                   )
                 })}
-                {workingMinutes !== null && <div className={styles.confirmRow}><span>勤務時間合計</span><strong>{fmtMinutes(workingMinutes)}</strong></div>}
-                {!isSalaried && sessions.length > 1 && Object.entries(dayWorkTypeTotals).filter(([, m]) => m > 0).length > 0 && (
-                  <>
-                    <div className={styles.confirmSubhead}>業務別合計</div>
-                    {Object.entries(dayWorkTypeTotals).filter(([, m]) => m > 0).map(([type, mins]) => (
-                      <div key={type} className={styles.confirmRow}><span>{type} 合計</span><strong>{fmtMinutes(mins)}</strong></div>
-                    ))}
-                  </>
-                )}
+                {!isSalaried && Object.entries(workItems).filter(([, t]) => {
+                  const mins = typeof t === 'object' ? (t.h || 0) * 60 + (t.m || 0) : Number(t) || 0
+                  return mins > 0
+                }).map(([type, t]) => {
+                  const mins = typeof t === 'object' ? (t.h || 0) * 60 + (t.m || 0) : Number(t) || 0
+                  return <div key={type} className={styles.confirmRow}><span>{type}</span><strong>{fmtMinutes(mins)}</strong></div>
+                })}
               </div>
               {hasExisting && <p className={styles.confirmWarn}>既存の記録を上書きします</p>}
             </div>
