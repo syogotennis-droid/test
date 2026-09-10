@@ -470,8 +470,9 @@ function CalendarTab({ users, today, isTablet }) {
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
-      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to).catch(() => ({}))
     ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [selectedUser, year, month])
 
   function refreshLogs() {
@@ -481,8 +482,9 @@ function CalendarTab({ users, today, isTablet }) {
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
-      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to).catch(() => ({}))
     ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus) })
+      .catch(() => {})
   }
 
   const days = getCalendarDays(year, month)
