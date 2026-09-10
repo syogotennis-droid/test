@@ -338,7 +338,7 @@
 .calCard {
   display: flex;
   flex-direction: column;
-  width: calc(100% - 48px);
+  width: calc(100% - 32px);
   max-width: 1500px;
   margin: 16px auto 24px;
   background: #fff;
@@ -348,6 +348,13 @@
   overflow: hidden;
   box-sizing: border-box;
   min-width: 0;
+}
+/* Use overflow:clip where supported (prevents horizontal clipping of last column at non-100% zoom).
+   Falls back to overflow:hidden above in browsers that don't support clip. */
+@supports (overflow: clip) {
+  .calCard {
+    overflow: clip;
+  }
 }
 
 /* ─── Calendar nav bar ─── */
@@ -403,6 +410,9 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 1px;
   background: #b8c5d0;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .calDayLabel {
@@ -424,8 +434,7 @@
 
 .calCell {
   background: #fff;
-  padding: 4px 6px 5px;
-  min-height: 82px;
+  padding: 4px 5px 5px;
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -434,6 +443,7 @@
   transition: background 0.12s;
   min-width: 0;
   position: relative;
+  box-sizing: border-box;
 }
 
 .calCell:hover { background: #eef4ff; }
@@ -4928,3 +4938,74 @@
   }
 }
 .salDayInput:focus { border-color: #2563eb; outline: none; }
+
+/* ─── Narrow viewport (≤1100px CSS px = 125% zoom on 1366px) ─── */
+@media (max-width: 1100px) {
+  /* Compact sidebar: icons only */
+  .sidebar {
+    width: 60px;
+  }
+  .sidebarHeader {
+    justify-content: center;
+    padding: 0 8px;
+    gap: 0;
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  .sidebarHeader svg {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+  }
+  .sidebarItem {
+    justify-content: center;
+    padding: 0;
+    gap: 0;
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  .sidebarItem svg {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+  }
+  .sidebarBackBtn {
+    justify-content: center;
+    padding: 0;
+    gap: 0;
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  .sidebarBackBtn svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Tighter calendar card margins */
+  .calCard {
+    width: calc(100% - 16px);
+    margin: 10px auto 16px;
+  }
+
+  /* Smaller session row font */
+  .calSessionRow {
+    font-size: 11px;
+  }
+  .calSessionNum {
+    font-size: 11px;
+  }
+
+  /* Smaller work badge font */
+  .calWorkBadgeGreen,
+  .calWorkBadgeOrange,
+  .calWorkBadgeBlue,
+  .calWorkBadgeRed {
+    font-size: 9px;
+  }
+
+  /* Smaller count label */
+  .calCountLabel {
+    font-size: 10px;
+  }
+}
