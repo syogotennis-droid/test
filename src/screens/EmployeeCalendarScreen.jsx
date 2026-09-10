@@ -229,11 +229,11 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
               <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
               <div className={styles.modalRow}>
                 <span className={styles.modalRowLabel}>出勤</span>
-                <span className={styles.modalRowValue} style={{ color: '#2e7d32' }}>{inTime || '—'}</span>
+                <span className={styles.modalRowValue}>{inTime || '—'}</span>
               </div>
               <div className={styles.modalRow}>
                 <span className={styles.modalRowLabel}>退勤</span>
-                <span className={styles.modalRowValue} style={{ color: '#c62828' }}>{outTime || '—'}</span>
+                <span className={styles.modalRowValue}>{outTime || '—'}</span>
               </div>
               {duration && (
                 <div className={styles.modalRow}>
