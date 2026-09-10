@@ -208,7 +208,7 @@ export async function resolveUserByPin(pin) {
   return { id: d.id, ...d.data() }
 }
 
-export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork }) {
+export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork, sessionId: providedSessionId }) {
   const now = new Date()
   const timestamp = now.toISOString()
   const date = now.toLocaleDateString('ja-JP', {
@@ -220,6 +220,7 @@ export async function saveLog({ userId, workType, workItems, logType, transportC
   const workTypeStr = workItems
     ? Object.entries(workItems).filter(([, m]) => m > 0).map(([t, m]) => `${t}:${m}`).join(',')
     : (workType || '')
+  const sessionId = providedSessionId || crypto.randomUUID()
   const logData = {
     user_id: userId,
     work_type: workTypeStr,
@@ -227,14 +228,15 @@ export async function saveLog({ userId, workType, workItems, logType, transportC
     timestamp,
     date,
     time,
-    synced: 0
+    synced: 0,
+    session_id: sessionId
   }
   if (workItems) logData.work_items = workItems
   if (transportCount) logData.transport_count = transportCount
   if (firstWork) logData.first_work = firstWork
   if (lastWork) logData.last_work = lastWork
   const ref = await addDoc(logsCol, logData)
-  return ref.id
+  return { id: ref.id, sessionId }
 }
 
 export async function setFirstLastWork(logId, firstWork, lastWork) {
@@ -296,6 +298,52 @@ export async function getWorkReportsForRange(dateFrom, dateTo) {
   const result = {}
   snap.docs.forEach(d => { result[d.id] = d.data().items || {} })
   return result
+}
+
+export function generateSessionId() {
+  return crypto.randomUUID()
+}
+
+export async function saveSessionWorkReport(userId, dateStr, sessionId, items) {
+  const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
+  const docRef = doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)
+  await setDoc(docRef, { userId, date: dateStr, sessionId, items: filtered, updatedAt: new Date().toISOString() })
+}
+
+export async function getSessionWorkReportsForDate(userId, dateStr) {
+  const q = query(collection(db, 'session_work_reports'), where('userId', '==', userId), where('date', '==', dateStr))
+  const snap = await getDocs(q)
+  const result = {}
+  snap.docs.forEach(d => { result[d.data().sessionId] = d.data().items || {} })
+  return result
+}
+
+export async function getSessionWorkReportsForRange(dateFrom, dateTo) {
+  const q = query(collection(db, 'session_work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))
+  const snap = await getDocs(q)
+  const result = {}
+  snap.docs.forEach(d => {
+    const data = d.data()
+    const key = `${data.userId}_${data.date}`
+    if (!result[key]) result[key] = {}
+    Object.entries(data.items || {}).forEach(([type, mins]) => {
+      result[key][type] = (result[key][type] || 0) + (mins || 0)
+    })
+  })
+  return result
+}
+
+export async function deleteSessionWorkReport(userId, dateStr, sessionId) {
+  try { await deleteDoc(doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)) } catch {}
+}
+
+export async function deleteAllSessionWorkReportsForDate(userId, dateStr) {
+  const q = query(collection(db, 'session_work_reports'), where('userId', '==', userId), where('date', '==', dateStr))
+  const snap = await getDocs(q)
+  if (snap.docs.length === 0) return
+  const batch = writeBatch(db)
+  snap.docs.forEach(d => batch.delete(d.ref))
+  await batch.commit()
 }
 
 export async function migrateSessionWorkToReports() {
@@ -458,7 +506,7 @@ export async function getTodayStatuses() {
   return result
 }
 
-export async function saveLogManual({ userId, workType, logType, date, time, firstWork, lastWork }) {
+export async function saveLogManual({ userId, workType, logType, date, time, firstWork, lastWork, sessionId }) {
   const [y, mo, d] = date.split('-').map(Number)
   const [h, m] = time.split(':').map(Number)
   const dt = new Date(y, mo - 1, d, h, m, 0)
@@ -473,6 +521,7 @@ export async function saveLogManual({ userId, workType, logType, date, time, fir
   }
   if (firstWork) data.first_work = firstWork
   if (lastWork) data.last_work = lastWork
+  if (sessionId) data.session_id = sessionId
   await addDoc(logsCol, data)
 }
 
@@ -721,12 +770,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   }
 
   const enc = new TextEncoder()
-  const userEntries = users.filter(u =>
-    logs.some(l => l.user_id === u.id) ||
-    Object.keys(allWorkReports).some(k => k.startsWith(`${u.id}_`))
-  )
-  const sheetXmls = []
-  const summaryData = { types: {} }
 
   // Fetch overtime applications for salaried employees
   const overtimeAppsByUser = {}
@@ -752,8 +795,21 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     })
   } catch {}
 
-  // Fetch work_reports for all hourly employees in this date range
-  const allWorkReports = await getWorkReportsForRange(dateFrom || '', dateTo || '')
+  // Fetch work_reports (legacy) and session_work_reports; prefer session data over legacy
+  const legacyWorkReports = await getWorkReportsForRange(dateFrom || '', dateTo || '')
+  const sessionWorkReportsAll = await getSessionWorkReportsForRange(dateFrom || '', dateTo || '')
+  const allWorkReports = {}
+  const allWorkReportKeys = new Set([...Object.keys(legacyWorkReports), ...Object.keys(sessionWorkReportsAll)])
+  for (const key of allWorkReportKeys) {
+    allWorkReports[key] = sessionWorkReportsAll[key] || legacyWorkReports[key] || {}
+  }
+
+  const userEntries = users.filter(u =>
+    logs.some(l => l.user_id === u.id) ||
+    Object.keys(allWorkReports).some(k => k.startsWith(`${u.id}_`))
+  )
+  const sheetXmls = []
+  const summaryData = { types: {} }
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)

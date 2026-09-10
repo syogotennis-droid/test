@@ -8,7 +8,9 @@ import {
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
-  saveWorkReport, getWorkReport, migrateSessionWorkToReports, getWorkReportsForRange
+  saveWorkReport, getWorkReport, migrateSessionWorkToReports, getWorkReportsForRange,
+  generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
+  deleteSessionWorkReport, deleteAllSessionWorkReportsForDate
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -871,7 +873,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     return { h: isNaN(hv) ? '' : String(hv), m: isNaN(mv) ? '' : String(mv) }
   }
 
-  function initSessions() {
+  function buildInitialSessions() {
     const sorted = [...dayLogs].sort((a, b) => (a.time || '').localeCompare(b.time || ''))
     const result = []
     let pendingIn = null
@@ -881,48 +883,53 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       } else if (log.log_type === '退勤') {
         const inHM = initHM(pendingIn?.time?.substring(0, 5))
         const outHM = initHM(log.time?.substring(0, 5))
+        const sessionId = pendingIn?.session_id || generateSessionId()
         result.push({ inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
           origInTime: pendingIn?.time?.substring(0, 5) || '',
-          origOutTime: log.time?.substring(0, 5) || '' })
+          origOutTime: log.time?.substring(0, 5) || '',
+          sessionId })
         pendingIn = null
       }
     }
     if (pendingIn) {
       const inHM = initHM(pendingIn.time?.substring(0, 5))
       result.push({ inH: inHM.h, inM: inHM.m, outH: '', outM: '',
-        origInTime: pendingIn.time?.substring(0, 5) || '', origOutTime: '' })
+        origInTime: pendingIn.time?.substring(0, 5) || '', origOutTime: '',
+        sessionId: pendingIn.session_id || generateSessionId() })
     }
-    // No auto-empty session — start empty if no logs
     return result
   }
 
-  // workRows: [{ type, h, m }] — type='' means not yet selected
-  const [sessions, setSessions] = useState(() => initSessions())
-  const [workRows, setWorkRows] = useState([])
+  const initialSessionsRef = useRef(buildInitialSessions())
+  const [sessions, setSessions] = useState(() => initialSessionsRef.current)
+  // sessionWorkRows: { [sessionId]: [{ type, h, m }] }
+  const [sessionWorkRows, setSessionWorkRows] = useState({})
+  const [legacyWorkItems, setLegacyWorkItems] = useState({})
   const [workItemsLoaded, setWorkItemsLoaded] = useState(false)
   const [step, setStep] = useState('form')
   const [saving, setSaving] = useState(false)
   const [validationErrors, setValidationErrors] = useState([])
   const [editingTimeField, setEditingTimeField] = useState(null)
-
-  const lastWorkSelectRef = useRef(null)
-  const prevWorkRowCount = useRef(0)
-
-  useEffect(() => {
-    if (workRows.length > prevWorkRowCount.current && lastWorkSelectRef.current) {
-      lastWorkSelectRef.current.focus()
-    }
-    prevWorkRowCount.current = workRows.length
-  }, [workRows.length])
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState(null)
+  const [deletedSessionIds, setDeletedSessionIds] = useState([])
 
   useEffect(() => {
     if (isSalaried) { setWorkItemsLoaded(true); return }
-    getWorkReport(user.id, dateStr).then(items => {
-      const rows = Object.entries(items)
-        .filter(([, mins]) => mins > 0)
-        .map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
-      // Default to one empty row if no saved data (empty rows are filtered on save)
-      setWorkRows(rows.length > 0 ? rows : [{ type: '', h: 0, m: 0 }])
+    const initSess = initialSessionsRef.current
+    Promise.all([
+      getSessionWorkReportsForDate(user.id, dateStr),
+      getWorkReport(user.id, dateStr)
+    ]).then(([sessionReports, legacyItems]) => {
+      const rows = {}
+      for (const s of initSess) {
+        const items = sessionReports[s.sessionId] || {}
+        const sessionRows = Object.entries(items)
+          .filter(([, m]) => m > 0)
+          .map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
+        rows[s.sessionId] = sessionRows.length > 0 ? sessionRows : [{ type: '', h: 0, m: 0 }]
+      }
+      setSessionWorkRows(rows)
+      setLegacyWorkItems(legacyItems)
       setWorkItemsLoaded(true)
     })
   }, [user.id, dateStr, isSalaried])
@@ -941,80 +948,71 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     return `${String(hv).padStart(2, '0')}:${String(mv).padStart(2, '0')}`
   }
 
-  function updateSession(si, field, val) {
-    setSessions(prev => prev.map((s, i) => i === si ? { ...s, [field]: val } : s))
-  }
-
-  function addSession() {
-    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', origInTime: '', origOutTime: '' }])
-  }
-
-  function removeSession(si) {
-    setSessions(prev => prev.filter((_, i) => i !== si))
-  }
-
-  function updateWorkRow(ri, field, val) {
-    setWorkRows(prev => prev.map((r, i) => i === ri ? { ...r, [field]: val } : r))
-  }
-
-  function addWorkRow() {
-    setWorkRows(prev => [...prev, { type: '', h: 0, m: 0 }])
-  }
-
-  function removeWorkRow(ri) {
-    setWorkRows(prev => prev.filter((_, i) => i !== ri))
-  }
-
   const sessionTimes = sessions.map(s => ({
     inTime: hmToTimeStr(s.inH, s.inM),
     outTime: hmToTimeStr(s.outH, s.outM),
   }))
 
-  const totalWorkMins = workRows.reduce((sum, r) => {
-    return sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-  }, 0)
+  function updateSession(si, field, val) {
+    setSessions(prev => prev.map((s, i) => i === si ? { ...s, [field]: val } : s))
+  }
 
-  const selectedTypes = new Set(workRows.map(r => r.type).filter(Boolean))
-  const hasMoreWorkTypes = userWorkItems.some(t => !selectedTypes.has(t))
+  function addSession() {
+    const sessionId = generateSessionId()
+    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', origInTime: '', origOutTime: '', sessionId }])
+    setSessionWorkRows(prev => ({ ...prev, [sessionId]: [{ type: '', h: 0, m: 0 }] }))
+  }
 
-  // Punch completion status
-  const sessionStatuses = sessions.map((s, si) => {
-    const allEmpty = s.inH === '' && s.inM === '' && s.outH === '' && s.outM === ''
-    if (allEmpty) return 'empty'
-    const { inTime, outTime } = sessionTimes[si]
-    if (inTime && outTime) return 'complete'
-    return 'incomplete'
-  })
-  const nonEmptySessions = sessionStatuses.filter(st => st !== 'empty')
-  const completedSessionCount = sessionStatuses.filter(st => st === 'complete').length
-  const inProgressCount = sessionStatuses.filter(st => st === 'incomplete').length
-  let punchStatus
-  if (nonEmptySessions.length === 0) punchStatus = 'empty'
-  else if (inProgressCount > 0) {
-    punchStatus = completedSessionCount === 0 ? 'incomplete_only' : 'partial_incomplete'
-  } else punchStatus = 'allComplete'
-  // workEnabled: at least one session has a valid check-in time
-  const hasAnyCheckIn = sessions.some((s, si) => sessionTimes[si].inTime !== '')
-  const workEnabled = hasAnyCheckIn
-  const workHasData = workRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
-  // Summary bar message above both columns
-  let punchSummaryBar = null
-  if (!isSalaried && nonEmptySessions.length > 0) {
-    if (punchStatus === 'allComplete') {
-      punchSummaryBar = `QR打刻 ${nonEmptySessions.length}回（すべて完了）→ この日分の業務時間を入力`
-    } else if (punchStatus === 'incomplete_only') {
-      punchSummaryBar = `QR打刻 ${nonEmptySessions.length}回・勤務中 → この日分の業務時間は途中でも入力できます`
+  function tryRemoveSession(sessionId) {
+    const rows = sessionWorkRows[sessionId] || []
+    const hasWork = rows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+    if (hasWork) {
+      setPendingDeleteSessionId(sessionId)
+      setStep('confirmDeleteSession')
     } else {
-      punchSummaryBar = `QR打刻 ${nonEmptySessions.length}回（完了${completedSessionCount}回・勤務中${inProgressCount}回）→ この日分の業務時間を入力`
+      doRemoveSession(sessionId)
     }
   }
-  // Context note inside work column
-  let punchContextMsg = null
-  if (nonEmptySessions.length > 1) {
-    punchContextMsg = `この日のQR打刻${nonEmptySessions.length}回分の業務時間をまとめて入力します`
-  } else if (inProgressCount > 0 && completedSessionCount === 0) {
-    punchContextMsg = '現在勤務中の打刻があります。業務時間は途中でも入力できます'
+
+  function doRemoveSession(sessionId) {
+    setSessions(prev => prev.filter(s => s.sessionId !== sessionId))
+    setSessionWorkRows(prev => { const next = { ...prev }; delete next[sessionId]; return next })
+    setDeletedSessionIds(prev => [...prev, sessionId])
+    setPendingDeleteSessionId(null)
+    setStep('form')
   }
+
+  function updateWorkRow(sessionId, ri, field, val) {
+    setSessionWorkRows(prev => ({
+      ...prev,
+      [sessionId]: (prev[sessionId] || []).map((r, i) => i === ri ? { ...r, [field]: val } : r)
+    }))
+  }
+
+  function addWorkRow(sessionId) {
+    setSessionWorkRows(prev => ({
+      ...prev,
+      [sessionId]: [...(prev[sessionId] || []), { type: '', h: 0, m: 0 }]
+    }))
+  }
+
+  function removeWorkRow(sessionId, ri) {
+    setSessionWorkRows(prev => {
+      const rows = (prev[sessionId] || []).filter((_, i) => i !== ri)
+      return { ...prev, [sessionId]: rows.length > 0 ? rows : [{ type: '', h: 0, m: 0 }] }
+    })
+  }
+
+  const workHasData = sessions.some(s =>
+    (sessionWorkRows[s.sessionId] || []).some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+  )
+  const hasLegacyData = Object.values(legacyWorkItems).some(m => m > 0)
+  const hasQrSessions = dayLogs.length > 0
+  const canShowDelete = hasQrSessions || workHasData || hasLegacyData
+
+  const dayTotalMins = sessions.reduce((total, s) => {
+    return total + (sessionWorkRows[s.sessionId] || []).reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
+  }, 0)
 
   function fmtWorkTotal(mins) {
     const h = Math.floor(mins / 60), m = mins % 60
@@ -1030,22 +1028,25 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       if (s.inM !== '' && parseInt(s.inM) > 59) errs.push(`${pfx}出勤「分」は0〜59で入力してください`)
       if (s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)) errs.push(`${pfx}退勤「時」が不正です（0〜23）`)
       if (s.outM !== '' && parseInt(s.outM) > 59) errs.push(`${pfx}退勤「分」は0〜59で入力してください`)
-      // New session: only-out without in is an error
       const isNew = !s.origInTime && !s.origOutTime
       const inT = hmToTimeStr(s.inH, s.inM), outT = hmToTimeStr(s.outH, s.outM)
       if (isNew && !inT && outT) errs.push(`${pfx}出勤時刻を入力してください`)
-    }
-    const typesSeen = new Set()
-    for (let ri = 0; ri < workRows.length; ri++) {
-      const r = workRows[ri]
-      const pfx = `業務${ri + 1}行目：`
-      if (r.h !== '' && r.h !== 0 && isNaN(parseInt(r.h))) errs.push(`${pfx}時間に数値を入力してください`)
-      const mv = parseInt(r.m)
-      if (r.m !== '' && r.m !== 0 && (!isNaN(mv)) && (mv < 0 || mv > 59)) errs.push(`${pfx}分は0〜59で入力してください`)
-      if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${pfx}業務種別を選択してください`)
-      if (r.type) {
-        if (typesSeen.has(r.type)) errs.push(`「${r.type}」が複数行に登録されています`)
-        typesSeen.add(r.type)
+      if (!isSalaried) {
+        const rows = sessionWorkRows[s.sessionId] || []
+        const typesSeen = new Set()
+        const sessionPfx = sessions.length > 1 ? `${si + 1}回目 業務` : '業務'
+        for (let ri = 0; ri < rows.length; ri++) {
+          const r = rows[ri]
+          const rpfx = `${sessionPfx}${ri + 1}行目：`
+          if (r.h !== '' && r.h !== 0 && isNaN(parseInt(r.h))) errs.push(`${rpfx}時間に数値を入力してください`)
+          const mv = parseInt(r.m)
+          if (r.m !== '' && r.m !== 0 && !isNaN(mv) && (mv < 0 || mv > 59)) errs.push(`${rpfx}分は0〜59で入力してください`)
+          if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${rpfx}業務種別を選択してください`)
+          if (r.type) {
+            if (typesSeen.has(r.type)) errs.push(`${sessionPfx}：「${r.type}」が複数行に登録されています`)
+            typesSeen.add(r.type)
+          }
+        }
       }
     }
     return errs
@@ -1055,7 +1056,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const errs = validate()
     if (errs.length > 0) { setValidationErrors(errs); return }
     setValidationErrors([])
-    // Warn if all sessions cleared but work data remains
     const allSessionsCleared = sessions.length === 0 ||
       sessions.every(s => s.inH === '' && s.inM === '' && s.outH === '' && s.outM === '')
     if (allSessionsCleared && workHasData) {
@@ -1071,29 +1071,91 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     for (const log of dayLogs) await deleteLog(log.id)
     for (let si = 0; si < sessions.length; si++) {
       const { inTime, outTime } = sessionTimes[si]
-      if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '' })
-      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: '' })
+      const { sessionId } = sessions[si]
+      if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '', sessionId })
+      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: '', sessionId })
     }
     if (!isSalaried) {
-      const flatItems = {}
-      for (const r of workRows) {
-        if (!r.type) continue
-        const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-        if (mins > 0) flatItems[r.type] = mins
+      for (const s of sessions) {
+        const rows = sessionWorkRows[s.sessionId] || []
+        const items = {}
+        for (const r of rows) {
+          if (!r.type) continue
+          const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
+          if (mins > 0) items[r.type] = mins
+        }
+        await saveSessionWorkReport(user.id, dateStr, s.sessionId, items)
       }
-      await saveWorkReport(user.id, dateStr, flatItems)
+      for (const sessionId of deletedSessionIds) {
+        await deleteSessionWorkReport(user.id, dateStr, sessionId)
+      }
     }
     onSaved()
   }
 
   async function handleDelete() {
     for (const log of dayLogs) await deleteLog(log.id)
-    if (!isSalaried) await saveWorkReport(user.id, dateStr, {})
+    if (!isSalaried) {
+      await deleteAllSessionWorkReportsForDate(user.id, dateStr)
+      await saveWorkReport(user.id, dateStr, {})
+    }
     onSaved()
   }
 
-  const hasQrSessions = dayLogs.length > 0
-  const canShowDelete = hasQrSessions || workHasData
+  function renderSessionPunchInputs(s, si) {
+    const { inTime, outTime } = sessionTimes[si]
+    const inHInvalid = s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)
+    const inMInvalid = s.inM !== '' && parseInt(s.inM) > 59
+    const outHInvalid = s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)
+    const outMInvalid = s.outM !== '' && parseInt(s.outM) > 59
+    const isIncomplete = inTime && !outTime
+    if (isTablet) {
+      return (
+        <>
+          <div className={styles.dayEditSessionTimeRow}>
+            <span className={styles.dayEditTimeLabel}>出勤</span>
+            <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
+          </div>
+          <div className={styles.dayEditSessionTimeRow}>
+            <span className={styles.dayEditTimeLabel}>退勤</span>
+            <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'out' })}>{outTime || '──:──'}</button>
+          </div>
+          {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
+        </>
+      )
+    }
+    return (
+      <>
+        <div className={styles.dayEditSessionTimeRow}>
+          <span className={styles.dayEditTimeLabel}>出勤</span>
+          <input type="text" inputMode="numeric" maxLength={2} value={s.inH}
+            onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+            className={[styles.dayEditHmNum, inHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+          <span className={styles.dayEditHmUnit}>時</span>
+          <input type="text" inputMode="numeric" maxLength={2} value={s.inM}
+            onChange={e => updateSession(si, 'inM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+            className={[styles.dayEditHmNum, inMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+          <span className={styles.dayEditHmUnit}>分</span>
+        </div>
+        <div className={styles.dayEditSessionTimeRow}>
+          <span className={styles.dayEditTimeLabel}>退勤</span>
+          <input type="text" inputMode="numeric" maxLength={2} value={s.outH}
+            onChange={e => updateSession(si, 'outH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+            className={[styles.dayEditHmNum, outHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+          <span className={styles.dayEditHmUnit}>時</span>
+          <input type="text" inputMode="numeric" maxLength={2} value={s.outM}
+            onChange={e => updateSession(si, 'outM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+            className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+          <span className={styles.dayEditHmUnit}>分</span>
+        </div>
+        {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
+      </>
+    )
+  }
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -1109,190 +1171,117 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalBody}>
-              {punchSummaryBar && (
-                <div className={styles.dayEditSummaryBar}>{punchSummaryBar}</div>
-              )}
-              <div className={styles.dayEditCols}>
-
-                {/* ── 左列: QR打刻記録 ── */}
-                <div className={styles.dayEditColLeft}>
-                  <div className={styles.dayEditColHeader}>
-                    <div className={styles.dayEditColTitle}>QR打刻記録</div>
-                    <div className={styles.dayEditColSubtitle}>確認用・給与計算には使用しません</div>
-                  </div>
-
-                  {sessions.length === 0 ? (
-                    <div className={styles.dayEditEmptyState}>
-                      <div className={styles.dayEditEmptyText}>QR打刻記録はありません</div>
-                      <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
-                    </div>
-                  ) : (
-                    <>
-                      {sessions.map((s, si) => {
-                        const { inTime, outTime } = sessionTimes[si]
-                        const inHInvalid = s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)
-                        const inMInvalid = s.inM !== '' && parseInt(s.inM) > 59
-                        const outHInvalid = s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)
-                        const outMInvalid = s.outM !== '' && parseInt(s.outM) > 59
-                        const isIncomplete = inTime && !outTime
-                        return (
-                          <div key={si} className={styles.dayEditSessionRow}>
-                            <span className={styles.dayEditSessionNum}>{si + 1}回目</span>
-                            {isTablet ? (
-                              <>
-                                <span className={styles.dayEditTimeLabel}>出勤</span>
-                                <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
-                                <span className={styles.dayEditTimeLabel}>退勤</span>
-                                <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'out' })}>{outTime || '──:──'}</button>
-                              </>
-                            ) : (
-                              <>
-                                <span className={styles.dayEditTimeLabel}>出勤</span>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.inH}
-                                  onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.dayEditHmNum, inHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-                                <span className={styles.dayEditHmUnit}>時</span>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.inM}
-                                  onChange={e => updateSession(si, 'inM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.dayEditHmNum, inMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-                                <span className={styles.dayEditHmUnit}>分</span>
-                                <span className={styles.dayEditTimeSep}>→</span>
-                                <span className={styles.dayEditTimeLabel}>退勤</span>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.outH}
-                                  onChange={e => updateSession(si, 'outH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.dayEditHmNum, outHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-                                <span className={styles.dayEditHmUnit}>時</span>
-                                <input type="text" inputMode="numeric" maxLength={2} value={s.outM}
-                                  onChange={e => updateSession(si, 'outM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-                                  onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-                                  className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-                                <span className={styles.dayEditHmUnit}>分</span>
-                              </>
-                            )}
-                            {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
-                            <button className={styles.dayEditRowDelBtn} onClick={() => removeSession(si)} title="削除">削除</button>
-                          </div>
-                        )
-                      })}
-                      <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
-                    </>
-                  )}
-
-                  {isTablet && editingTimeField && (
-                    <TimeNumpadOverlay
-                      title={editingTimeField.field === 'in' ? '出勤時刻' : '退勤時刻'}
-                      initialValue={editingTimeField.field === 'in' ? sessionTimes[editingTimeField.si].inTime : sessionTimes[editingTimeField.si].outTime}
-                      onConfirm={val => {
-                        const [h, m] = val.split(':')
-                        const si = editingTimeField.si
-                        if (editingTimeField.field === 'in') {
-                          setSessions(prev => prev.map((s, i) => i === si ? { ...s, inH: String(parseInt(h)), inM: String(parseInt(m)) } : s))
-                        } else {
-                          setSessions(prev => prev.map((s, i) => i === si ? { ...s, outH: String(parseInt(h)), outM: String(parseInt(m)) } : s))
-                        }
-                        setEditingTimeField(null)
-                      }}
-                      onClose={() => setEditingTimeField(null)}
-                    />
-                  )}
+              {/* ── Per-session cards ── */}
+              {sessions.length === 0 ? (
+                <div className={styles.dayEditEmptyState}>
+                  <div className={styles.dayEditEmptyText}>QR打刻記録はありません</div>
+                  <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
                 </div>
-
-                {/* ── 右列: 業務時間入力（時給従業員のみ） ── */}
-                {!isSalaried && (
-                  <div className={styles.dayEditColRight}>
-                    <div className={styles.dayEditColHeader}>
-                      <div className={styles.dayEditColTitle}>業務時間入力</div>
-                      <div className={styles.dayEditColSubtitle}>実際に行った業務時間を入力してください。給与計算にはこちらを使用します</div>
-                    </div>
-
-                    {/* No check-in: disabled */}
-                    {!workEnabled && (
-                      <div className={styles.dayEditWorkDisabledArea}>
-                        {workHasData && workItemsLoaded ? (
-                          <>
-                            <div className={styles.dayEditWorkWarnBox}>
-                              <div className={styles.dayEditWorkWarnTitle}>出勤打刻がないため、この業務時間は要確認です</div>
-                              <div className={styles.dayEditWorkWarnItems}>
-                                {workRows.filter(r => r.type && ((parseInt(r.h)||0)*60+(parseInt(r.m)||0) > 0)).map((r, ri) => {
-                                  const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-                                  return <div key={ri} className={styles.dayEditWorkWarnItem}>{r.type}：{fmtWorkTotal(mins)}</div>
-                                })}
-                              </div>
+              ) : (
+                <>
+                  {sessions.map((s, si) => {
+                    const { inTime, outTime } = sessionTimes[si]
+                    const rows = sessionWorkRows[s.sessionId] || []
+                    const sessionTotalMins = rows.reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
+                    const selectedSessionTypes = new Set(rows.map(r => r.type).filter(Boolean))
+                    const hasMoreSessionTypes = userWorkItems.some(t => !selectedSessionTypes.has(t))
+                    let badgeClass, badgeText
+                    if (!inTime && !outTime) { badgeClass = styles.dayEditBadgeEmpty; badgeText = '未入力' }
+                    else if (inTime && outTime) { badgeClass = styles.dayEditBadgeComplete; badgeText = '完了' }
+                    else { badgeClass = styles.dayEditBadgeInProgress; badgeText = '勤務中' }
+                    return (
+                      <div key={s.sessionId} className={styles.dayEditSessionCard}>
+                        <div className={styles.dayEditSessionCardHeader}>
+                          <span className={styles.dayEditSessionCardNum}>{si + 1}回目</span>
+                          <span className={badgeClass}>{badgeText}</span>
+                          <button className={styles.dayEditRowDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>削除</button>
+                        </div>
+                        <div className={styles.dayEditSessionCardBody}>
+                          <div className={styles.dayEditSessionLeft}>
+                            {renderSessionPunchInputs(s, si)}
+                          </div>
+                          {!isSalaried && (
+                            <div className={styles.dayEditSessionRight}>
+                              {!workItemsLoaded ? (
+                                <div className={styles.dayEditSectionLoading}>読込中...</div>
+                              ) : (
+                                <>
+                                  <div className={styles.dayEditWorkTable}>
+                                    <div className={styles.dayEditWorkTableHeader}>
+                                      <span className={styles.dayEditWorkColType}>業務</span>
+                                      <span className={styles.dayEditWorkColTime}>時間</span>
+                                      <span className={styles.dayEditWorkColOp}></span>
+                                    </div>
+                                    {rows.map((row, ri) => {
+                                      const availableTypes = userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t))
+                                      const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
+                                      return (
+                                        <div key={ri} className={styles.dayEditWorkRow}>
+                                          <select
+                                            className={styles.dayEditWorkTypeSelect}
+                                            value={row.type}
+                                            onChange={e => updateWorkRow(s.sessionId, ri, 'type', e.target.value)}
+                                          >
+                                            <option value="">業務を選択</option>
+                                            {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                          </select>
+                                          <div className={styles.dayEditWorkTimeCell}>
+                                            <input type="number" min="0" max="23"
+                                              className={styles.dayEditWorkNum}
+                                              value={row.h === 0 ? '' : row.h} placeholder="0"
+                                              onChange={e => updateWorkRow(s.sessionId, ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                                              onFocus={e => e.target.select()} />
+                                            <span className={styles.dayEditWorkUnit}>時間</span>
+                                            <input type="number" min="0" max="59"
+                                              className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
+                                              value={row.m === 0 ? '' : row.m} placeholder="0"
+                                              onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(s.sessionId, ri, 'm', isNaN(n) ? 0 : n) }}
+                                              onFocus={e => e.target.select()} />
+                                            <span className={styles.dayEditWorkUnit}>分</span>
+                                          </div>
+                                          <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(s.sessionId, ri)}>削除</button>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                  {hasMoreSessionTypes && (
+                                    <button className={styles.dayEditAddBlueBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
+                                  )}
+                                  {sessionTotalMins > 0 && (
+                                    <div className={styles.dayEditWorkTotal}>
+                                      <span>小計</span>
+                                      <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
-                            <div className={styles.dayEditWorkDisabledMsg}>出勤打刻を追加すると再び編集できます</div>
-                          </>
-                        ) : (
-                          <div className={styles.dayEditWorkDisabledMsg}>
-                            業務時間を入力するには、先に出勤打刻が必要です
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    )}
+                    )
+                  })}
+                  <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
+                </>
+              )}
 
-                    {workEnabled && !workItemsLoaded && (
-                      <div className={styles.dayEditSectionLoading}>読込中...</div>
-                    )}
+              {/* ── 旧データ（打刻回未設定） ── */}
+              {!isSalaried && hasLegacyData && (
+                <div className={styles.dayEditLegacySection}>
+                  <div className={styles.dayEditLegacyTitle}>旧データ（打刻回未設定）</div>
+                  {Object.entries(legacyWorkItems).filter(([, m]) => m > 0).map(([type, mins]) => (
+                    <div key={type} className={styles.dayEditLegacyItem}>{type}：{fmtWorkTotal(mins)}</div>
+                  ))}
+                </div>
+              )}
 
-                    {workEnabled && workItemsLoaded && (
-                      <>
-                        {punchContextMsg && (
-                          <div className={styles.dayEditPunchContext}>{punchContextMsg}</div>
-                        )}
-                        <div className={styles.dayEditWorkTable}>
-                          <div className={styles.dayEditWorkTableHeader}>
-                            <span className={styles.dayEditWorkColType}>業務</span>
-                            <span className={styles.dayEditWorkColTime}>時間</span>
-                            <span className={styles.dayEditWorkColOp}></span>
-                          </div>
-                          {workRows.map((row, ri) => {
-                            const isLastRow = ri === workRows.length - 1
-                            const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
-                            const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
-                            return (
-                              <div key={ri} className={styles.dayEditWorkRow}>
-                                <select
-                                  ref={isLastRow ? lastWorkSelectRef : null}
-                                  className={styles.dayEditWorkTypeSelect}
-                                  value={row.type}
-                                  onChange={e => updateWorkRow(ri, 'type', e.target.value)}
-                                >
-                                  <option value="">業務を選択</option>
-                                  {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                <div className={styles.dayEditWorkTimeCell}>
-                                  <input type="number" min="0" max="23"
-                                    className={styles.dayEditWorkNum}
-                                    value={row.h === 0 ? '' : row.h} placeholder="0"
-                                    onChange={e => updateWorkRow(ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                                    onFocus={e => e.target.select()} />
-                                  <span className={styles.dayEditWorkUnit}>時間</span>
-                                  <input type="number" min="0" max="59"
-                                    className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
-                                    value={row.m === 0 ? '' : row.m} placeholder="0"
-                                    onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(ri, 'm', isNaN(n) ? 0 : n) }}
-                                    onFocus={e => e.target.select()} />
-                                  <span className={styles.dayEditWorkUnit}>分</span>
-                                </div>
-                                <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(ri)} title="削除">削除</button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                        {hasMoreWorkTypes && (
-                          <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 別の業務を追加</button>
-                        )}
-                        <div className={styles.dayEditWorkTotal}>
-                          <span>業務時間合計</span>
-                          <strong>{fmtWorkTotal(totalWorkMins)}</strong>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+              {/* ── Day total ── */}
+              {!isSalaried && workItemsLoaded && sessions.length > 0 && (
+                <div className={styles.dayEditDayTotal}>
+                  <span>業務時間合計</span>
+                  <strong>{fmtWorkTotal(dayTotalMins)}</strong>
+                </div>
+              )}
 
               {validationErrors.length > 0 && (
                 <div className={styles.dayEditErrors}>
@@ -1307,6 +1296,24 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     この日のQR打刻と業務申告をすべて削除
                   </button>
                 </>
+              )}
+
+              {isTablet && editingTimeField && (
+                <TimeNumpadOverlay
+                  title={editingTimeField.field === 'in' ? '出勤時刻' : '退勤時刻'}
+                  initialValue={editingTimeField.field === 'in' ? sessionTimes[editingTimeField.si].inTime : sessionTimes[editingTimeField.si].outTime}
+                  onConfirm={val => {
+                    const [h, m] = val.split(':')
+                    const si = editingTimeField.si
+                    if (editingTimeField.field === 'in') {
+                      setSessions(prev => prev.map((s, i) => i === si ? { ...s, inH: String(parseInt(h)), inM: String(parseInt(m)) } : s))
+                    } else {
+                      setSessions(prev => prev.map((s, i) => i === si ? { ...s, outH: String(parseInt(h)), outM: String(parseInt(m)) } : s))
+                    }
+                    setEditingTimeField(null)
+                  }}
+                  onClose={() => setEditingTimeField(null)}
+                />
               )}
             </div>
 
@@ -1329,17 +1336,18 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 {sessions.map((s, si) => {
                   const { inTime, outTime } = sessionTimes[si]
                   const label = sessions.length > 1 ? `${si + 1}回目 ` : ''
+                  const rows = sessionWorkRows[s.sessionId] || []
                   return (
-                    <React.Fragment key={si}>
+                    <React.Fragment key={s.sessionId}>
                       {inTime && <div className={styles.confirmRow}><span>{label}出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
                       {outTime && <div className={styles.confirmRow}><span>{label}退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
                       {inTime && !outTime && <div className={styles.confirmRow}><span>{label}退勤</span><span style={{ color: '#b45309' }}>未打刻</span></div>}
+                      {!isSalaried && rows.filter(r => r.type).map((r, ri) => {
+                        const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
+                        return <div key={ri} className={styles.confirmRow}><span>{label}{r.type}</span><strong>{fmtMinutes(mins)}</strong></div>
+                      })}
                     </React.Fragment>
                   )
-                })}
-                {!isSalaried && workRows.filter(r => r.type).map((r, ri) => {
-                  const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-                  return <div key={ri} className={styles.confirmRow}><span>{r.type}</span><strong>{fmtMinutes(mins)}</strong></div>
                 })}
               </div>
               {dayLogs.length > 0 && <p className={styles.confirmWarn}>既存のQR打刻記録を上書きします</p>}
@@ -1361,13 +1369,29 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.confirmRow}><span>対象従業員</span><strong>{user.name}</strong></div>
                 <div className={styles.confirmRow}><span>削除する日付</span><strong>{dateLabel}</strong></div>
                 <div className={styles.confirmRow}><span>QRセッション数</span><strong>{dayLogs.filter(l => l.log_type === '出勤').length}件</strong></div>
-                <div className={styles.confirmRow}><span>業務申告数</span><strong>{workRows.filter(r => r.type).length}件</strong></div>
               </div>
               <p className={styles.confirmWarn}>この操作は元に戻せません</p>
             </div>
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
               <button className={styles.realDeleteBtn} onClick={handleDelete}>すべて削除する</button>
+            </div>
+          </>
+        )}
+
+        {step === 'confirmDeleteSession' && (
+          <>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalHeaderTitle}>確認</div>
+            </div>
+            <div className={styles.modalBody}>
+              <p className={styles.confirmWarn}>
+                この打刻回には業務時間が入力されています。削除すると業務時間データも失われます。
+              </p>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.cancelBtn} onClick={() => { setPendingDeleteSessionId(null); setStep('form') }}>戻る</button>
+              <button className={styles.realDeleteBtn} onClick={() => doRemoveSession(pendingDeleteSessionId)}>削除する</button>
             </div>
           </>
         )}

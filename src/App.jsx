@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getLogs, getAdminPin, DEFAULT_ADMIN_PIN, saveWorkReport } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getLogs, getAdminPin, DEFAULT_ADMIN_PIN, saveWorkReport, saveSessionWorkReport } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -75,6 +75,7 @@ export default function App() {
   const [adminPinMode, setAdminPinMode] = useState(false)
   const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN)
   const [todaySessionCount, setTodaySessionCount] = useState(1)
+  const [currentSessionId, setCurrentSessionId] = useState(null)
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
@@ -130,7 +131,7 @@ export default function App() {
         setState(STATE.COMPLETE)
         return
       }
-      // Count today's completed sessions to show context message in WorkSelectScreen
+      // Count today's completed sessions and get current check-in session_id
       try {
         const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
         const todayLogs = await getLogs({ dateFrom: today, dateTo: today })
@@ -138,6 +139,11 @@ export default function App() {
         const outs = userTodayLogs.filter(l => l.log_type === '退勤').length
         setTodaySessionCount(outs + 1) // completed so far + this new one
       } catch { setTodaySessionCount(1) }
+      // Read session_id from the current check-in log
+      try {
+        const clockInLog = await getClockInTime(user.id)
+        setCurrentSessionId(clockInLog?.session_id || null)
+      } catch { setCurrentSessionId(null) }
       setCurrentUser(user)
       setState(STATE.WORK)
     }
@@ -146,8 +152,12 @@ export default function App() {
   async function handleWorkComplete(workItems) {
     const clockIn = await getClockInTime(currentUser.id)
     const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    await saveLog({ userId: currentUser.id, logType: '退勤' })
-    await saveWorkReport(currentUser.id, today, workItems)
+    await saveLog({ userId: currentUser.id, logType: '退勤', sessionId: currentSessionId })
+    if (currentSessionId) {
+      await saveSessionWorkReport(currentUser.id, today, currentSessionId, workItems)
+    } else {
+      await saveWorkReport(currentUser.id, today, workItems)
+    }
     setCompletedInfo({
       logType: '退勤',
       workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),
