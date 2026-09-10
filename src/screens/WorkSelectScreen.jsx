@@ -31,7 +31,7 @@ function Clock() {
 }
 
 export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCount = 1 }) {
-  const [workRows, setWorkRows] = useState([])
+  const [workRows, setWorkRows] = useState([{ type: '', h: 0, m: 0 }])
   const [saving, setSaving] = useState(false)
   const lastSelectRef = useRef(null)
   const prevRowCount = useRef(0)
@@ -104,9 +104,6 @@ export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCo
         <div className={styles.contextMsg}>{contextMsg}</div>
 
         <div className={styles.workInputArea}>
-          {workRows.length === 0 && (
-            <div className={styles.emptyHint}>「＋業務を追加」で業務ごとの時間を入力してください</div>
-          )}
           {workRows.map((row, ri) => {
             const isLast = ri === workRows.length - 1
             const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
@@ -145,7 +142,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCo
           })}
 
           {hasMoreTypes && (
-            <button className={styles.addWorkBtn} onClick={addWorkRow}>＋ 業務を追加</button>
+            <button className={styles.addWorkBtn} onClick={addWorkRow}>＋ 別の業務を追加</button>
           )}
         </div>
 

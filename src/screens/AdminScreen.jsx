@@ -905,14 +905,24 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [validationErrors, setValidationErrors] = useState([])
   const [editingTimeField, setEditingTimeField] = useState(null)
 
+  const lastWorkSelectRef = useRef(null)
+  const prevWorkRowCount = useRef(0)
+
+  useEffect(() => {
+    if (workRows.length > prevWorkRowCount.current && lastWorkSelectRef.current) {
+      lastWorkSelectRef.current.focus()
+    }
+    prevWorkRowCount.current = workRows.length
+  }, [workRows.length])
+
   useEffect(() => {
     if (isSalaried) { setWorkItemsLoaded(true); return }
     getWorkReport(user.id, dateStr).then(items => {
-      // items = { [type]: minutes }
       const rows = Object.entries(items)
         .filter(([, mins]) => mins > 0)
         .map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
-      setWorkRows(rows)
+      // Default to one empty row if no saved data (empty rows are filtered on save)
+      setWorkRows(rows.length > 0 ? rows : [{ type: '', h: 0, m: 0 }])
       setWorkItemsLoaded(true)
     })
   }, [user.id, dateStr, isSalaried])
@@ -967,7 +977,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const selectedTypes = new Set(workRows.map(r => r.type).filter(Boolean))
   const hasMoreWorkTypes = userWorkItems.some(t => !selectedTypes.has(t))
 
-  // Punch completion status — reactive, drives work-entry availability
+  // Punch completion status
   const sessionStatuses = sessions.map((s, si) => {
     const allEmpty = s.inH === '' && s.inM === '' && s.outH === '' && s.outM === ''
     if (allEmpty) return 'empty'
@@ -977,18 +987,34 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   })
   const nonEmptySessions = sessionStatuses.filter(st => st !== 'empty')
   const completedSessionCount = sessionStatuses.filter(st => st === 'complete').length
+  const inProgressCount = sessionStatuses.filter(st => st === 'incomplete').length
   let punchStatus
   if (nonEmptySessions.length === 0) punchStatus = 'empty'
-  else if (nonEmptySessions.some(st => st === 'incomplete')) {
+  else if (inProgressCount > 0) {
     punchStatus = completedSessionCount === 0 ? 'incomplete_only' : 'partial_incomplete'
   } else punchStatus = 'allComplete'
-  const workEnabled = punchStatus === 'allComplete'
+  // workEnabled: at least one session has a valid check-in time
+  const hasAnyCheckIn = sessions.some((s, si) => sessionTimes[si].inTime !== '')
+  const workEnabled = hasAnyCheckIn
   const workHasData = workRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
-  const punchContextMsg = completedSessionCount === 1
-    ? 'この日のQR打刻1回分に対する業務時間申告'
-    : completedSessionCount > 1
-    ? `この日のQR打刻${completedSessionCount}回分をまとめて申告`
-    : null
+  // Summary bar message above both columns
+  let punchSummaryBar = null
+  if (!isSalaried && nonEmptySessions.length > 0) {
+    if (punchStatus === 'allComplete') {
+      punchSummaryBar = `QR打刻 ${nonEmptySessions.length}回（すべて完了）→ この日分の業務時間を入力`
+    } else if (punchStatus === 'incomplete_only') {
+      punchSummaryBar = `QR打刻 ${nonEmptySessions.length}回・勤務中 → この日分の業務時間は途中でも入力できます`
+    } else {
+      punchSummaryBar = `QR打刻 ${nonEmptySessions.length}回（完了${completedSessionCount}回・勤務中${inProgressCount}回）→ この日分の業務時間を入力`
+    }
+  }
+  // Context note inside work column
+  let punchContextMsg = null
+  if (nonEmptySessions.length > 1) {
+    punchContextMsg = `この日のQR打刻${nonEmptySessions.length}回分の業務時間をまとめて入力します`
+  } else if (inProgressCount > 0 && completedSessionCount === 0) {
+    punchContextMsg = '現在勤務中の打刻があります。業務時間は途中でも入力できます'
+  }
 
   function fmtWorkTotal(mins) {
     const h = Math.floor(mins / 60), m = mins % 60
@@ -1029,6 +1055,13 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const errs = validate()
     if (errs.length > 0) { setValidationErrors(errs); return }
     setValidationErrors([])
+    // Warn if all sessions cleared but work data remains
+    const allSessionsCleared = sessions.length === 0 ||
+      sessions.every(s => s.inH === '' && s.inM === '' && s.outH === '' && s.outM === '')
+    if (allSessionsCleared && workHasData) {
+      setStep('confirmNoSessions')
+      return
+    }
     setStep('confirm')
   }
 
@@ -1076,6 +1109,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalBody}>
+              {punchSummaryBar && (
+                <div className={styles.dayEditSummaryBar}>{punchSummaryBar}</div>
+              )}
               <div className={styles.dayEditCols}>
 
                 {/* ── 左列: QR打刻記録 ── */}
@@ -1164,103 +1200,94 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                   )}
                 </div>
 
-                {/* ── 右列: 業務時間申告（時給従業員のみ） ── */}
+                {/* ── 右列: 業務時間入力（時給従業員のみ） ── */}
                 {!isSalaried && (
                   <div className={styles.dayEditColRight}>
                     <div className={styles.dayEditColHeader}>
-                      <div className={styles.dayEditColTitle}>業務時間申告</div>
-                      <div className={styles.dayEditColSubtitle}>給与計算に使用します</div>
-                      {workEnabled && punchContextMsg && (
-                        <div className={styles.dayEditPunchContext}>{punchContextMsg}</div>
-                      )}
+                      <div className={styles.dayEditColTitle}>業務時間入力</div>
+                      <div className={styles.dayEditColSubtitle}>実際に行った業務時間を入力してください。給与計算にはこちらを使用します</div>
                     </div>
 
-                    {/* Disabled: punch incomplete or missing */}
+                    {/* No check-in: disabled */}
                     {!workEnabled && (
                       <div className={styles.dayEditWorkDisabledArea}>
-                        {workHasData && (
-                          <div className={styles.dayEditWorkWarnBox}>
-                            <div className={styles.dayEditWorkWarnTitle}>QR打刻が未完了のため要確認</div>
-                            <div className={styles.dayEditWorkWarnItems}>
-                              {workRows.filter(r => r.type).map((r, ri) => {
-                                const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-                                return <div key={ri} className={styles.dayEditWorkWarnItem}>{r.type}：{fmtWorkTotal(mins)}</div>
-                              })}
+                        {workHasData && workItemsLoaded ? (
+                          <>
+                            <div className={styles.dayEditWorkWarnBox}>
+                              <div className={styles.dayEditWorkWarnTitle}>出勤打刻がないため、この業務時間は要確認です</div>
+                              <div className={styles.dayEditWorkWarnItems}>
+                                {workRows.filter(r => r.type && ((parseInt(r.h)||0)*60+(parseInt(r.m)||0) > 0)).map((r, ri) => {
+                                  const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
+                                  return <div key={ri} className={styles.dayEditWorkWarnItem}>{r.type}：{fmtWorkTotal(mins)}</div>
+                                })}
+                              </div>
                             </div>
+                            <div className={styles.dayEditWorkDisabledMsg}>出勤打刻を追加すると再び編集できます</div>
+                          </>
+                        ) : (
+                          <div className={styles.dayEditWorkDisabledMsg}>
+                            業務時間を入力するには、先に出勤打刻が必要です
                           </div>
                         )}
-                        <div className={styles.dayEditWorkDisabledMsg}>
-                          {punchStatus === 'empty' && '業務時間を入力するには、先にQR打刻が必要です'}
-                          {punchStatus === 'incomplete_only' && '退勤打刻が完了していないため、業務時間を入力できません'}
-                          {punchStatus === 'partial_incomplete' && '未完了の打刻があります。すべての退勤打刻を完了してください'}
-                        </div>
                       </div>
                     )}
 
-                    {/* Enabled: loading */}
                     {workEnabled && !workItemsLoaded && (
                       <div className={styles.dayEditSectionLoading}>読込中...</div>
                     )}
 
-                    {/* Enabled: loaded */}
                     {workEnabled && workItemsLoaded && (
                       <>
-                        {workRows.length === 0 ? (
-                          <div className={styles.dayEditEmptyState}>
-                            <div className={styles.dayEditEmptyText}>業務時間はまだ入力されていません</div>
-                            {hasMoreWorkTypes && (
-                              <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 業務を追加</button>
-                            )}
-                          </div>
-                        ) : (
-                          <>
-                            <div className={styles.dayEditWorkTable}>
-                              <div className={styles.dayEditWorkTableHeader}>
-                                <span className={styles.dayEditWorkColType}>業務</span>
-                                <span className={styles.dayEditWorkColTime}>時間</span>
-                                <span className={styles.dayEditWorkColOp}></span>
-                              </div>
-                              {workRows.map((row, ri) => {
-                                const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
-                                const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
-                                return (
-                                  <div key={ri} className={styles.dayEditWorkRow}>
-                                    <select
-                                      className={styles.dayEditWorkTypeSelect}
-                                      value={row.type}
-                                      onChange={e => updateWorkRow(ri, 'type', e.target.value)}
-                                    >
-                                      <option value="">-- 選択 --</option>
-                                      {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                    </select>
-                                    <div className={styles.dayEditWorkTimeCell}>
-                                      <input type="number" min="0" max="23"
-                                        className={styles.dayEditWorkNum}
-                                        value={row.h === 0 ? '' : row.h} placeholder="0"
-                                        onChange={e => updateWorkRow(ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                                        onFocus={e => e.target.select()} />
-                                      <span className={styles.dayEditWorkUnit}>時間</span>
-                                      <input type="number" min="0" max="59"
-                                        className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
-                                        value={row.m === 0 ? '' : row.m} placeholder="0"
-                                        onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(ri, 'm', isNaN(n) ? 0 : n) }}
-                                        onFocus={e => e.target.select()} />
-                                      <span className={styles.dayEditWorkUnit}>分</span>
-                                    </div>
-                                    <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(ri)} title="削除">削除</button>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                            {hasMoreWorkTypes && (
-                              <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 業務を追加</button>
-                            )}
-                            <div className={styles.dayEditWorkTotal}>
-                              <span>申告時間合計</span>
-                              <strong>{fmtWorkTotal(totalWorkMins)}</strong>
-                            </div>
-                          </>
+                        {punchContextMsg && (
+                          <div className={styles.dayEditPunchContext}>{punchContextMsg}</div>
                         )}
+                        <div className={styles.dayEditWorkTable}>
+                          <div className={styles.dayEditWorkTableHeader}>
+                            <span className={styles.dayEditWorkColType}>業務</span>
+                            <span className={styles.dayEditWorkColTime}>時間</span>
+                            <span className={styles.dayEditWorkColOp}></span>
+                          </div>
+                          {workRows.map((row, ri) => {
+                            const isLastRow = ri === workRows.length - 1
+                            const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
+                            const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
+                            return (
+                              <div key={ri} className={styles.dayEditWorkRow}>
+                                <select
+                                  ref={isLastRow ? lastWorkSelectRef : null}
+                                  className={styles.dayEditWorkTypeSelect}
+                                  value={row.type}
+                                  onChange={e => updateWorkRow(ri, 'type', e.target.value)}
+                                >
+                                  <option value="">業務を選択</option>
+                                  {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <div className={styles.dayEditWorkTimeCell}>
+                                  <input type="number" min="0" max="23"
+                                    className={styles.dayEditWorkNum}
+                                    value={row.h === 0 ? '' : row.h} placeholder="0"
+                                    onChange={e => updateWorkRow(ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                                    onFocus={e => e.target.select()} />
+                                  <span className={styles.dayEditWorkUnit}>時間</span>
+                                  <input type="number" min="0" max="59"
+                                    className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
+                                    value={row.m === 0 ? '' : row.m} placeholder="0"
+                                    onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(ri, 'm', isNaN(n) ? 0 : n) }}
+                                    onFocus={e => e.target.select()} />
+                                  <span className={styles.dayEditWorkUnit}>分</span>
+                                </div>
+                                <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(ri)} title="削除">削除</button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {hasMoreWorkTypes && (
+                          <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 別の業務を追加</button>
+                        )}
+                        <div className={styles.dayEditWorkTotal}>
+                          <span>業務時間合計</span>
+                          <strong>{fmtWorkTotal(totalWorkMins)}</strong>
+                        </div>
                       </>
                     )}
                   </div>
@@ -1341,6 +1368,23 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
               <button className={styles.realDeleteBtn} onClick={handleDelete}>すべて削除する</button>
+            </div>
+          </>
+        )}
+
+        {step === 'confirmNoSessions' && (
+          <>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalHeaderTitle}>確認</div>
+            </div>
+            <div className={styles.modalBody}>
+              <p className={styles.confirmWarn}>
+                出勤打刻がなくなるため、業務時間だけが残ります。打刻を追加するか、業務時間も削除してください。
+              </p>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.cancelBtn} onClick={() => setStep('form')}>打刻を追加する</button>
+              <button className={styles.saveBtn} onClick={() => setStep('confirm')}>そのまま続ける</button>
             </div>
           </>
         )}
