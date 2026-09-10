@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveWorkReport, getWorkReport, getSessionWorkStatusForUserRange, CLOCK_OUT_HIDDEN } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForDate, getSessionWorkStatusForUserRange, CLOCK_OUT_HIDDEN } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -24,38 +24,45 @@ function getCalendarDays(year, month) {
 
 function buildDayMap(logs, year, month) {
   const map = {}
+  const byDaySession = {}
+  const noSessionLogs = {}
+
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
-    if (!map[d]) map[d] = { ins: [], outs: [], workType: '', outLog: null, sessionIds: new Set() }
-    if (log.session_id) map[d].sessionIds.add(log.session_id)
-    if (log.log_type === '出勤') map[d].ins.push(log.time || '')
-    else if (log.log_type === '退勤') {
-      map[d].outs.push(log.time || '')
-      if (log.work_type) map[d].workType = log.work_type
-      if (!map[d].outLog) map[d].outLog = log
+    if (log.session_id) {
+      if (!byDaySession[d]) byDaySession[d] = {}
+      if (!byDaySession[d][log.session_id]) byDaySession[d][log.session_id] = { in: '', out: '', ts: '' }
+      const entry = byDaySession[d][log.session_id]
+      if (log.log_type === '出勤') { entry.in = (log.time || '').substring(0, 5); entry.ts = log.timestamp || '' }
+      else if (log.log_type === '退勤') entry.out = (log.time || '').substring(0, 5)
+    } else {
+      if (!noSessionLogs[d]) noSessionLogs[d] = { ins: [], outs: [] }
+      if (log.log_type === '出勤') noSessionLogs[d].ins.push({ time: (log.time || '').substring(0, 5), ts: log.timestamp || '' })
+      else if (log.log_type === '退勤') noSessionLogs[d].outs.push((log.time || '').substring(0, 5))
     }
   })
+
+  const allDays = new Set([...Object.keys(byDaySession), ...Object.keys(noSessionLogs)].map(Number))
+  allDays.forEach(d => {
+    const sessions = []
+    const daySessionMap = byDaySession[d] || {}
+    Object.entries(daySessionMap).forEach(([sid, s]) => {
+      sessions.push({ sessionId: sid, in: s.in, out: s.out, ts: s.ts })
+    })
+    const legacy = noSessionLogs[d]
+    if (legacy) {
+      const sortedIns = [...legacy.ins].sort((a, b) => a.time.localeCompare(b.time))
+      const sortedOuts = [...legacy.outs].sort()
+      const n = Math.max(sortedIns.length, sortedOuts.length)
+      for (let i = 0; i < n; i++) {
+        sessions.push({ sessionId: null, in: sortedIns[i]?.time || '', out: sortedOuts[i] || '', ts: sortedIns[i]?.ts || '' })
+      }
+    }
+    sessions.sort((a, b) => (a.in || a.ts || '').localeCompare(b.in || b.ts || ''))
+    map[d] = sessions
+  })
   return map
-}
-
-function timeDiff(t1, t2) {
-  if (!t1 || !t2) return ''
-  const [h1, m1] = t1.split(':').map(Number)
-  const [h2, m2] = t2.split(':').map(Number)
-  const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
-  if (diff <= 0) return ''
-  const h = Math.floor(diff / 60)
-  const m = diff % 60
-  return h > 0 ? `${h}h${m > 0 ? m + 'm' : ''}` : `${m}m`
-}
-
-function timeDiffMins(t1, t2) {
-  if (!t1 || !t2) return null
-  const [h1, m1] = t1.split(':').map(Number)
-  const [h2, m2] = t2.split(':').map(Number)
-  const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
-  return diff > 0 ? diff : null
 }
 
 function fmtMins(mins) {
@@ -63,23 +70,6 @@ function fmtMins(mins) {
   const h = Math.floor(mins / 60)
   const m = mins % 60
   return h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`
-}
-
-function fmtMinsDisplay(mins) {
-  if (!mins) return '0分'
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  if (h > 0 && m > 0) return `${h}時間${m}分`
-  if (h > 0) return `${h}時間`
-  return `${m}分`
-}
-
-function parseWorkType(wt) {
-  if (!wt) return []
-  return wt.split(',').map(entry => {
-    const [type, minsStr] = entry.split(':')
-    return { type: type.trim(), mins: minsStr !== undefined ? Number(minsStr) : null }
-  }).filter(e => e.type)
 }
 
 /* ─── 保存確認モーダル ─── */
@@ -132,42 +122,44 @@ function ConfirmSaveModal({ year, month, day, totalInputMinutes, editableItems, 
 }
 
 /* ─── 日別詳細モーダル ─── */
-function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
-  const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-  const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-  const duration = timeDiff(inTime, outTime)
-
+function DayModal({ day, year, month, sessions, user, onClose, onSaved }) {
   const editableItems = (user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item))
   const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried'
-
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 
-  const [editing, setEditing] = useState(false)
+  const [sessionWorkReports, setSessionWorkReports] = useState({})
+  const [loadingWork, setLoadingWork] = useState(true)
+  const [editingSessionIdx, setEditingSessionIdx] = useState(null)
   const [inputs, setInputs] = useState({})
   const [selectedItem, setSelectedItem] = useState(null)
   const [numpadField, setNumpadField] = useState('h')
   const [saving, setSaving] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [loadedWorkItems, setLoadedWorkItems] = useState(null)
 
   useEffect(() => {
-    getWorkReport(user.id, dateStr).then(items => setLoadedWorkItems(items))
+    setLoadingWork(true)
+    getSessionWorkReportsForDate(user.id, dateStr)
+      .then(reports => { setSessionWorkReports(reports); setLoadingWork(false) })
+      .catch(() => setLoadingWork(false))
   }, [user.id, dateStr])
 
-  useEffect(() => {
-    if (!editing || loadedWorkItems === null) return
+  function startEditing(sessionIdx) {
+    const session = sessions[sessionIdx]
+    const existingWork = session?.sessionId ? (sessionWorkReports[session.sessionId] || {}) : {}
     const initial = {}
-    Object.entries(loadedWorkItems).forEach(([type, mins]) => {
-      initial[type] = { h: Math.floor(mins / 60), m: mins % 60 }
+    editableItems.forEach(item => {
+      const mins = existingWork[item] || 0
+      initial[item] = { h: Math.floor(mins / 60), m: mins % 60 }
     })
     setInputs(initial)
     setSelectedItem(editableItems[0] || null)
     setNumpadField('h')
-  }, [editing])
+    setEditingSessionIdx(sessionIdx)
+  }
 
   const getHM = item => inputs[item] || { h: 0, m: 0 }
-  const currentH = getHM(selectedItem).h ?? 0
-  const currentM = getHM(selectedItem).m ?? 0
+  const currentH = selectedItem ? (getHM(selectedItem).h ?? 0) : 0
+  const currentM = selectedItem ? (getHM(selectedItem).m ?? 0) : 0
 
   const totalInputMinutes = editableItems.reduce(
     (s, item) => { const v = getHM(item); return s + (v.h ?? 0) * 60 + (v.m ?? 0) }, 0
@@ -193,11 +185,14 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     })
   }
 
-  function handleSave() {
-    setShowConfirm(true)
-  }
+  function handleSave() { setShowConfirm(true) }
 
   async function handleDoSave() {
+    const session = sessions[editingSessionIdx]
+    if (!session?.sessionId) {
+      alert('セッションIDがないため保存できません')
+      return
+    }
     setSaving(true)
     const workItems = {}
     editableItems.forEach(item => {
@@ -206,9 +201,10 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
       if (mins > 0) workItems[item] = mins
     })
     try {
-      await saveWorkReport(user.id, dateStr, workItems)
+      await saveSessionWorkReport(user.id, dateStr, session.sessionId, workItems)
+      setSessionWorkReports(prev => ({ ...prev, [session.sessionId]: workItems }))
       setShowConfirm(false)
-      setEditing(false)
+      setEditingSessionIdx(null)
       onSaved()
     } catch (e) {
       alert('保存に失敗しました: ' + (e?.message || e))
@@ -217,45 +213,54 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
     }
   }
 
+  const isEditing = editingSessionIdx !== null
+
   return (
     <>
-      <div className={styles.modalOverlay} onClick={editing ? undefined : onClose}>
+      <div className={styles.modalOverlay} onClick={isEditing ? undefined : onClose}>
         <div
-          className={[styles.modal, editing ? styles.modalEditing : ''].join(' ')}
+          className={[styles.modal, isEditing ? styles.modalEditing : ''].join(' ')}
           onClick={e => e.stopPropagation()}
         >
-          {!editing ? (
+          {!isEditing ? (
             <>
               <div className={styles.modalDate}>{year}年{month + 1}月{day}日</div>
-              <div className={styles.modalRow}>
-                <span className={styles.modalRowLabel}>出勤</span>
-                <span className={styles.modalRowValue}>{inTime || '—'}</span>
-              </div>
-              <div className={styles.modalRow}>
-                <span className={styles.modalRowLabel}>退勤</span>
-                <span className={styles.modalRowValue}>{outTime || '—'}</span>
-              </div>
-              {duration && (
-                <div className={styles.modalRow}>
-                  <span className={styles.modalRowLabel}>勤務時間</span>
-                  <span className={styles.modalRowValue}>{duration}</span>
-                </div>
-              )}
-              {loadedWorkItems && Object.keys(loadedWorkItems).length > 0 && (
-                <>
-                  <div className={styles.modalDivider} />
-                  {Object.entries(loadedWorkItems).map(([type, mins]) => (
-                    <div key={type} className={styles.modalRow}>
-                      <span className={styles.modalRowLabel}>{type}</span>
-                      <span className={styles.modalRowValue}>{fmtMins(mins)}</span>
+              {loadingWork ? (
+                <div className={styles.modalLoadingText}>読込中...</div>
+              ) : (
+                sessions.map((session, idx) => {
+                  const workItems = session.sessionId ? (sessionWorkReports[session.sessionId] || null) : null
+                  const workEntries = workItems ? Object.entries(workItems).filter(([, m]) => m > 0) : []
+                  return (
+                    <div key={idx} className={styles.sessionCard}>
+                      <div className={styles.sessionCardHeader}>
+                        <span className={styles.sessionCardNum}>{idx + 1}回目</span>
+                        <span className={styles.sessionCardTime}>
+                          {session.in || '—'}{' → '}
+                          {session.out
+                            ? session.out
+                            : <span className={styles.sessionCardActive}>勤務中</span>
+                          }
+                        </span>
+                      </div>
+                      {workEntries.length > 0 ? (
+                        workEntries.map(([type, mins]) => (
+                          <div key={type} className={styles.sessionWorkRow}>
+                            <span className={styles.sessionWorkType}>{type}</span>
+                            <span className={styles.sessionWorkTime}>{fmtMins(mins)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className={styles.sessionNoWork}>業務未入力</div>
+                      )}
+                      {canEdit && session.sessionId && (
+                        <button className={styles.editWorkBtn} onClick={() => startEditing(idx)}>
+                          {workEntries.length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
+                        </button>
+                      )}
                     </div>
-                  ))}
-                </>
-              )}
-              {canEdit && (
-                <button className={styles.editWorkBtn} onClick={() => setEditing(true)}>
-                  {loadedWorkItems && Object.keys(loadedWorkItems).length > 0 ? '業務内訳を修正' : '業務内訳を入力'}
-                </button>
+                  )
+                })
               )}
               <button className={styles.modalClose} onClick={onClose}>閉じる</button>
             </>
@@ -263,7 +268,9 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
             <>
               {/* ── ヘッダー ── */}
               <div className={styles.editHeader}>
-                <div className={styles.editHeaderDate}>{year}年{month + 1}月{day}日</div>
+                <div className={styles.editHeaderDate}>
+                  {year}年{month + 1}月{day}日 — {editingSessionIdx + 1}回目
+                </div>
                 <div className={styles.editHeaderStats}>
                   <span className={styles.editStatItem}>
                     <span className={styles.editStatLabel}>入力済み</span>
@@ -344,7 +351,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
                   </div>
 
                   <div className={styles.editRightActions}>
-                    <button className={styles.editCancelBtn} onClick={() => setEditing(false)}>
+                    <button className={styles.editCancelBtn} onClick={() => setEditingSessionIdx(null)}>
                       キャンセル
                     </button>
                   </div>
@@ -355,7 +362,7 @@ function DayModal({ day, year, month, entry, user, onClose, onSaved }) {
         </div>
       </div>
 
-      {editing && showConfirm && (
+      {isEditing && showConfirm && (
         <ConfirmSaveModal
           year={year}
           month={month}
@@ -392,7 +399,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       setLogs(data)
       setSessionWorkStatus(workStatus)
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [year, month, user.id, user?.employeeType])
 
   useEffect(() => { loadLogs() }, [loadLogs])
@@ -437,36 +444,37 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
           ))}
           {days.map((d, i) => {
             if (!d) return <div key={`pad-${i}`} className={styles.emptyCell} />
-            const entry = dayMap[d]
-            const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
-            const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-            const worked = !!(inTime || outTime)
+            const sessions = dayMap[d] || []
+            const inTime = sessions[0]?.in || ''
+            const outTime = [...sessions].map(s => s.out).filter(Boolean).sort().reverse()[0] || ''
+            const worked = sessions.length > 0
             const dow = new Date(year, month, d).getDay()
             const isSalaried = user?.employeeType === 'salaried'
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-            const sessionIds = entry ? [...entry.sessionIds] : []
+            const sessionIds = sessions.map(s => s.sessionId).filter(Boolean)
             const workedSessions = sessionWorkStatus[dateStr]
 
             let workBadgeLabel = null
             let workBadgeClass = null
             if (!isSalaried && worked) {
-              if (!inTime && outTime) {
-                workBadgeLabel = '打刻要確認'
-                workBadgeClass = styles.calWorkBadgeRed
-              } else if (inTime && !outTime) {
-                workBadgeLabel = '勤務中'
-                workBadgeClass = styles.calWorkBadgeBlue
-              } else if (sessionIds.length > 0) {
-                const coveredCount = sessionIds.filter(id => workedSessions?.has(id)).length
-                if (coveredCount === 0) { workBadgeLabel = '業務未入力'; workBadgeClass = styles.calWorkBadgeOrange }
-                else if (coveredCount === sessionIds.length) { workBadgeLabel = '業務入力済'; workBadgeClass = styles.calWorkBadgeTeal }
-                else { workBadgeLabel = '一部未入力'; workBadgeClass = styles.calWorkBadgeOrange }
-              } else if (workedSessions?.size > 0) {
-                workBadgeLabel = '業務入力済'
-                workBadgeClass = styles.calWorkBadgeTeal
-              } else {
-                workBadgeLabel = '業務未入力'
-                workBadgeClass = styles.calWorkBadgeOrange
+              const sessionsWithIn = sessions.filter(s => s.in)
+              const outOnlyBroken = sessions.some(s => !s.in && s.out)
+              if (outOnlyBroken && sessionsWithIn.length === 0) {
+                workBadgeLabel = '打刻要確認'; workBadgeClass = styles.calWorkBadgeRed
+              } else if (sessionsWithIn.length > 0) {
+                const allActive = sessionsWithIn.every(s => !s.out)
+                if (allActive) {
+                  workBadgeLabel = '勤務中'; workBadgeClass = styles.calWorkBadgeBlue
+                } else if (sessionIds.length > 0) {
+                  const coveredCount = sessionIds.filter(id => workedSessions?.has(id)).length
+                  if (coveredCount === 0) { workBadgeLabel = '業務未入力'; workBadgeClass = styles.calWorkBadgeOrange }
+                  else if (coveredCount === sessionIds.length) { workBadgeLabel = '業務入力済'; workBadgeClass = styles.calWorkBadgeTeal }
+                  else { workBadgeLabel = '一部未入力'; workBadgeClass = styles.calWorkBadgeOrange }
+                } else if (workedSessions?.size > 0) {
+                  workBadgeLabel = '業務入力済'; workBadgeClass = styles.calWorkBadgeTeal
+                } else {
+                  workBadgeLabel = '業務未入力'; workBadgeClass = styles.calWorkBadgeOrange
+                }
               }
             }
 
@@ -496,7 +504,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
           day={selectedDay}
           year={year}
           month={month}
-          entry={dayMap[selectedDay]}
+          sessions={dayMap[selectedDay] || []}
           user={user}
           onClose={() => setSelectedDay(null)}
           onSaved={() => { loadLogs(); setSelectedDay(null) }}

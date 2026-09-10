@@ -336,14 +336,13 @@ export async function getSessionWorkReportsForRange(dateFrom, dateTo) {
 export async function getSessionWorkStatusForUserRange(userId, dateFrom, dateTo) {
   const q = query(
     collection(db, 'session_work_reports'),
-    where('userId', '==', userId),
-    where('date', '>=', dateFrom),
-    where('date', '<=', dateTo)
+    where('userId', '==', userId)
   )
   const snap = await getDocs(q)
   const result = {}
   snap.docs.forEach(d => {
     const data = d.data()
+    if (data.date < dateFrom || data.date > dateTo) return
     const hasWork = Object.values(data.items || {}).some(m => m > 0)
     if (hasWork) {
       if (!result[data.date]) result[data.date] = new Set()
@@ -412,7 +411,12 @@ export async function saveDayEditBatch({ userId, dateStr, logsToDelete, logsToCr
   if (!isSalaried) {
     for (const { sessionId, items } of (sessionWorkData || [])) {
       const ref = doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)
-      batch.set(ref, { userId, date: dateStr, sessionId, items, updatedAt: now })
+      const hasValidItems = Object.values(items || {}).some(m => m > 0)
+      if (hasValidItems) {
+        batch.set(ref, { userId, date: dateStr, sessionId, items, updatedAt: now })
+      } else {
+        batch.delete(ref)
+      }
     }
     for (const sessionId of (deletedSessionIds || [])) {
       batch.delete(doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`))
@@ -870,14 +874,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     })
   } catch {}
 
-  // Fetch work_reports (legacy) and session_work_reports; prefer session data over legacy
-  const legacyWorkReports = await getWorkReportsForRange(dateFrom || '', dateTo || '')
-  const sessionWorkReportsAll = await getSessionWorkReportsForRange(dateFrom || '', dateTo || '')
-  const allWorkReports = {}
-  const allWorkReportKeys = new Set([...Object.keys(legacyWorkReports), ...Object.keys(sessionWorkReportsAll)])
-  for (const key of allWorkReportKeys) {
-    allWorkReports[key] = sessionWorkReportsAll[key] || legacyWorkReports[key] || {}
-  }
+  // Fetch work_reports: prefer session data over legacy, merge correctly
+  const allWorkReports = await getMergedWorkReportsForRange(dateFrom || '', dateTo || '')
 
   const userEntries = users.filter(u =>
     logs.some(l => l.user_id === u.id) ||

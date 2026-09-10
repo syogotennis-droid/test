@@ -470,7 +470,7 @@ function CalendarTab({ users, today, isTablet }) {
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
-      getSessionWorkStatusForUserRange(selectedUser.id, from, to).catch(() => ({}))
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
     ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus); setLoading(false) })
       .catch(() => setLoading(false))
   }, [selectedUser, year, month])
@@ -482,7 +482,7 @@ function CalendarTab({ users, today, isTablet }) {
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
-      getSessionWorkStatusForUserRange(selectedUser.id, from, to).catch(() => ({}))
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
     ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus) })
       .catch(() => {})
   }
@@ -547,24 +547,27 @@ function CalendarTab({ users, today, isTablet }) {
               const multiSession = sessions.length > 1
               const dow = new Date(year, month, d).getDay()
               const isToday = d === todayDay && year === todayYear && month === todayMonth
-              const MAX_SHOW = sessions.length <= 3 ? sessions.length : 2
-              const extraCount = sessions.length > 3 ? sessions.length - 2 : 0
+              const MAX_SHOW = Math.min(2, sessions.length)
+              const extraCount = Math.max(0, sessions.length - MAX_SHOW)
+              const hiddenActive = sessions.slice(MAX_SHOW).some(s => !s.out)
               const workDoneSessionIds = entry?.workDoneSessionIds || new Set()
               // Work status badge for non-salaried: check if all completed sessions have work reports
               const isSalUser = selectedUser?.employeeType === 'salaried'
               let calWorkBadgeClass = null, calWorkBadgeText = null
               if (!isSalUser && worked) {
-                const completedSessions = sessions.filter(s => s.out)
-                const checkedInOnly = sessions.filter(s => !s.out)
-                if (completedSessions.length > 0) {
-                  const allHaveWork = completedSessions.every(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
-                  const anyHaveWork = completedSessions.some(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
-                  if (allHaveWork) { calWorkBadgeClass = styles.calWorkBadgeGreen; calWorkBadgeText = '業務入力済' }
+                const sessionsWithIn = sessions.filter(s => s.in)
+                const outOnlyBroken = sessions.some(s => !s.in && s.out)
+                if (outOnlyBroken && sessionsWithIn.length === 0) {
+                  calWorkBadgeClass = styles.calWorkBadgeRed; calWorkBadgeText = '打刻要確認'
+                } else if (sessionsWithIn.length > 0) {
+                  const allActive = sessionsWithIn.every(s => !s.out)
+                  const anyActive = sessionsWithIn.some(s => !s.out)
+                  const allHaveWork = sessionsWithIn.every(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
+                  const anyHaveWork = sessionsWithIn.some(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
+                  if (allActive) { calWorkBadgeClass = styles.calWorkBadgeBlue; calWorkBadgeText = '勤務中' }
+                  else if (allHaveWork) { calWorkBadgeClass = styles.calWorkBadgeGreen; calWorkBadgeText = '業務入力済' }
                   else if (anyHaveWork) { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = '一部未入力' }
-                  else { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = '業務未入力' }
-                }
-                if (checkedInOnly.length > 0 && completedSessions.length === 0) {
-                  calWorkBadgeClass = styles.calWorkBadgeBlue; calWorkBadgeText = '勤務中'
+                  else { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = anyActive ? '勤務中' : '業務未入力' }
                 }
               }
               return (
@@ -595,17 +598,21 @@ function CalendarTab({ users, today, isTablet }) {
                           className={styles.calMoreBtn}
                           onClick={e => { e.stopPropagation(); setSelectedDay(d) }}
                         >
-                          ほか{extraCount}件
+                          ほか{extraCount}件{hiddenActive ? '・勤務中' : ''}
                         </button>
                       )}
                     </div>
                   ) : (
                     <>
-                      {inTime && <div className={styles.calIn}>出勤 {inTime}</div>}
-                      {sessions[0]?.out
-                        ? <div className={styles.calTimeNeutral}>退勤 {sessions[0].out}</div>
-                        : inTime && <div className={styles.calActive}>勤務中</div>
-                      }
+                      {inTime && (
+                        <div className={styles.calOneLiner}>
+                          {inTime}{' → '}
+                          {sessions[0]?.out
+                            ? sessions[0].out
+                            : <span className={styles.calActiveInline}>勤務中</span>
+                          }
+                        </div>
+                      )}
                     </>
                   )}
                   {calWorkBadgeClass && <div className={calWorkBadgeClass}>{calWorkBadgeText}</div>}
