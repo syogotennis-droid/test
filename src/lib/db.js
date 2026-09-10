@@ -334,22 +334,40 @@ export async function getSessionWorkReportsForRange(dateFrom, dateTo) {
 }
 
 export async function getSessionWorkStatusForUserRange(userId, dateFrom, dateTo) {
-  const q = query(
-    collection(db, 'session_work_reports'),
-    where('userId', '==', userId)
-  )
-  const snap = await getDocs(q)
-  const result = {}
-  snap.docs.forEach(d => {
+  const [sessionSnap, legacySnap] = await Promise.all([
+    getDocs(query(collection(db, 'session_work_reports'), where('userId', '==', userId))),
+    getDocs(query(collection(db, 'work_reports'), where('userId', '==', userId)))
+  ])
+  const sessionByDate = {}
+  const sessionItemsByDate = {}
+  sessionSnap.docs.forEach(d => {
     const data = d.data()
     if (data.date < dateFrom || data.date > dateTo) return
     const hasWork = Object.values(data.items || {}).some(m => m > 0)
     if (hasWork) {
-      if (!result[data.date]) result[data.date] = new Set()
-      if (data.sessionId) result[data.date].add(data.sessionId)
+      if (!sessionByDate[data.date]) { sessionByDate[data.date] = new Set(); sessionItemsByDate[data.date] = {} }
+      if (data.sessionId) sessionByDate[data.date].add(data.sessionId)
+      Object.entries(data.items || {}).forEach(([t, v]) => {
+        sessionItemsByDate[data.date][t] = (sessionItemsByDate[data.date][t] || 0) + v
+      })
     }
   })
-  return result
+  const legacyDates = new Set()
+  const legacyItemsByDate = {}
+  legacySnap.docs.forEach(d => {
+    const data = d.data()
+    if (data.date < dateFrom || data.date > dateTo) return
+    const hasWork = Object.values(data.items || {}).some(m => m > 0)
+    if (hasWork) { legacyDates.add(data.date); legacyItemsByDate[data.date] = data.items || {} }
+  })
+  const conflictDates = new Set()
+  for (const date of legacyDates) {
+    if (!sessionByDate[date]) continue
+    const ses = sessionItemsByDate[date] || {}, leg = legacyItemsByDate[date] || {}
+    const sk = Object.keys(ses).sort(), lk = Object.keys(leg).filter(k => leg[k] > 0).sort()
+    if (sk.join() !== lk.join() || sk.some(k => ses[k] !== leg[k])) conflictDates.add(date)
+  }
+  return { sessionByDate, legacyDates, conflictDates }
 }
 
 export async function deleteSessionWorkReport(userId, dateStr, sessionId) {
@@ -397,11 +415,17 @@ export async function getMergedWorkReportsForRange(dateFrom, dateTo) {
   return result
 }
 
-export async function saveDayEditBatch({ userId, dateStr, logsToDelete, logsToCreate, isSalaried, sessionWorkData, deletedSessionIds }) {
+export async function saveDayEditBatch({ userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds }) {
   const batch = writeBatch(db)
   const now = new Date().toISOString()
-  for (const log of logsToDelete) batch.delete(doc(db, 'logs', log.id))
-  for (const { logType, time, sessionId } of logsToCreate) {
+  for (const log of (logsToDelete || [])) batch.delete(doc(db, 'logs', log.id))
+  for (const { id, time } of (logsToUpdate || [])) {
+    const [y, mo, d] = dateStr.split('-').map(Number)
+    const [h, m] = time.split(':').map(Number)
+    const dt = new Date(y, mo - 1, d, h, m, 0)
+    batch.update(doc(db, 'logs', id), { time: time + ':00', timestamp: dt.toISOString() })
+  }
+  for (const { logType, time, sessionId } of (logsToCreate || [])) {
     const logRef = doc(logsCol)
     const [y, mo, d] = dateStr.split('-').map(Number)
     const [h, m] = time.split(':').map(Number)

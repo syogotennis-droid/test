@@ -431,8 +431,10 @@ function buildDayMap(logs, year, month, sessionWorkStatus) {
     }
     sessions.sort((a, b) => (a.in || a.ts || '').localeCompare(b.in || b.ts || ''))
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    const workDoneSessionIds = sessionWorkStatus?.[dateStr] || new Set()
-    map[d] = { sessions, workDoneSessionIds }
+    const workDoneSessionIds = sessionWorkStatus?.sessionByDate?.[dateStr] || new Set()
+    const hasLegacyWork = sessionWorkStatus?.legacyDates?.has?.(dateStr) || false
+    const hasWorkConflict = sessionWorkStatus?.conflictDates?.has?.(dateStr) || false
+    map[d] = { sessions, workDoneSessionIds, hasLegacyWork, hasWorkConflict }
   })
   return map
 }
@@ -551,6 +553,8 @@ function CalendarTab({ users, today, isTablet }) {
               const extraCount = Math.max(0, sessions.length - MAX_SHOW)
               const hiddenActive = sessions.slice(MAX_SHOW).some(s => !s.out)
               const workDoneSessionIds = entry?.workDoneSessionIds || new Set()
+              const hasLegacyWork = entry?.hasLegacyWork || false
+              const hasWorkConflict = entry?.hasWorkConflict || false
               // Work status badge for non-salaried: check if all completed sessions have work reports
               const isSalUser = selectedUser?.employeeType === 'salaried'
               let calWorkBadgeClass = null, calWorkBadgeText = null
@@ -564,9 +568,11 @@ function CalendarTab({ users, today, isTablet }) {
                   const anyActive = sessionsWithIn.some(s => !s.out)
                   const allHaveWork = sessionsWithIn.every(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
                   const anyHaveWork = sessionsWithIn.some(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
-                  if (allActive) { calWorkBadgeClass = styles.calWorkBadgeBlue; calWorkBadgeText = '勤務中' }
+                  if (hasWorkConflict) { calWorkBadgeClass = styles.calWorkBadgeRed; calWorkBadgeText = '要確認' }
+                  else if (allActive) { calWorkBadgeClass = styles.calWorkBadgeBlue; calWorkBadgeText = '勤務中' }
                   else if (allHaveWork) { calWorkBadgeClass = styles.calWorkBadgeGreen; calWorkBadgeText = '業務入力済' }
                   else if (anyHaveWork) { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = '一部未入力' }
+                  else if (hasLegacyWork) { calWorkBadgeClass = styles.calWorkBadgeGreen; calWorkBadgeText = '旧データあり' }
                   else { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = anyActive ? '勤務中' : '業務未入力' }
                 }
               }
@@ -949,6 +955,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
         origInTime: inLog?.time?.substring(0, 5) || '',
         origOutTime: outLog?.time?.substring(0, 5) || '',
+        inLogId: inLog?.id || null,
+        outLogId: outLog?.id || null,
         sessionId: sid,
         sortKey: inLog?.time || outLog?.time || ''
       })
@@ -968,6 +976,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
         origInTime: inLog?.time?.substring(0, 5) || '',
         origOutTime: outLog?.time?.substring(0, 5) || '',
+        inLogId: inLog?.id || null,
+        outLogId: outLog?.id || null,
         sessionId: generateSessionId(),
         sortKey: inLog?.time || outLog?.time || ''
       })
@@ -983,14 +993,17 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [sessionWorkRows, setSessionWorkRows] = useState({})
   const [legacyWorkItems, setLegacyWorkItems] = useState({})
   const [workItemsLoaded, setWorkItemsLoaded] = useState(false)
+  const [hasConflict, setHasConflict] = useState(false)
   const [step, setStep] = useState('form')
   const [saving, setSaving] = useState(false)
+  const [hasChanges, setHasChanges] = useState(true)
   const [validationErrors, setValidationErrors] = useState([])
   const [editingTimeField, setEditingTimeField] = useState(null)
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState(null)
   const [deletedSessionIds, setDeletedSessionIds] = useState([])
   const [pendingFocusSessionId, setPendingFocusSessionId] = useState(null)
   const lastWorkSelectRef = useRef(null)
+  const initialWorkRowsSnapshot = useRef({})
 
   useEffect(() => {
     if (isSalaried) { setWorkItemsLoaded(true); return }
@@ -1000,14 +1013,30 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       getWorkReport(user.id, dateStr)
     ]).then(([sessionReports, legacyItems]) => {
       const rows = {}
+      const snapshot = {}
       for (const s of initSess) {
         const items = sessionReports[s.sessionId] || {}
         const savedRows = Object.entries(items)
           .map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
         rows[s.sessionId] = savedRows.length > 0 ? savedRows : [{ type: '', h: 0, m: 0 }]
+        snapshot[s.sessionId] = { ...items }
       }
+      initialWorkRowsSnapshot.current = snapshot
       setSessionWorkRows(rows)
       setLegacyWorkItems(legacyItems)
+      // Detect conflict: both session and legacy data exist with different content
+      const hasLeg = Object.values(legacyItems).some(m => m > 0)
+      const hasSess = Object.values(sessionReports).some(items => Object.values(items).some(m => m > 0))
+      if (hasLeg && hasSess) {
+        const sessMerged = {}
+        Object.values(sessionReports).forEach(items => {
+          Object.entries(items).forEach(([t, m]) => { sessMerged[t] = (sessMerged[t] || 0) + m })
+        })
+        const sk = Object.keys(sessMerged).sort(), lk = Object.keys(legacyItems).filter(k => legacyItems[k] > 0).sort()
+        setHasConflict(sk.join() !== lk.join() || sk.some(k => sessMerged[k] !== legacyItems[k]))
+      } else {
+        setHasConflict(false)
+      }
       setWorkItemsLoaded(true)
     })
   }, [user.id, dateStr, isSalaried])
@@ -1141,24 +1170,71 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     return errs
   }
 
+  function computeLogDiff() {
+    const initialSessions = initialSessionsRef.current
+    const logsToDelete = [], logsToUpdate = [], logsToCreate = []
+    for (let si = 0; si < sessions.length; si++) {
+      const s = sessions[si]
+      const { inTime, outTime } = sessionTimes[si]
+      const orig = initialSessions.find(o => o.sessionId === s.sessionId)
+      if (orig?.inLogId) {
+        if (inTime && inTime !== orig.origInTime) logsToUpdate.push({ id: orig.inLogId, time: inTime })
+        else if (!inTime) logsToDelete.push({ id: orig.inLogId })
+      } else if (inTime) {
+        logsToCreate.push({ logType: '出勤', time: inTime, sessionId: s.sessionId })
+      }
+      if (orig?.outLogId) {
+        if (outTime && outTime !== orig.origOutTime) logsToUpdate.push({ id: orig.outLogId, time: outTime })
+        else if (!outTime) logsToDelete.push({ id: orig.outLogId })
+      } else if (outTime) {
+        logsToCreate.push({ logType: '退勤', time: outTime, sessionId: s.sessionId })
+      }
+    }
+    for (const deletedSid of deletedSessionIds) {
+      const orig = initialSessions.find(o => o.sessionId === deletedSid)
+      if (orig?.inLogId) logsToDelete.push({ id: orig.inLogId })
+      if (orig?.outLogId) logsToDelete.push({ id: orig.outLogId })
+    }
+    return { logsToDelete, logsToUpdate, logsToCreate }
+  }
+
+  function hasWorkDataChanged() {
+    const initial = initialWorkRowsSnapshot.current
+    for (const s of sessions) {
+      const rows = sessionWorkRows[s.sessionId] || []
+      const cur = {}
+      for (const r of rows) {
+        if (!r.type) continue
+        const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
+        if (mins > 0) cur[r.type] = mins
+      }
+      const init = initial[s.sessionId] || {}
+      const ck = Object.keys(cur).sort(), ik = Object.keys(init).sort()
+      if (ck.join() !== ik.join() || ck.some(k => cur[k] !== init[k])) return true
+    }
+    for (const sid of deletedSessionIds) {
+      if (Object.keys(initial[sid] || {}).length > 0) return true
+    }
+    return false
+  }
+
   function handleTryConfirm() {
     const errs = validate()
     if (errs.length > 0) { setValidationErrors(errs); return }
     setValidationErrors([])
+    const { logsToDelete, logsToUpdate, logsToCreate } = computeLogDiff()
+    const logChanged = logsToDelete.length > 0 || logsToUpdate.length > 0 || logsToCreate.length > 0
+    const workChanged = !isSalaried && hasWorkDataChanged()
+    setHasChanges(logChanged || workChanged)
     setStep('confirm')
   }
 
   async function handleConfirm() {
     if (saving) return
+    if (!hasChanges) { onClose(); return }
     setSaving(true)
     try {
-      const logsToCreate = []
-      for (let si = 0; si < sessions.length; si++) {
-        const { inTime, outTime } = sessionTimes[si]
-        const { sessionId } = sessions[si]
-        if (inTime) logsToCreate.push({ logType: '出勤', time: inTime, sessionId })
-        if (outTime) logsToCreate.push({ logType: '退勤', time: outTime, sessionId })
-      }
+      const { logsToDelete, logsToUpdate, logsToCreate } = computeLogDiff()
       const sessionWorkData = isSalaried ? [] : sessions.map(s => {
         const rows = sessionWorkRows[s.sessionId] || []
         const items = {}
@@ -1171,8 +1247,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       })
       await saveDayEditBatch({
         userId: user.id, dateStr,
-        logsToDelete: dayLogs,
-        logsToCreate,
+        logsToDelete, logsToCreate, logsToUpdate,
         isSalaried,
         sessionWorkData,
         deletedSessionIds
@@ -1384,6 +1459,12 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 </div>
               )}
 
+              {hasConflict && (
+                <div className={styles.dayEditConflictWarning}>
+                  ⚠ 旧形式とセッション別の業務時間が両方存在します。集計に使用する内容を確認してください。
+                </div>
+              )}
+
               {validationErrors.length > 0 && (
                 <div className={styles.dayEditErrors}>
                   {validationErrors.map((e, i) => <div key={i} className={styles.dayEditErrorItem}>⚠ {e}</div>)}
@@ -1440,8 +1521,12 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               <div className={styles.modalHeaderSub}>{user.name} ｜ {dateLabel}</div>
             </div>
             <div className={styles.modalBody}>
-              <p className={styles.confirmInfoNote}>この日の勤務記録を更新します</p>
-              {sessions.map((s, si) => {
+              {!hasChanges ? (
+                <div className={styles.confirmNoChanges}>変更内容はありません</div>
+              ) : (
+                <p className={styles.confirmInfoNote}>この日の勤務記録を更新します</p>
+              )}
+              {hasChanges && sessions.map((s, si) => {
                 const { inTime, outTime } = sessionTimes[si]
                 const rows = sessionWorkRows[s.sessionId] || []
                 const sessionTotalMins = rows.reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
@@ -1485,7 +1570,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                   </div>
                 )
               })}
-              {!isSalaried && dayTotalMins > 0 && (
+              {!isSalaried && hasChanges && dayTotalMins > 0 && (
                 <div className={styles.confirmDayTotal}>
                   <span>1日の合計</span><strong>{fmtWorkTotal(dayTotalMins)}</strong>
                 </div>
@@ -1494,7 +1579,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             <div className={styles.modalFooter}>
               <div className={styles.dayEditFooterBtns}>
                 <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻って修正</button>
-                <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中...' : 'この内容で保存'}</button>
+                {hasChanges
+                  ? <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中...' : 'この内容で保存'}</button>
+                  : <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>
+                }
               </div>
             </div>
           </>

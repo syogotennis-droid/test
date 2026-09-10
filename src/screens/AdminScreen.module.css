@@ -1786,6 +1786,13 @@
 .newTime { font-weight: 700; color: #2563eb; font-size: 1.1rem; }
 
 /* ─── Confirm step (per-session cards) ─── */
+.confirmNoChanges {
+  font-size: 0.9rem;
+  color: #475569;
+  text-align: center;
+  padding: 16px 0;
+  font-weight: 500;
+}
 .confirmInfoNote {
   font-size: 0.82rem;
   color: #475569;
@@ -4843,6 +4850,18 @@
   margin-top: 4px;
 }
 .dayEditWorkTotal strong { color: #1e293b; }
+
+/* conflict warning */
+.dayEditConflictWarning {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  color: #92400e;
+  line-height: 1.5;
+}
 
 /* validation errors */
 .dayEditErrors {
