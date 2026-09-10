@@ -973,14 +973,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   }
 
   function tryRemoveSession(sessionId) {
-    const rows = sessionWorkRows[sessionId] || []
-    const hasWork = rows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
-    if (hasWork) {
-      setPendingDeleteSessionId(sessionId)
-      setStep('confirmDeleteSession')
-    } else {
-      doRemoveSession(sessionId)
-    }
+    setPendingDeleteSessionId(sessionId)
+    setStep('confirmDeleteSession')
   }
 
   function doRemoveSession(sessionId) {
@@ -1130,9 +1124,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     if (isTablet) {
       return (
         <div className={styles.dayEditPunchRow}>
-          <span className={styles.dayEditPunchLabel}>打刻</span>
+          <span className={styles.dayEditPunchTimeLabel}>出勤</span>
           <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
           <span className={styles.dayEditPunchArrow}>→</span>
+          <span className={styles.dayEditPunchTimeLabel}>退勤</span>
           <button className={[styles.numpadTrigger, isIncomplete ? styles.numpadTriggerMuted : ''].join(' ')}
             onClick={() => setEditingTimeField({ si, field: 'out' })}>
             {outTime || (isIncomplete ? '勤務中' : '──:──')}
@@ -1142,7 +1137,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     }
     return (
       <div className={styles.dayEditPunchRow}>
-        <span className={styles.dayEditPunchLabel}>打刻</span>
         <span className={styles.dayEditPunchTimeLabel}>出勤</span>
         <input type="text" inputMode="numeric" maxLength={2} value={s.inH}
           onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
@@ -1199,16 +1193,30 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     const sessionTotalMins = rows.reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
                     const selectedSessionTypes = new Set(rows.map(r => r.type).filter(Boolean))
                     const hasMoreSessionTypes = userWorkItems.some(t => !selectedSessionTypes.has(t))
-                    let badgeClass, badgeText
-                    if (!inTime && !outTime) { badgeClass = styles.dayEditBadgeEmpty; badgeText = '未入力' }
-                    else if (inTime && outTime) { badgeClass = styles.dayEditBadgeComplete; badgeText = '完了' }
-                    else { badgeClass = styles.dayEditBadgeInProgress; badgeText = '勤務中' }
+                    // Punch status badge
+                    let punchBadgeClass, punchBadgeText
+                    if (!inTime && !outTime) { punchBadgeClass = styles.dayEditBadgeGrey; punchBadgeText = '未打刻' }
+                    else if (inTime && outTime) { punchBadgeClass = styles.dayEditBadgeGreen; punchBadgeText = '退勤済' }
+                    else { punchBadgeClass = styles.dayEditBadgeBlue; punchBadgeText = '勤務中' }
+                    // Work status badge (non-salaried only, shown after load)
+                    let workBadgeClass, workBadgeText
+                    if (!isSalaried && workItemsLoaded) {
+                      const hasValidWork = rows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+                      const hasWorkErr = rows.some(r => getWorkRowError(r))
+                      if (hasWorkErr) { workBadgeClass = styles.dayEditBadgeRed; workBadgeText = '入力要確認' }
+                      else if (hasValidWork) { workBadgeClass = styles.dayEditBadgeTeal; workBadgeText = '業務入力済' }
+                      else { workBadgeClass = styles.dayEditBadgeOrange; workBadgeText = '業務未入力' }
+                    }
                     return (
                       <div key={s.sessionId} className={styles.dayEditSessionCard}>
                         <div className={styles.dayEditSessionCardHeader}>
-                          <span className={styles.dayEditSessionCardNum}>{si + 1}回目</span>
-                          <span className={badgeClass}>{badgeText}</span>
-                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この打刻を削除</button>
+                          <span className={styles.dayEditSessionNumBadge}>{si + 1}</span>
+                          <span className={styles.dayEditSessionCardLabel}>{si + 1}回目</span>
+                          <div className={styles.dayEditSessionBadges}>
+                            <span className={punchBadgeClass}>{punchBadgeText}</span>
+                            {workBadgeClass && <span className={workBadgeClass}>{workBadgeText}</span>}
+                          </div>
+                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この回を削除</button>
                         </div>
                         <div className={styles.dayEditSessionCardBody}>
                           {renderSessionPunchInputs(s, si)}
@@ -1217,7 +1225,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                               <div className={styles.dayEditSectionLoading}>読込中...</div>
                             ) : (
                               <>
-                                <div className={styles.dayEditWorkTable}>
+                                <div className={styles.dayEditWorkSectionLabel}>業務内容</div>
+                                <div className={styles.dayEditWorkRows}>
                                   <div className={styles.dayEditWorkTableHeader}>
                                     <span className={styles.dayEditWorkColType}>業務</span>
                                     <span className={styles.dayEditWorkColTime}>時間</span>
@@ -1293,14 +1302,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 </div>
               )}
 
-              {/* ── Day total ── */}
-              {!isSalaried && workItemsLoaded && (
-                <div className={styles.dayEditDayTotal}>
-                  <span>1日の合計</span>
-                  <strong>{fmtWorkTotal(dayTotalMins)}</strong>
-                </div>
-              )}
-
               {validationErrors.length > 0 && (
                 <div className={styles.dayEditErrors}>
                   {validationErrors.map((e, i) => <div key={i} className={styles.dayEditErrorItem}>⚠ {e}</div>)}
@@ -1336,8 +1337,16 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalFooter}>
-              <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
-              <button className={styles.saveBtn} onClick={handleTryConfirm}>保存する</button>
+              {!isSalaried && workItemsLoaded && (
+                <div className={styles.dayEditFooterTotal}>
+                  <span className={styles.dayEditFooterTotalLabel}>1日の合計</span>
+                  <strong className={styles.dayEditFooterTotalValue}>{fmtWorkTotal(dayTotalMins)}</strong>
+                </div>
+              )}
+              <div className={styles.dayEditFooterBtns}>
+                <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+                <button className={styles.saveBtn} onClick={handleTryConfirm}>保存する</button>
+              </div>
             </div>
           </>
         )}
@@ -1396,22 +1405,28 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           </>
         )}
 
-        {step === 'confirmDeleteSession' && (
-          <>
-            <div className={styles.modalHeader}>
-              <div className={styles.modalHeaderTitle}>確認</div>
-            </div>
-            <div className={styles.modalBody}>
-              <p className={styles.confirmWarn}>
-                この打刻には業務時間が登録されています。打刻を削除すると、この回の業務時間も削除されます。削除してよろしいですか？
-              </p>
-            </div>
-            <div className={styles.modalFooter}>
-              <button className={styles.cancelBtn} onClick={() => { setPendingDeleteSessionId(null); setStep('form') }}>戻る</button>
-              <button className={styles.realDeleteBtn} onClick={() => doRemoveSession(pendingDeleteSessionId)}>削除する</button>
-            </div>
-          </>
-        )}
+        {step === 'confirmDeleteSession' && (() => {
+          const pendingRows = pendingDeleteSessionId ? (sessionWorkRows[pendingDeleteSessionId] || []) : []
+          const hasWorkInSession = pendingRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+          return (
+            <>
+              <div className={styles.modalHeader}>
+                <div className={styles.modalHeaderTitle}>確認</div>
+              </div>
+              <div className={styles.modalBody}>
+                <p className={styles.confirmWarn}>
+                  {hasWorkInSession
+                    ? 'この回には業務時間が登録されています。打刻と業務時間の両方を削除します。削除してよろしいですか？'
+                    : 'この回の打刻と業務時間を削除します。削除してよろしいですか？'}
+                </p>
+              </div>
+              <div className={styles.modalFooter}>
+                <button className={styles.cancelBtn} onClick={() => { setPendingDeleteSessionId(null); setStep('form') }}>戻る</button>
+                <button className={styles.realDeleteBtn} onClick={() => doRemoveSession(pendingDeleteSessionId)}>削除する</button>
+              </div>
+            </>
+          )
+        })()}
 
         {step === 'confirmNoSessions' && (
           <>
