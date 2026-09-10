@@ -721,7 +721,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   }
 
   const enc = new TextEncoder()
-  const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
+  const userEntries = users.filter(u =>
+    logs.some(l => l.user_id === u.id) ||
+    Object.keys(allWorkReports).some(k => k.startsWith(`${u.id}_`))
+  )
   const sheetXmls = []
   const summaryData = { types: {} }
 
@@ -987,8 +990,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     )
     const workTypes = (user.workItems || []).filter(t => !EXCL.has(t) && workReportTypeSet.has(t))
 
-    // workingDays = days with work reports (for transport and prep pay)
-    const workingDays = Object.keys(userWorkReports).length
+    // workingDays = days with work report AND ≥1 completed QR session (spec 7)
+    let workingDays = 0
+    Object.entries(userWorkReports).forEach(([dateStr, items]) => {
+      if (!Object.values(items).some(m => m > 0)) return
+      const entry = byDate[dateStr]
+      const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
+      if (completedSess.length > 0) workingDays++
+    })
 
     // Accumulate global summary data from work_reports
     for (const type of workTypes) {

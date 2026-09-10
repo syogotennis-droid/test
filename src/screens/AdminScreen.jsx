@@ -967,6 +967,34 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const selectedTypes = new Set(workRows.map(r => r.type).filter(Boolean))
   const hasMoreWorkTypes = userWorkItems.some(t => !selectedTypes.has(t))
 
+  // Punch completion status — reactive, drives work-entry availability
+  const sessionStatuses = sessions.map((s, si) => {
+    const allEmpty = s.inH === '' && s.inM === '' && s.outH === '' && s.outM === ''
+    if (allEmpty) return 'empty'
+    const { inTime, outTime } = sessionTimes[si]
+    if (inTime && outTime) return 'complete'
+    return 'incomplete'
+  })
+  const nonEmptySessions = sessionStatuses.filter(st => st !== 'empty')
+  const completedSessionCount = sessionStatuses.filter(st => st === 'complete').length
+  let punchStatus
+  if (nonEmptySessions.length === 0) punchStatus = 'empty'
+  else if (nonEmptySessions.some(st => st === 'incomplete')) {
+    punchStatus = completedSessionCount === 0 ? 'incomplete_only' : 'partial_incomplete'
+  } else punchStatus = 'allComplete'
+  const workEnabled = punchStatus === 'allComplete'
+  const workHasData = workRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+  const punchContextMsg = completedSessionCount === 1
+    ? 'この日のQR打刻1回分に対する業務時間申告'
+    : completedSessionCount > 1
+    ? `この日のQR打刻${completedSessionCount}回分をまとめて申告`
+    : null
+
+  function fmtWorkTotal(mins) {
+    const h = Math.floor(mins / 60), m = mins % 60
+    return `${h}時間${String(m).padStart(2, '0')}分`
+  }
+
   function validate() {
     const errs = []
     for (let si = 0; si < sessions.length; si++) {
@@ -1032,8 +1060,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   }
 
   const hasQrSessions = dayLogs.length > 0
-  const hasWorkReport = workRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
-  const canShowDelete = hasQrSessions || hasWorkReport
+  const canShowDelete = hasQrSessions || workHasData
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -1114,7 +1141,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                           </div>
                         )
                       })}
-                      <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ セッション追加</button>
+                      <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
                     </>
                   )}
 
@@ -1143,64 +1170,97 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     <div className={styles.dayEditColHeader}>
                       <div className={styles.dayEditColTitle}>業務時間申告</div>
                       <div className={styles.dayEditColSubtitle}>給与計算に使用します</div>
+                      {workEnabled && punchContextMsg && (
+                        <div className={styles.dayEditPunchContext}>{punchContextMsg}</div>
+                      )}
                     </div>
 
-                    {!workItemsLoaded ? (
-                      <div className={styles.dayEditSectionLoading}>読込中...</div>
-                    ) : workRows.length === 0 ? (
-                      <div className={styles.dayEditEmptyState}>
-                        <div className={styles.dayEditEmptyText}>業務時間はまだ入力されていません</div>
-                        {hasMoreWorkTypes && (
-                          <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 業務を追加</button>
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                        <div className={styles.dayEditWorkTable}>
-                          <div className={styles.dayEditWorkTableHeader}>
-                            <span className={styles.dayEditWorkColType}>業務</span>
-                            <span className={styles.dayEditWorkColTime}>時間</span>
-                            <span className={styles.dayEditWorkColOp}></span>
+                    {/* Disabled: punch incomplete or missing */}
+                    {!workEnabled && (
+                      <div className={styles.dayEditWorkDisabledArea}>
+                        {workHasData && (
+                          <div className={styles.dayEditWorkWarnBox}>
+                            <div className={styles.dayEditWorkWarnTitle}>QR打刻が未完了のため要確認</div>
+                            <div className={styles.dayEditWorkWarnItems}>
+                              {workRows.filter(r => r.type).map((r, ri) => {
+                                const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
+                                return <div key={ri} className={styles.dayEditWorkWarnItem}>{r.type}：{fmtWorkTotal(mins)}</div>
+                              })}
+                            </div>
                           </div>
-                          {workRows.map((row, ri) => {
-                            const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
-                            const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
-                            return (
-                              <div key={ri} className={styles.dayEditWorkRow}>
-                                <select
-                                  className={styles.dayEditWorkTypeSelect}
-                                  value={row.type}
-                                  onChange={e => updateWorkRow(ri, 'type', e.target.value)}
-                                >
-                                  <option value="">-- 選択 --</option>
-                                  {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                <div className={styles.dayEditWorkTimeCell}>
-                                  <input type="number" min="0" max="23"
-                                    className={styles.dayEditWorkNum}
-                                    value={row.h === 0 ? '' : row.h} placeholder="0"
-                                    onChange={e => updateWorkRow(ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                                    onFocus={e => e.target.select()} />
-                                  <span className={styles.dayEditWorkUnit}>時間</span>
-                                  <input type="number" min="0" max="59"
-                                    className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
-                                    value={row.m === 0 ? '' : row.m} placeholder="0"
-                                    onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(ri, 'm', isNaN(n) ? 0 : n) }}
-                                    onFocus={e => e.target.select()} />
-                                  <span className={styles.dayEditWorkUnit}>分</span>
-                                </div>
-                                <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(ri)} title="削除">削除</button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                        {hasMoreWorkTypes && (
-                          <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 業務を追加</button>
                         )}
-                        <div className={styles.dayEditWorkTotal}>
-                          <span>申告時間合計</span>
-                          <strong>{fmtMinutes(totalWorkMins)}</strong>
+                        <div className={styles.dayEditWorkDisabledMsg}>
+                          {punchStatus === 'empty' && '業務時間を入力するには、先にQR打刻が必要です'}
+                          {punchStatus === 'incomplete_only' && '退勤打刻が完了していないため、業務時間を入力できません'}
+                          {punchStatus === 'partial_incomplete' && '未完了の打刻があります。すべての退勤打刻を完了してください'}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Enabled: loading */}
+                    {workEnabled && !workItemsLoaded && (
+                      <div className={styles.dayEditSectionLoading}>読込中...</div>
+                    )}
+
+                    {/* Enabled: loaded */}
+                    {workEnabled && workItemsLoaded && (
+                      <>
+                        {workRows.length === 0 ? (
+                          <div className={styles.dayEditEmptyState}>
+                            <div className={styles.dayEditEmptyText}>業務時間はまだ入力されていません</div>
+                            {hasMoreWorkTypes && (
+                              <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 業務を追加</button>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <div className={styles.dayEditWorkTable}>
+                              <div className={styles.dayEditWorkTableHeader}>
+                                <span className={styles.dayEditWorkColType}>業務</span>
+                                <span className={styles.dayEditWorkColTime}>時間</span>
+                                <span className={styles.dayEditWorkColOp}></span>
+                              </div>
+                              {workRows.map((row, ri) => {
+                                const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
+                                const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
+                                return (
+                                  <div key={ri} className={styles.dayEditWorkRow}>
+                                    <select
+                                      className={styles.dayEditWorkTypeSelect}
+                                      value={row.type}
+                                      onChange={e => updateWorkRow(ri, 'type', e.target.value)}
+                                    >
+                                      <option value="">-- 選択 --</option>
+                                      {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                    <div className={styles.dayEditWorkTimeCell}>
+                                      <input type="number" min="0" max="23"
+                                        className={styles.dayEditWorkNum}
+                                        value={row.h === 0 ? '' : row.h} placeholder="0"
+                                        onChange={e => updateWorkRow(ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                                        onFocus={e => e.target.select()} />
+                                      <span className={styles.dayEditWorkUnit}>時間</span>
+                                      <input type="number" min="0" max="59"
+                                        className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
+                                        value={row.m === 0 ? '' : row.m} placeholder="0"
+                                        onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(ri, 'm', isNaN(n) ? 0 : n) }}
+                                        onFocus={e => e.target.select()} />
+                                      <span className={styles.dayEditWorkUnit}>分</span>
+                                    </div>
+                                    <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(ri)} title="削除">削除</button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            {hasMoreWorkTypes && (
+                              <button className={styles.dayEditAddBlueBtn} onClick={addWorkRow}>＋ 業務を追加</button>
+                            )}
+                            <div className={styles.dayEditWorkTotal}>
+                              <span>申告時間合計</span>
+                              <strong>{fmtWorkTotal(totalWorkMins)}</strong>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -1430,8 +1490,16 @@ function KinmuboTab({ today }) {
         entry.workReportItems = userWorkReports[dateStr] || {}
       })
 
-      // workingDays = days with ≥1 minute work reported
-      const workingDays = Object.keys(userWorkReports).length
+      // workingDays = days with work report AND ≥1 completed QR session (spec 7)
+      let workingDays = 0
+      const inconsistentDates = []
+      Object.entries(userWorkReports).forEach(([dateStr, items]) => {
+        if (!Object.values(items).some(m => m > 0)) return
+        const entry = byDate[dateStr]
+        const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
+        if (completedSess.length > 0) workingDays++
+        else inconsistentDates.push(dateStr)
+      })
 
       // Build daily type minutes split from work_reports
       const dailyTypeMinsSplit = {}
@@ -1504,7 +1572,7 @@ function KinmuboTab({ today }) {
       }
       const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
-      return { user, workingDays, totalWorkMins, rows, totalPay, byDate }
+      return { user, workingDays, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
     })
   }
 
@@ -1544,9 +1612,10 @@ function KinmuboTab({ today }) {
   async function handleCreate() {
     if (exporting) return
 
-    // Warn if any salaried user has 打刻未完了 days
+    // Warn if any user has data integrity issues
     if (preview) {
       const incomplete = []
+      const inconsistent = []
       for (const p of preview) {
         if (p.isSalariedUser && p.dailySalariedRows) {
           for (const row of p.dailySalariedRows) {
@@ -1556,9 +1625,18 @@ function KinmuboTab({ today }) {
             }
           }
         }
+        if (!p.isSalariedUser && p.inconsistentDates?.length > 0) {
+          for (const ds of p.inconsistentDates) {
+            const [, mo, dd] = ds.split('-').map(Number)
+            inconsistent.push(`${p.user.name}（${mo}/${dd}）打刻要確認`)
+          }
+        }
       }
-      if (incomplete.length > 0) {
-        const msg = `以下の打刻未完了があります：\n${incomplete.join('\n')}\n\nこのまま出力しますか？`
+      const warns = []
+      if (incomplete.length > 0) warns.push(`打刻未完了（正社員）：\n${incomplete.join('\n')}`)
+      if (inconsistent.length > 0) warns.push(`業務申告あり・打刻なし：\n${inconsistent.join('\n')}`)
+      if (warns.length > 0) {
+        const msg = `以下の要確認データがあります：\n\n${warns.join('\n\n')}\n\n確認してから出力してください。このまま出力しますか？`
         if (!window.confirm(msg)) return
       }
     }
@@ -1739,7 +1817,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当する従業員がいません。</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows }) => {
+            {filteredPreview.map(({ user, workingDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -1754,6 +1832,9 @@ function KinmuboTab({ today }) {
                       <span className={styles.kinmuboAccordionSep}> ｜ </span>
                       <span className={styles.kinmuboAccordionTime}>申告時間合計：{fmtMins(totalWorkMins)}</span>
                     </span>
+                    {inconsistentDates?.length > 0 && (
+                      <span className={styles.kinmuboAccordionWarn}>打刻要確認 {inconsistentDates.length}件</span>
+                    )}
                     <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>
                     <svg
                       className={[styles.kinmuboAccordionChevron, isOpen ? styles.kinmuboAccordionChevronOpen : ''].join(' ')}

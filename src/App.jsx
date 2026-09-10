@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN, saveWorkReport } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getLogs, getAdminPin, DEFAULT_ADMIN_PIN, saveWorkReport } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -74,6 +74,7 @@ export default function App() {
   const [adminTaps, setAdminTaps] = useState(0)
   const [adminPinMode, setAdminPinMode] = useState(false)
   const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN)
+  const [todaySessionCount, setTodaySessionCount] = useState(1)
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
@@ -129,6 +130,14 @@ export default function App() {
         setState(STATE.COMPLETE)
         return
       }
+      // Count today's completed sessions to show context message in WorkSelectScreen
+      try {
+        const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        const todayLogs = await getLogs({ dateFrom: today, dateTo: today })
+        const userTodayLogs = todayLogs.filter(l => l.user_id === user.id)
+        const outs = userTodayLogs.filter(l => l.log_type === '退勤').length
+        setTodaySessionCount(outs + 1) // completed so far + this new one
+      } catch { setTodaySessionCount(1) }
       setCurrentUser(user)
       setState(STATE.WORK)
     }
@@ -218,6 +227,7 @@ export default function App() {
           user={currentUser}
           onComplete={handleWorkComplete}
           onCancel={handleCancel}
+          sessionCount={todaySessionCount}
         />
       )}
 

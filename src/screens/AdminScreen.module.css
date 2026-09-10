@@ -4349,6 +4349,67 @@
   color: #dc2626;
 }
 
+/* punch context message */
+.dayEditPunchContext {
+  font-size: 0.73rem;
+  color: #1a5fa8;
+  background: #eff6ff;
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+/* work disabled state */
+.dayEditWorkDisabledArea {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+}
+.dayEditWorkWarnBox {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+.dayEditWorkWarnTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #c2410c;
+  margin-bottom: 6px;
+}
+.dayEditWorkWarnItems {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dayEditWorkWarnItem {
+  font-size: 0.82rem;
+  color: #92400e;
+}
+.dayEditWorkDisabledMsg {
+  font-size: 0.83rem;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+
+/* accordion warn badge */
+.kinmuboAccordionWarn {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #c2410c;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 4px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
 /* narrow screen: stack columns */
 @media (max-width: 700px) {
   .dayEditCols {

@@ -4,6 +4,8 @@
   height: 100dvh;
   overflow: hidden;
   background: #f6fbf8;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── ヘッダー ── */
@@ -80,7 +82,126 @@
   white-space: nowrap;
 }
 
-/* ── メインエリア ── */
+/* ── スクロール可能ボディ ── */
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── セッション数コンテキストメッセージ ── */
+.contextMsg {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a5fa8;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 12px 18px;
+  line-height: 1.4;
+}
+
+/* ── 業務入力エリア ── */
+.workInputArea {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.emptyHint {
+  font-size: 1rem;
+  color: #94a3b8;
+  padding: 12px 0;
+}
+
+/* ── 業務入力行 ── */
+.workInputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.workTypeSelect {
+  flex: 0 0 auto;
+  min-width: 140px;
+  padding: 10px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: #f8fafc;
+  color: #1e293b;
+  font-family: inherit;
+  cursor: pointer;
+}
+.workTypeSelect:focus { outline: none; border-color: #1a5fa8; }
+
+.workTimeNum {
+  width: 72px;
+  padding: 10px 8px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-align: center;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  -moz-appearance: textfield;
+}
+.workTimeNum::-webkit-outer-spin-button,
+.workTimeNum::-webkit-inner-spin-button { -webkit-appearance: none; }
+.workTimeNum:focus { outline: none; border-color: #1a5fa8; }
+
+.workTimeUnit {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.workRowDel {
+  margin-left: auto;
+  background: none;
+  border: 1.5px solid #fca5a5;
+  color: #dc2626;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.workRowDel:hover { background: #fff5f5; }
+
+.addWorkBtn {
+  align-self: flex-start;
+  background: #1a3f6f;
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 4px;
+}
+.addWorkBtn:hover { background: #1e4f8a; }
+.addWorkBtn:active { background: #163460; }
+
+/* ── メインエリア（旧スタイル、互換性維持） ── */
 .main {
   height: 100dvh;
   padding: 14px 60px 18px;
