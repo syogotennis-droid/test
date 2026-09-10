@@ -258,7 +258,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding-bottom: 28px;
+  padding-bottom: 16px;
 }
 
 /* ─── User selection section (CalendarTab) ─── */
@@ -340,7 +340,7 @@
   flex-direction: column;
   width: calc(100% - 32px);
   max-width: 1500px;
-  margin: 16px auto 24px;
+  margin: 10px auto 16px;
   background: #fff;
   border-radius: 12px;
   border: 1px solid #c8d3dc;
@@ -362,7 +362,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 9px 16px;
+  padding: 6px 16px;
   border-bottom: 1px solid #dde4ec;
   flex-shrink: 0;
   background: #f8fafc;

@@ -534,7 +534,7 @@ function CalendarTab({ users, today, isTablet }) {
         {loading ? (
           <div className={styles.empty}>読込中...</div>
         ) : (
-          <div className={styles.calGrid} style={{ gridTemplateRows: `auto repeat(${weekCount}, minmax(110px, auto))` }}>
+          <div className={styles.calGrid} style={{ gridTemplateRows: `auto repeat(${weekCount}, minmax(84px, auto))` }}>
             {CAL_DAY_LABELS.map((d, i) => (
               <div key={d} className={[styles.calDayLabel, i === 0 ? styles.calSun : i === 6 ? styles.calSat : ''].join(' ')}>{d}</div>
             ))}
