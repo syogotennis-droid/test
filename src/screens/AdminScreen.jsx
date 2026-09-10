@@ -10,7 +10,8 @@ import {
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
   saveWorkReport, getWorkReport, migrateSessionWorkToReports, getWorkReportsForRange,
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
-  deleteSessionWorkReport, deleteAllSessionWorkReportsForDate
+  deleteSessionWorkReport, deleteAllSessionWorkReportsForDate,
+  getSessionWorkStatusForUserRange, getMergedWorkReportsForRange, saveDayEditBatch
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -388,31 +389,50 @@ function getCalendarDays(year, month) {
   return days
 }
 
-function buildDayMap(logs, year, month) {
+function buildDayMap(logs, year, month, sessionWorkStatus) {
   const map = {}
+  // Group by session_id first
+  const byDaySession = {}
+  const noSessionLogs = {}
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
-    if (!map[d]) map[d] = { ins: [], outs: [], workType: '', hasWorkItems: false }
-    if (log.log_type === '出勤') map[d].ins.push(log.time || '')
-    else if (log.log_type === '退勤') {
-      map[d].outs.push(log.time || '')
-      if (log.work_type) map[d].workType = log.work_type
-      const wi = getWorkItems(log)
-      if (Object.entries(wi).some(([t, mins]) => t !== '休憩' && mins > 0)) {
-        map[d].hasWorkItems = true
-      }
+    if (!map[d]) map[d] = {}
+    if (log.session_id) {
+      if (!byDaySession[d]) byDaySession[d] = {}
+      if (!byDaySession[d][log.session_id]) byDaySession[d][log.session_id] = { in: '', out: '', ts: '' }
+      const entry = byDaySession[d][log.session_id]
+      if (log.log_type === '出勤') { entry.in = (log.time || '').substring(0, 5); entry.ts = log.timestamp || '' }
+      else if (log.log_type === '退勤') { entry.out = (log.time || '').substring(0, 5) }
+    } else {
+      if (!noSessionLogs[d]) noSessionLogs[d] = { ins: [], outs: [] }
+      if (log.log_type === '出勤') noSessionLogs[d].ins.push({ time: (log.time || '').substring(0, 5), ts: log.timestamp || '' })
+      else if (log.log_type === '退勤') noSessionLogs[d].outs.push((log.time || '').substring(0, 5))
     }
   })
-  // Build ordered session pairs per day
-  Object.values(map).forEach(entry => {
-    const sortedIns = [...entry.ins].sort()
-    const sortedOuts = [...entry.outs].sort()
-    const n = Math.max(sortedIns.length, sortedOuts.length)
-    entry.sessions = Array.from({ length: n }, (_, i) => ({
-      in: sortedIns[i] ? sortedIns[i].substring(0, 5) : '',
-      out: sortedOuts[i] ? sortedOuts[i].substring(0, 5) : '',
-    }))
+
+  const allDays = new Set([...Object.keys(byDaySession), ...Object.keys(noSessionLogs)].map(Number))
+  allDays.forEach(d => {
+    const sessions = []
+    // Session_id based
+    const daySessionMap = byDaySession[d] || {}
+    Object.entries(daySessionMap).forEach(([sid, s]) => {
+      sessions.push({ sessionId: sid, in: s.in, out: s.out, ts: s.ts })
+    })
+    // Legacy (no session_id): pair by index
+    const legacy = noSessionLogs[d]
+    if (legacy) {
+      const sortedIns = [...legacy.ins].sort((a, b) => a.time.localeCompare(b.time))
+      const sortedOuts = [...legacy.outs].sort()
+      const n = Math.max(sortedIns.length, sortedOuts.length)
+      for (let i = 0; i < n; i++) {
+        sessions.push({ sessionId: null, in: sortedIns[i]?.time || '', out: sortedOuts[i] || '', ts: sortedIns[i]?.ts || '' })
+      }
+    }
+    sessions.sort((a, b) => (a.in || a.ts || '').localeCompare(b.in || b.ts || ''))
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const workDoneSessionIds = sessionWorkStatus?.[dateStr] || new Set()
+    map[d] = { sessions, workDoneSessionIds }
   })
   return map
 }
@@ -436,6 +456,7 @@ function CalendarTab({ users, today, isTablet }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedDay, setSelectedDay] = useState(null)
+  const [sessionWorkStatus, setSessionWorkStatus] = useState({})
 
   useEffect(() => {
     if (users.length > 0 && !selectedUser) setSelectedUser(users[0])
@@ -447,8 +468,10 @@ function CalendarTab({ users, today, isTablet }) {
     const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
     const lastDay = new Date(year, month + 1, 0).getDate()
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-    getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id })
-      .then(data => { setLogs(data); setLoading(false) })
+    Promise.all([
+      getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
+    ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus); setLoading(false) })
   }, [selectedUser, year, month])
 
   function refreshLogs() {
@@ -456,12 +479,15 @@ function CalendarTab({ users, today, isTablet }) {
     const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
     const lastDay = new Date(year, month + 1, 0).getDate()
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-    getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }).then(setLogs)
+    Promise.all([
+      getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
+    ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus) })
   }
 
   const days = getCalendarDays(year, month)
   const weekCount = days.length / 7
-  const dayMap = buildDayMap(logs, year, month)
+  const dayMap = buildDayMap(logs, year, month, sessionWorkStatus)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
   const todayDay = now.getDate()
   const todayYear = now.getFullYear()
@@ -516,16 +542,33 @@ function CalendarTab({ users, today, isTablet }) {
               const sessions = entry?.sessions || []
               const inTime = sessions[0]?.in || ''
               const worked = !!inTime
-              const needsAlert = worked && sessions.some(s => s.out) && !entry?.hasWorkItems
               const multiSession = sessions.length > 1
               const dow = new Date(year, month, d).getDay()
               const isToday = d === todayDay && year === todayYear && month === todayMonth
               const MAX_SHOW = sessions.length <= 3 ? sessions.length : 2
               const extraCount = sessions.length > 3 ? sessions.length - 2 : 0
+              const workDoneSessionIds = entry?.workDoneSessionIds || new Set()
+              // Work status badge for non-salaried: check if all completed sessions have work reports
+              const isSalUser = selectedUser?.employeeType === 'salaried'
+              let calWorkBadgeClass = null, calWorkBadgeText = null
+              if (!isSalUser && worked) {
+                const completedSessions = sessions.filter(s => s.out)
+                const checkedInOnly = sessions.filter(s => !s.out)
+                if (completedSessions.length > 0) {
+                  const allHaveWork = completedSessions.every(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
+                  const anyHaveWork = completedSessions.some(s => s.sessionId && workDoneSessionIds.has(s.sessionId))
+                  if (allHaveWork) { calWorkBadgeClass = styles.calWorkBadgeGreen; calWorkBadgeText = '業務入力済' }
+                  else if (anyHaveWork) { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = '一部未入力' }
+                  else { calWorkBadgeClass = styles.calWorkBadgeOrange; calWorkBadgeText = '業務未入力' }
+                }
+                if (checkedInOnly.length > 0 && completedSessions.length === 0) {
+                  calWorkBadgeClass = styles.calWorkBadgeBlue; calWorkBadgeText = '勤務中'
+                }
+              }
               return (
                 <div
                   key={d}
-                  className={[styles.calCell, needsAlert ? styles.calAlert : worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : '', isToday ? styles.calTodayCell : ''].join(' ')}
+                  className={[styles.calCell, worked ? styles.calWorked : '', dow === 0 ? styles.calSunCell : dow === 6 ? styles.calSatCell : '', isToday ? styles.calTodayCell : ''].join(' ')}
                   onClick={() => setSelectedDay(d)}
                 >
                   <div className={styles.calDayHeader}>
@@ -540,7 +583,7 @@ function CalendarTab({ users, today, isTablet }) {
                           <span className={styles.calSessionIn}>{s.in}</span>
                           <span className={styles.calSessionArrow}>→</span>
                           {s.out
-                            ? <span className={styles.calSessionOut}>{s.out}</span>
+                            ? <span className={styles.calSessionTime}>{s.out}</span>
                             : <span className={styles.calSessionActive}>勤務中</span>
                           }
                         </div>
@@ -558,11 +601,12 @@ function CalendarTab({ users, today, isTablet }) {
                     <>
                       {inTime && <div className={styles.calIn}>出勤 {inTime}</div>}
                       {sessions[0]?.out
-                        ? <div className={styles.calOut}>退勤 {sessions[0].out}</div>
+                        ? <div className={styles.calTimeNeutral}>退勤 {sessions[0].out}</div>
                         : inTime && <div className={styles.calActive}>勤務中</div>
                       }
                     </>
                   )}
+                  {calWorkBadgeClass && <div className={calWorkBadgeClass}>{calWorkBadgeText}</div>}
                 </div>
               )
             })}
@@ -874,29 +918,53 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   }
 
   function buildInitialSessions() {
-    const sorted = [...dayLogs].sort((a, b) => (a.time || '').localeCompare(b.time || ''))
-    const result = []
-    let pendingIn = null
-    for (const log of sorted) {
-      if (log.log_type === '出勤') {
-        pendingIn = log
-      } else if (log.log_type === '退勤') {
-        const inHM = initHM(pendingIn?.time?.substring(0, 5))
-        const outHM = initHM(log.time?.substring(0, 5))
-        const sessionId = pendingIn?.session_id || generateSessionId()
-        result.push({ inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
-          origInTime: pendingIn?.time?.substring(0, 5) || '',
-          origOutTime: log.time?.substring(0, 5) || '',
-          sessionId })
-        pendingIn = null
+    // Group by session_id first
+    const sessionMap = {}
+    const noSessionLogs = []
+    dayLogs.forEach(log => {
+      if (log.session_id) {
+        if (!sessionMap[log.session_id]) sessionMap[log.session_id] = { inLog: null, outLog: null }
+        if (log.log_type === '出勤') sessionMap[log.session_id].inLog = log
+        else if (log.log_type === '退勤') sessionMap[log.session_id].outLog = log
+      } else {
+        noSessionLogs.push(log)
       }
+    })
+
+    const result = []
+    // Session_id grouped entries
+    Object.entries(sessionMap).forEach(([sid, { inLog, outLog }]) => {
+      const inHM = initHM(inLog?.time?.substring(0, 5))
+      const outHM = initHM(outLog?.time?.substring(0, 5))
+      result.push({
+        inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
+        origInTime: inLog?.time?.substring(0, 5) || '',
+        origOutTime: outLog?.time?.substring(0, 5) || '',
+        sessionId: sid,
+        sortKey: inLog?.time || outLog?.time || ''
+      })
+    })
+
+    // Legacy logs without session_id: pair by index
+    const sorted = [...noSessionLogs].sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+    const ins = sorted.filter(l => l.log_type === '出勤')
+    const outs = sorted.filter(l => l.log_type === '退勤')
+    const n = Math.max(ins.length, outs.length)
+    for (let i = 0; i < n; i++) {
+      const inLog = ins[i] || null
+      const outLog = outs[i] || null
+      const inHM = initHM(inLog?.time?.substring(0, 5))
+      const outHM = initHM(outLog?.time?.substring(0, 5))
+      result.push({
+        inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
+        origInTime: inLog?.time?.substring(0, 5) || '',
+        origOutTime: outLog?.time?.substring(0, 5) || '',
+        sessionId: generateSessionId(),
+        sortKey: inLog?.time || outLog?.time || ''
+      })
     }
-    if (pendingIn) {
-      const inHM = initHM(pendingIn.time?.substring(0, 5))
-      result.push({ inH: inHM.h, inM: inHM.m, outH: '', outM: '',
-        origInTime: pendingIn.time?.substring(0, 5) || '', origOutTime: '',
-        sessionId: pendingIn.session_id || generateSessionId() })
-    }
+
+    result.sort((a, b) => (a.sortKey || '').localeCompare(b.sortKey || ''))
     return result
   }
 
@@ -1068,27 +1136,21 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const errs = validate()
     if (errs.length > 0) { setValidationErrors(errs); return }
     setValidationErrors([])
-    const allSessionsCleared = sessions.length === 0 ||
-      sessions.every(s => s.inH === '' && s.inM === '' && s.outH === '' && s.outM === '')
-    if (allSessionsCleared && workHasData) {
-      setStep('confirmNoSessions')
-      return
-    }
     setStep('confirm')
   }
 
   async function handleConfirm() {
     if (saving) return
     setSaving(true)
-    for (const log of dayLogs) await deleteLog(log.id)
-    for (let si = 0; si < sessions.length; si++) {
-      const { inTime, outTime } = sessionTimes[si]
-      const { sessionId } = sessions[si]
-      if (inTime) await saveLogManual({ userId: user.id, logType: '出勤', date: dateStr, time: inTime, workType: '', sessionId })
-      if (outTime) await saveLogManual({ userId: user.id, logType: '退勤', date: dateStr, time: outTime, workType: '', sessionId })
-    }
-    if (!isSalaried) {
-      for (const s of sessions) {
+    try {
+      const logsToCreate = []
+      for (let si = 0; si < sessions.length; si++) {
+        const { inTime, outTime } = sessionTimes[si]
+        const { sessionId } = sessions[si]
+        if (inTime) logsToCreate.push({ logType: '出勤', time: inTime, sessionId })
+        if (outTime) logsToCreate.push({ logType: '退勤', time: outTime, sessionId })
+      }
+      const sessionWorkData = isSalaried ? [] : sessions.map(s => {
         const rows = sessionWorkRows[s.sessionId] || []
         const items = {}
         for (const r of rows) {
@@ -1096,13 +1158,22 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
           if (mins > 0) items[r.type] = mins
         }
-        await saveSessionWorkReport(user.id, dateStr, s.sessionId, items)
-      }
-      for (const sessionId of deletedSessionIds) {
-        await deleteSessionWorkReport(user.id, dateStr, sessionId)
-      }
+        return { sessionId: s.sessionId, items }
+      })
+      await saveDayEditBatch({
+        userId: user.id, dateStr,
+        logsToDelete: dayLogs,
+        logsToCreate,
+        isSalaried,
+        sessionWorkData,
+        deletedSessionIds
+      })
+      onSaved()
+    } catch (err) {
+      setSaving(false)
+      setValidationErrors(['保存に失敗しました。もう一度お試しください。'])
+      setStep('form')
     }
-    onSaved()
   }
 
   async function handleDelete() {
@@ -1219,7 +1290,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         </div>
                         <div className={styles.dayEditSessionCardBody}>
                           {renderSessionPunchInputs(s, si)}
-                          {!isSalaried && (
+                          {!isSalaried && !inTime && workItemsLoaded && (
+                            <div className={styles.dayEditWorkSectionHint}>出勤時刻を入力すると業務を登録できます</div>
+                          )}
+                          {!isSalaried && inTime && (
                             !workItemsLoaded ? (
                               <div className={styles.dayEditSectionLoading}>読込中...</div>
                             ) : (
@@ -1459,22 +1533,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           )
         })()}
 
-        {step === 'confirmNoSessions' && (
-          <>
-            <div className={styles.modalHeader}>
-              <div className={styles.modalHeaderTitle}>確認</div>
-            </div>
-            <div className={styles.modalBody}>
-              <p className={styles.confirmWarn}>
-                出勤打刻がなくなるため、業務時間だけが残ります。打刻を追加するか、業務時間も削除してください。
-              </p>
-            </div>
-            <div className={styles.modalFooter}>
-              <button className={styles.cancelBtn} onClick={() => setStep('form')}>打刻を追加する</button>
-              <button className={styles.saveBtn} onClick={() => setStep('confirm')}>そのまま続ける</button>
-            </div>
-          </>
-        )}
       </div>
     </div>
   )
@@ -1517,7 +1575,7 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo), getWorkReportsForRange(dateFrom, dateTo)])
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo)])
       .then(([logs, users, minWage, salDays, workReports]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)

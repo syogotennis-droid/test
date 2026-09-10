@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import styles from './CompleteScreen.module.css'
 
-export default function CompleteScreen({ logType, workTypes, user, clockInTime, clockInTimestamp, onDone }) {
+function fmtMinutes(mins) {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h > 0 ? `${h}時間${m}分` : `${m}分`
+}
+
+export default function CompleteScreen({ logType, workItems, user, clockInTime, onDone }) {
   const [now] = useState(() => new Date())
 
   useEffect(() => {
@@ -14,14 +20,10 @@ export default function CompleteScreen({ logType, workTypes, user, clockInTime, 
 
   const currentTimeStr = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
 
-  let workingHours = null
-  if (!isClockIn && clockInTimestamp) {
-    const diffMs = now - new Date(clockInTimestamp)
-    const diffMins = Math.floor(diffMs / 60000)
-    const h = Math.floor(diffMins / 60)
-    const m = diffMins % 60
-    workingHours = h > 0 ? `${h}時間${m}分` : `${m}分`
-  }
+  const workEntries = !isClockIn && workItems
+    ? Object.entries(workItems).filter(([, m]) => m > 0)
+    : []
+  const workTotalMins = workEntries.reduce((s, [, m]) => s + m, 0)
 
   return (
     <div className={styles.screen} style={{ background: bgColor }}>
@@ -43,19 +45,25 @@ export default function CompleteScreen({ logType, workTypes, user, clockInTime, 
           <span className={styles.timeLabel}>{isClockIn ? '出勤時間' : '退勤時間'}</span>
           <span className={styles.timeValue}>{currentTimeStr}</span>
         </div>
-        {workingHours && (
-          <div className={[styles.timeRow, styles.totalRow].join(' ')}>
-            <span className={styles.timeLabel}>本日の勤務時間</span>
-            <span className={styles.timeValueBig}>{workingHours}</span>
-          </div>
-        )}
       </div>
 
-      {!isClockIn && workTypes && workTypes.length > 0 && (
-        <p className={styles.detail}>
-          {workTypes.join(' / ')}
-        </p>
+      {workEntries.length > 0 && (
+        <div className={styles.workSummary}>
+          {workEntries.map(([type, mins]) => (
+            <div key={type} className={styles.workSummaryRow}>
+              <span className={styles.workSummaryType}>{type}</span>
+              <span className={styles.workSummaryTime}>{fmtMinutes(mins)}</span>
+            </div>
+          ))}
+          {workEntries.length > 1 && (
+            <div className={[styles.workSummaryRow, styles.workSummaryTotal].join(' ')}>
+              <span>合計</span>
+              <span>{fmtMinutes(workTotalMins)}</span>
+            </div>
+          )}
+        </div>
       )}
+
       <div className={styles.countdown}>
         <span>まもなく戻ります...</span>
       </div>

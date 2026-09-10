@@ -85,6 +85,43 @@
   color: white;
 }
 
+.workSummary {
+  background: rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 14px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.workSummaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  font-size: 1.15rem;
+  color: rgba(255,255,255,0.9);
+}
+
+.workSummaryType {
+  font-weight: 600;
+}
+
+.workSummaryTime {
+  font-weight: bold;
+  color: white;
+}
+
+.workSummaryTotal {
+  border-top: 1px solid rgba(255,255,255,0.3);
+  padding-top: 8px;
+  margin-top: 2px;
+  font-weight: bold;
+  color: white;
+}
+
 .countdown {
   margin-top: 16px;
   font-size: 1.1rem;

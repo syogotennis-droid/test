@@ -366,6 +366,61 @@ export async function deleteAllSessionWorkReportsForDate(userId, dateStr) {
   await batch.commit()
 }
 
+export async function getMergedWorkReportsForRange(dateFrom, dateTo) {
+  const [sessionSnap, legacySnap] = await Promise.all([
+    getDocs(query(collection(db, 'session_work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))),
+    getDocs(query(collection(db, 'work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo)))
+  ])
+  const sessionData = {}
+  const sessionHasValid = new Set()
+  sessionSnap.docs.forEach(d => {
+    const data = d.data()
+    const key = `${data.userId}_${data.date}`
+    if (!sessionData[key]) sessionData[key] = {}
+    Object.entries(data.items || {}).forEach(([type, mins]) => {
+      if (mins > 0) {
+        sessionData[key][type] = (sessionData[key][type] || 0) + mins
+        sessionHasValid.add(key)
+      }
+    })
+  })
+  const legacyData = {}
+  legacySnap.docs.forEach(d => {
+    const items = d.data().items || {}
+    if (Object.values(items).some(m => m > 0)) legacyData[d.id] = items
+  })
+  const result = {}
+  const allKeys = new Set([...Object.keys(sessionData), ...Object.keys(legacyData)])
+  allKeys.forEach(key => {
+    if (sessionHasValid.has(key)) result[key] = sessionData[key]
+    else if (legacyData[key]) result[key] = legacyData[key]
+  })
+  return result
+}
+
+export async function saveDayEditBatch({ userId, dateStr, logsToDelete, logsToCreate, isSalaried, sessionWorkData, deletedSessionIds }) {
+  const batch = writeBatch(db)
+  const now = new Date().toISOString()
+  for (const log of logsToDelete) batch.delete(doc(db, 'logs', log.id))
+  for (const { logType, time, sessionId } of logsToCreate) {
+    const logRef = doc(logsCol)
+    const [y, mo, d] = dateStr.split('-').map(Number)
+    const [h, m] = time.split(':').map(Number)
+    const dt = new Date(y, mo - 1, d, h, m, 0)
+    batch.set(logRef, { user_id: userId, log_type: logType, date: dateStr, time: time + ':00', work_type: '', session_id: sessionId, timestamp: dt.toISOString(), synced: 0 })
+  }
+  if (!isSalaried) {
+    for (const { sessionId, items } of (sessionWorkData || [])) {
+      const ref = doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)
+      batch.set(ref, { userId, date: dateStr, sessionId, items, updatedAt: now })
+    }
+    for (const sessionId of (deletedSessionIds || [])) {
+      batch.delete(doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`))
+    }
+  }
+  await batch.commit()
+}
+
 export async function migrateSessionWorkToReports() {
   const snap = await getDocs(logsCol)
   const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))

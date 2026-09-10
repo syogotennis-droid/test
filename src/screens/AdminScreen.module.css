@@ -439,7 +439,6 @@
 .calCell:hover { background: #eef4ff; }
 
 .calCell.calWorked { background: #f5fbf7; }
-.calCell.calAlert  { background: #fff0f0; }
 .calCell.calSunCell { background: #fffafa; }
 .calCell.calSatCell { background: #fafbff; }
 .calCell.calWorked.calSunCell { background: #f5fbf7; }
@@ -486,8 +485,22 @@
 
 .calOut {
   font-size: clamp(11px, 0.75rem, 13px);
-  color: #991b1b;
-  background: #fee2e2;
+  color: #374151;
+  background: #f1f5f9;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.calTimeNeutral {
+  font-size: clamp(11px, 0.75rem, 13px);
+  color: #374151;
+  background: #f1f5f9;
   border-radius: 3px;
   padding: 1px 5px;
   font-weight: 700;
@@ -574,7 +587,13 @@
 }
 
 .calSessionOut {
-  color: #991b1b;
+  color: #374151;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.calSessionTime {
+  color: #374151;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -583,6 +602,51 @@
   color: #166534;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+/* ─── Work status badges on calendar cells ─── */
+.calWorkBadgeGreen {
+  font-size: 10px;
+  font-weight: 700;
+  color: #15803d;
+  background: #dcfce7;
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.5;
+  margin-top: 1px;
+}
+
+.calWorkBadgeOrange {
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.5;
+  margin-top: 1px;
+}
+
+.calWorkBadgeBlue {
+  font-size: 10px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.5;
+  margin-top: 1px;
+}
+
+.calWorkBadgeRed {
+  font-size: 10px;
+  font-weight: 700;
+  color: #991b1b;
+  background: #fee2e2;
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.5;
+  margin-top: 1px;
 }
 
 .calMoreBtn {
@@ -1510,6 +1574,13 @@
   padding: 16px;
   color: #94a3b8;
   font-size: 0.88rem;
+}
+
+.dayEditWorkSectionHint {
+  padding: 10px 16px;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-style: italic;
 }
 .workRowTypeName {
   min-width: 80px;

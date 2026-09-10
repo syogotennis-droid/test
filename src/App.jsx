@@ -111,7 +111,7 @@ export default function App() {
         return
       }
       await saveLog({ userId: user.id, workType: '', logType: '出勤' })
-      setCompletedInfo({ logType: '出勤', workTypes: [], user })
+      setCompletedInfo({ logType: '出勤', workItems: {}, user })
       setState(STATE.COMPLETE)
     } else {
       const checkedIn = await isCheckedIn(user.id)
@@ -127,7 +127,7 @@ export default function App() {
       if (user.employeeType === 'salaried') {
         const clockIn = await getClockInTime(user.id)
         await saveLog({ userId: user.id, workItems: {}, logType: '退勤' })
-        setCompletedInfo({ logType: '退勤', workTypes: [], user, clockInTime: clockIn?.time, clockInTimestamp: clockIn?.timestamp })
+        setCompletedInfo({ logType: '退勤', workItems: {}, user, clockInTime: clockIn?.time })
         setState(STATE.COMPLETE)
         return
       }
@@ -160,10 +160,9 @@ export default function App() {
     }
     setCompletedInfo({
       logType: '退勤',
-      workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),
+      workItems,
       user: currentUser,
-      clockInTime: clockIn?.time,
-      clockInTimestamp: clockIn?.timestamp
+      clockInTime: clockIn?.time
     })
     setState(STATE.COMPLETE)
   }
@@ -244,10 +243,9 @@ export default function App() {
       {state === STATE.COMPLETE && completedInfo && (
         <CompleteScreen
           logType={completedInfo.logType}
-          workTypes={completedInfo.workTypes}
+          workItems={completedInfo.workItems}
           user={completedInfo.user}
           clockInTime={completedInfo.clockInTime}
-          clockInTimestamp={completedInfo.clockInTimestamp}
           onDone={handleDone}
         />
       )}

@@ -67,8 +67,10 @@ export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCo
   const totalH = Math.floor(totalMins / 60)
   const totalM = totalMins % 60
 
+  const hasValidWork = workRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+
   async function handleConfirm() {
-    if (saving) return
+    if (saving || !hasValidWork) return
     const workItemsObj = {}
     for (const row of workRows) {
       if (!row.type) continue
@@ -84,9 +86,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCo
     }
   }
 
-  const contextMsg = sessionCount > 1
-    ? `本日のQR打刻${sessionCount}回分について、業務時間をまとめて入力してください`
-    : '本日の退勤に対する業務時間を入力してください'
+  const contextMsg = `本日${sessionCount}回目の業務時間を入力してください`
 
   return (
     <div className={styles.screen}>
@@ -154,14 +154,12 @@ export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCo
           <span className={styles.totalUnit}>分</span>
         </div>
 
-        <div className={styles.skipHint}>業務時間の入力は後で管理者が行えます</div>
-
         <div className={styles.bottomRow}>
           <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
           <button
-            className={[styles.submitButton, saving ? styles.submitDisabled : ''].join(' ')}
+            className={[styles.submitButton, (saving || !hasValidWork) ? styles.submitDisabled : ''].join(' ')}
             onClick={handleConfirm}
-            disabled={saving}
+            disabled={saving || !hasValidWork}
           >
             <ExitIcon size={54} color="#fff" />
             <span>{saving ? '記録中...' : '退勤を登録'}</span>
