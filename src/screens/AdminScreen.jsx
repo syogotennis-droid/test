@@ -1129,49 +1129,45 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const isIncomplete = inTime && !outTime
     if (isTablet) {
       return (
-        <>
-          <div className={styles.dayEditSessionTimeRow}>
-            <span className={styles.dayEditTimeLabel}>出勤</span>
-            <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
-          </div>
-          <div className={styles.dayEditSessionTimeRow}>
-            <span className={styles.dayEditTimeLabel}>退勤</span>
-            <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'out' })}>{outTime || '──:──'}</button>
-          </div>
-          {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
-        </>
+        <div className={styles.dayEditPunchRow}>
+          <span className={styles.dayEditPunchLabel}>打刻</span>
+          <button className={styles.numpadTrigger} onClick={() => setEditingTimeField({ si, field: 'in' })}>{inTime || '──:──'}</button>
+          <span className={styles.dayEditPunchArrow}>→</span>
+          <button className={[styles.numpadTrigger, isIncomplete ? styles.numpadTriggerMuted : ''].join(' ')}
+            onClick={() => setEditingTimeField({ si, field: 'out' })}>
+            {outTime || (isIncomplete ? '勤務中' : '──:──')}
+          </button>
+        </div>
       )
     }
     return (
-      <>
-        <div className={styles.dayEditSessionTimeRow}>
-          <span className={styles.dayEditTimeLabel}>出勤</span>
-          <input type="text" inputMode="numeric" maxLength={2} value={s.inH}
-            onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-            className={[styles.dayEditHmNum, inHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-          <span className={styles.dayEditHmUnit}>時</span>
-          <input type="text" inputMode="numeric" maxLength={2} value={s.inM}
-            onChange={e => updateSession(si, 'inM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-            className={[styles.dayEditHmNum, inMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-          <span className={styles.dayEditHmUnit}>分</span>
-        </div>
-        <div className={styles.dayEditSessionTimeRow}>
-          <span className={styles.dayEditTimeLabel}>退勤</span>
-          <input type="text" inputMode="numeric" maxLength={2} value={s.outH}
-            onChange={e => updateSession(si, 'outH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-            className={[styles.dayEditHmNum, outHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-          <span className={styles.dayEditHmUnit}>時</span>
-          <input type="text" inputMode="numeric" maxLength={2} value={s.outM}
-            onChange={e => updateSession(si, 'outM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
-            onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
-            className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
-          <span className={styles.dayEditHmUnit}>分</span>
-        </div>
+      <div className={styles.dayEditPunchRow}>
+        <span className={styles.dayEditPunchLabel}>打刻</span>
+        <span className={styles.dayEditPunchTimeLabel}>出勤</span>
+        <input type="text" inputMode="numeric" maxLength={2} value={s.inH}
+          onChange={e => updateSession(si, 'inH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+          onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+          className={[styles.dayEditHmNum, inHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+        <span className={styles.dayEditHmUnit}>時</span>
+        <input type="text" inputMode="numeric" maxLength={2} value={s.inM}
+          onChange={e => updateSession(si, 'inM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+          onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+          className={[styles.dayEditHmNum, inMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+        <span className={styles.dayEditHmUnit}>分</span>
+        <span className={styles.dayEditPunchArrow}>→</span>
+        <span className={styles.dayEditPunchTimeLabel}>退勤</span>
+        <input type="text" inputMode="numeric" maxLength={2} value={s.outH}
+          onChange={e => updateSession(si, 'outH', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+          onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+          className={[styles.dayEditHmNum, outHInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+        <span className={styles.dayEditHmUnit}>時</span>
+        <input type="text" inputMode="numeric" maxLength={2} value={s.outM}
+          onChange={e => updateSession(si, 'outM', toHalf(String(e.target.value)).replace(/\D/g, '').slice(0, 2))}
+          onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
+          className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
+        <span className={styles.dayEditHmUnit}>分</span>
         {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
-      </>
+      </div>
     )
   }
 
@@ -1215,73 +1211,69 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                           <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この打刻を削除</button>
                         </div>
                         <div className={styles.dayEditSessionCardBody}>
-                          <div className={styles.dayEditSessionLeft}>
-                            <div className={styles.dayEditSessionColHeader}>QR打刻（確認用）</div>
-                            {renderSessionPunchInputs(s, si)}
-                          </div>
+                          {renderSessionPunchInputs(s, si)}
                           {!isSalaried && (
-                            <div className={styles.dayEditSessionRight}>
-                              <div className={styles.dayEditSessionColHeader}>業務時間（給与計算用）</div>
-                              <div className={styles.dayEditSessionColSubtitle}>打刻時間とは関係なく、実際に行った業務時間を入力してください</div>
-                              {!workItemsLoaded ? (
-                                <div className={styles.dayEditSectionLoading}>読込中...</div>
-                              ) : (
-                                <>
-                                  <div className={styles.dayEditWorkTable}>
-                                    <div className={styles.dayEditWorkTableHeader}>
-                                      <span className={styles.dayEditWorkColType}>業務</span>
-                                      <span className={styles.dayEditWorkColTime}>時間</span>
-                                      <span className={styles.dayEditWorkColOp}></span>
-                                    </div>
-                                    {rows.map((row, ri) => {
-                                      const isLastRow = rows.length === 1
-                                      const isNewRow = pendingFocusSessionId === s.sessionId && ri === rows.length - 1
-                                      const availableTypes = userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t))
-                                      const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
-                                      const rowErr = getWorkRowError(row)
-                                      return (
-                                        <div key={ri} className={styles.dayEditWorkRow}>
-                                          <select
-                                            ref={isNewRow ? lastWorkSelectRef : null}
-                                            className={styles.dayEditWorkTypeSelect}
-                                            value={row.type}
-                                            onChange={e => updateWorkRow(s.sessionId, ri, 'type', e.target.value)}
-                                          >
-                                            <option value="">業務を選択</option>
-                                            {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                          </select>
-                                          <div className={styles.dayEditWorkTimeCell}>
-                                            <input type="number" min="0" max="23"
-                                              className={styles.dayEditWorkNum}
-                                              value={row.h === 0 ? '' : row.h} placeholder="0"
-                                              onChange={e => updateWorkRow(s.sessionId, ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                                              onFocus={e => e.target.select()} />
-                                            <span className={styles.dayEditWorkUnit}>時間</span>
-                                            <input type="number" min="0" max="59"
-                                              className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
-                                              value={row.m === 0 ? '' : row.m} placeholder="0"
-                                              onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(s.sessionId, ri, 'm', isNaN(n) ? 0 : n) }}
-                                              onFocus={e => e.target.select()} />
-                                            <span className={styles.dayEditWorkUnit}>分</span>
-                                          </div>
-                                          {!isLastRow && (
-                                            <button className={styles.dayEditWorkRowDelSmall} onClick={() => removeWorkRow(s.sessionId, ri)} title="削除">×</button>
-                                          )}
-                                          {rowErr && <div className={styles.dayEditWorkRowErr}>{rowErr}</div>}
-                                        </div>
-                                      )
-                                    })}
+                            !workItemsLoaded ? (
+                              <div className={styles.dayEditSectionLoading}>読込中...</div>
+                            ) : (
+                              <>
+                                <div className={styles.dayEditWorkTable}>
+                                  <div className={styles.dayEditWorkTableHeader}>
+                                    <span className={styles.dayEditWorkColType}>業務</span>
+                                    <span className={styles.dayEditWorkColTime}>時間</span>
+                                    <span className={styles.dayEditWorkColOp}></span>
                                   </div>
-                                  {hasMoreSessionTypes && (
-                                    <button className={styles.dayEditAddBlueBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
-                                  )}
+                                  {rows.map((row, ri) => {
+                                    const isLastRow = rows.length === 1
+                                    const isNewRow = pendingFocusSessionId === s.sessionId && ri === rows.length - 1
+                                    const availableTypes = userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t))
+                                    const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
+                                    const rowErr = getWorkRowError(row)
+                                    return (
+                                      <div key={ri} className={styles.dayEditWorkRow}>
+                                        <select
+                                          ref={isNewRow ? lastWorkSelectRef : null}
+                                          className={styles.dayEditWorkTypeSelect}
+                                          value={row.type}
+                                          onChange={e => updateWorkRow(s.sessionId, ri, 'type', e.target.value)}
+                                        >
+                                          <option value="">業務を選択</option>
+                                          {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                        <div className={styles.dayEditWorkTimeCell}>
+                                          <input type="number" min="0" max="23"
+                                            className={styles.dayEditWorkNum}
+                                            value={row.h === 0 ? '' : row.h} placeholder="0"
+                                            onChange={e => updateWorkRow(s.sessionId, ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                                            onFocus={e => e.target.select()} />
+                                          <span className={styles.dayEditWorkUnit}>時間</span>
+                                          <input type="number" min="0" max="59"
+                                            className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
+                                            value={row.m === 0 ? '' : row.m} placeholder="0"
+                                            onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(s.sessionId, ri, 'm', isNaN(n) ? 0 : n) }}
+                                            onFocus={e => e.target.select()} />
+                                          <span className={styles.dayEditWorkUnit}>分</span>
+                                        </div>
+                                        {!isLastRow && (
+                                          <button className={styles.dayEditWorkRowDelSmall} onClick={() => removeWorkRow(s.sessionId, ri)} title="削除">×</button>
+                                        )}
+                                        {rowErr && <div className={styles.dayEditWorkRowErr}>{rowErr}</div>}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                <div className={styles.dayEditCardFooterRow}>
+                                  {hasMoreSessionTypes
+                                    ? <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
+                                    : <span />
+                                  }
                                   <div className={styles.dayEditSessionTotal}>
-                                    <span>{si + 1}回目の業務時間合計</span>
+                                    <span>この回の合計</span>
                                     <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
                                   </div>
-                                </>
-                              )}
-                            </div>
+                                </div>
+                              </>
+                            )
                           )}
                         </div>
                       </div>
@@ -1304,7 +1296,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               {/* ── Day total ── */}
               {!isSalaried && workItemsLoaded && (
                 <div className={styles.dayEditDayTotal}>
-                  <span>1日の業務時間合計</span>
+                  <span>1日の合計</span>
                   <strong>{fmtWorkTotal(dayTotalMins)}</strong>
                 </div>
               )}

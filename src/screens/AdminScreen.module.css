@@ -1875,6 +1875,7 @@
 .numpadTriggerXs:focus { border-color: #2563eb; background: #fff; }
 
 .numpadTriggerPlaceholder { color: #9baab8; font-weight: 400; }
+.numpadTriggerMuted { color: #b45309; border-color: #fde68a; background: #fffbeb; }
 
 /* ─── Numpad overlay ─── */
 .numpadOverlay {
@@ -4257,18 +4258,18 @@
 /* work rows table */
 .dayEditSessionCard {
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  margin-bottom: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
   overflow: visible;
 }
 .dayEditSessionCardHeader {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
-  border-radius: 10px 10px 0 0;
+  border-radius: 8px 8px 0 0;
 }
 .dayEditSessionCardNum {
   font-weight: 700;
@@ -4302,7 +4303,9 @@
 }
 .dayEditSessionCardBody {
   display: flex;
-  gap: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
 }
 .dayEditSessionLeft {
   flex: 0 0 auto;
@@ -4327,15 +4330,52 @@
   gap: 4px;
   flex-wrap: wrap;
 }
-@media (max-width: 680px) {
-  .dayEditSessionCardBody {
-    flex-direction: column;
-  }
-  .dayEditSessionLeft {
-    border-right: none;
-    border-bottom: 1px solid #e2e8f0;
-  }
+.dayEditPunchRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 2px 0;
 }
+.dayEditPunchLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+  min-width: 28px;
+  margin-right: 2px;
+}
+.dayEditPunchTimeLabel {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+.dayEditPunchArrow {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+.dayEditCardFooterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+.dayEditAddWorkBtn {
+  background: none;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.dayEditAddWorkBtn:hover { background: #f8fafc; border-color: #94a3b8; color: #475569; }
 .dayEditSessionColHeader {
   font-size: 0.75rem;
   font-weight: 700;
@@ -4389,16 +4429,13 @@
 }
 .dayEditSessionTotal {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
+  gap: 6px;
+  font-size: 0.78rem;
   color: #64748b;
-  padding-top: 4px;
-  border-top: 1px solid #f1f5f9;
-  margin-top: 4px;
+  white-space: nowrap;
 }
-.dayEditSessionTotal strong { color: #1e293b; font-size: 0.88rem; }
+.dayEditSessionTotal strong { color: #1e293b; font-size: 0.82rem; font-weight: 700; }
 .dayEditLegacySection {
   margin: 8px 0;
   padding: 10px 14px;
@@ -4450,8 +4487,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  padding: 8px 10px;
-  gap: 8px;
+  padding: 6px 10px;
+  gap: 6px;
   border-bottom: 1px solid #f1f5f9;
 }
 .dayEditWorkRow:last-child { border-bottom: none; }
