@@ -4289,8 +4289,8 @@
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 12px;
-  background: #fef9c3;
-  color: #ca8a04;
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 .dayEditBadgeEmpty {
   font-size: 0.72rem;
@@ -4327,6 +4327,78 @@
   gap: 4px;
   flex-wrap: wrap;
 }
+@media (max-width: 680px) {
+  .dayEditSessionCardBody {
+    flex-direction: column;
+  }
+  .dayEditSessionLeft {
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+}
+.dayEditSessionColHeader {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+.dayEditSessionColSubtitle {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.dayEditSessionDelBtn {
+  margin-left: auto;
+  background: #fff;
+  border: 1.5px solid #ef4444;
+  border-radius: 6px;
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dayEditSessionDelBtn:hover { background: #fff5f5; }
+.dayEditWorkRowDelSmall {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-left: 4px;
+}
+.dayEditWorkRowDelSmall:hover { background: #fff5f5; border-color: #ef4444; color: #ef4444; }
+.dayEditWorkRowErr {
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  color: #dc2626;
+  padding: 2px 0 0 2px;
+}
+.dayEditSessionTotal {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #64748b;
+  padding-top: 4px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+}
+.dayEditSessionTotal strong { color: #1e293b; font-size: 0.88rem; }
 .dayEditLegacySection {
   margin: 8px 0;
   padding: 10px 14px;
@@ -4347,17 +4419,18 @@
 }
 .dayEditDayTotal {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
+  padding: 8px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   margin-bottom: 10px;
 }
-.dayEditDayTotal span { color: #0369a1; }
-.dayEditDayTotal strong { color: #0c4a6e; font-size: 1.05rem; }
+.dayEditDayTotal span { color: #64748b; }
+.dayEditDayTotal strong { color: #1e293b; font-size: 0.95rem; }
 .dayEditWorkTable {
   display: flex;
   flex-direction: column;
@@ -4376,6 +4449,7 @@
 .dayEditWorkRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   padding: 8px 10px;
   gap: 8px;
   border-bottom: 1px solid #f1f5f9;

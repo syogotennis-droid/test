@@ -912,6 +912,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [editingTimeField, setEditingTimeField] = useState(null)
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState(null)
   const [deletedSessionIds, setDeletedSessionIds] = useState([])
+  const [pendingFocusSessionId, setPendingFocusSessionId] = useState(null)
+  const lastWorkSelectRef = useRef(null)
 
   useEffect(() => {
     if (isSalaried) { setWorkItemsLoaded(true); return }
@@ -923,16 +925,23 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       const rows = {}
       for (const s of initSess) {
         const items = sessionReports[s.sessionId] || {}
-        const sessionRows = Object.entries(items)
-          .filter(([, m]) => m > 0)
+        const savedRows = Object.entries(items)
           .map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
-        rows[s.sessionId] = sessionRows.length > 0 ? sessionRows : [{ type: '', h: 0, m: 0 }]
+        rows[s.sessionId] = savedRows.length > 0 ? savedRows : [{ type: '', h: 0, m: 0 }]
       }
       setSessionWorkRows(rows)
       setLegacyWorkItems(legacyItems)
       setWorkItemsLoaded(true)
     })
   }, [user.id, dateStr, isSalaried])
+
+  useEffect(() => {
+    if (pendingFocusSessionId && lastWorkSelectRef.current) {
+      lastWorkSelectRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      lastWorkSelectRef.current.focus()
+      setPendingFocusSessionId(null)
+    }
+  }, [pendingFocusSessionId, sessionWorkRows])
 
   const userWorkItems = useMemo(() => {
     const all = getWorkItemsForUser(user?.workItems)
@@ -994,6 +1003,14 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       ...prev,
       [sessionId]: [...(prev[sessionId] || []), { type: '', h: 0, m: 0 }]
     }))
+    setPendingFocusSessionId(sessionId)
+  }
+
+  function getWorkRowError(row) {
+    if (row.type && (parseInt(row.h) || 0) === 0 && (parseInt(row.m) || 0) === 0) {
+      return '業務時間を入力してください'
+    }
+    return null
   }
 
   function removeWorkRow(sessionId, ri) {
@@ -1042,6 +1059,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           const mv = parseInt(r.m)
           if (r.m !== '' && r.m !== 0 && !isNaN(mv) && (mv < 0 || mv > 59)) errs.push(`${rpfx}分は0〜59で入力してください`)
           if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${rpfx}業務種別を選択してください`)
+          if (r.type && (parseInt(r.h) || 0) === 0 && (parseInt(r.m) || 0) === 0) errs.push(`${rpfx}業務時間を入力してください`)
           if (r.type) {
             if (typesSeen.has(r.type)) errs.push(`${sessionPfx}：「${r.type}」が複数行に登録されています`)
             typesSeen.add(r.type)
@@ -1194,14 +1212,17 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         <div className={styles.dayEditSessionCardHeader}>
                           <span className={styles.dayEditSessionCardNum}>{si + 1}回目</span>
                           <span className={badgeClass}>{badgeText}</span>
-                          <button className={styles.dayEditRowDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>削除</button>
+                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この打刻を削除</button>
                         </div>
                         <div className={styles.dayEditSessionCardBody}>
                           <div className={styles.dayEditSessionLeft}>
+                            <div className={styles.dayEditSessionColHeader}>QR打刻（確認用）</div>
                             {renderSessionPunchInputs(s, si)}
                           </div>
                           {!isSalaried && (
                             <div className={styles.dayEditSessionRight}>
+                              <div className={styles.dayEditSessionColHeader}>業務時間（給与計算用）</div>
+                              <div className={styles.dayEditSessionColSubtitle}>打刻時間とは関係なく、実際に行った業務時間を入力してください</div>
                               {!workItemsLoaded ? (
                                 <div className={styles.dayEditSectionLoading}>読込中...</div>
                               ) : (
@@ -1213,11 +1234,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                       <span className={styles.dayEditWorkColOp}></span>
                                     </div>
                                     {rows.map((row, ri) => {
+                                      const isLastRow = rows.length === 1
+                                      const isNewRow = pendingFocusSessionId === s.sessionId && ri === rows.length - 1
                                       const availableTypes = userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t))
                                       const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
+                                      const rowErr = getWorkRowError(row)
                                       return (
                                         <div key={ri} className={styles.dayEditWorkRow}>
                                           <select
+                                            ref={isNewRow ? lastWorkSelectRef : null}
                                             className={styles.dayEditWorkTypeSelect}
                                             value={row.type}
                                             onChange={e => updateWorkRow(s.sessionId, ri, 'type', e.target.value)}
@@ -1239,7 +1264,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                               onFocus={e => e.target.select()} />
                                             <span className={styles.dayEditWorkUnit}>分</span>
                                           </div>
-                                          <button className={styles.dayEditRowDelBtn} onClick={() => removeWorkRow(s.sessionId, ri)}>削除</button>
+                                          {!isLastRow && (
+                                            <button className={styles.dayEditWorkRowDelSmall} onClick={() => removeWorkRow(s.sessionId, ri)} title="削除">×</button>
+                                          )}
+                                          {rowErr && <div className={styles.dayEditWorkRowErr}>{rowErr}</div>}
                                         </div>
                                       )
                                     })}
@@ -1247,12 +1275,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                   {hasMoreSessionTypes && (
                                     <button className={styles.dayEditAddBlueBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
                                   )}
-                                  {sessionTotalMins > 0 && (
-                                    <div className={styles.dayEditWorkTotal}>
-                                      <span>小計</span>
-                                      <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
-                                    </div>
-                                  )}
+                                  <div className={styles.dayEditSessionTotal}>
+                                    <span>{si + 1}回目の業務時間合計</span>
+                                    <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
+                                  </div>
                                 </>
                               )}
                             </div>
@@ -1276,9 +1302,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               )}
 
               {/* ── Day total ── */}
-              {!isSalaried && workItemsLoaded && sessions.length > 0 && (
+              {!isSalaried && workItemsLoaded && (
                 <div className={styles.dayEditDayTotal}>
-                  <span>業務時間合計</span>
+                  <span>1日の業務時間合計</span>
                   <strong>{fmtWorkTotal(dayTotalMins)}</strong>
                 </div>
               )}
@@ -1293,7 +1319,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <>
                   <hr className={styles.modalDivider} />
                   <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>
-                    この日のQR打刻と業務申告をすべて削除
+                    この日のQR打刻と業務時間をすべて削除
                   </button>
                 </>
               )}
@@ -1368,9 +1394,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               <div className={styles.confirmTable}>
                 <div className={styles.confirmRow}><span>対象従業員</span><strong>{user.name}</strong></div>
                 <div className={styles.confirmRow}><span>削除する日付</span><strong>{dateLabel}</strong></div>
-                <div className={styles.confirmRow}><span>QRセッション数</span><strong>{dayLogs.filter(l => l.log_type === '出勤').length}件</strong></div>
               </div>
-              <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+              <p className={styles.confirmWarn}>この日のQR打刻と業務時間をすべて削除します。この操作は元に戻せません。削除してよろしいですか？</p>
             </div>
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
@@ -1386,7 +1411,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
             <div className={styles.modalBody}>
               <p className={styles.confirmWarn}>
-                この打刻回には業務時間が入力されています。削除すると業務時間データも失われます。
+                この打刻には業務時間が登録されています。打刻を削除すると、この回の業務時間も削除されます。削除してよろしいですか？
               </p>
             </div>
             <div className={styles.modalFooter}>
