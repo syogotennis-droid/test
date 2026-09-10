@@ -4304,16 +4304,17 @@
 
 .dayEditAddOutlineBtn {
   background: none;
-  border: 1.5px solid #cbd5e1;
-  color: #475569;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  padding: 5px 12px;
+  border: 1.5px dashed #cbd5e1;
+  color: #64748b;
+  border-radius: 8px;
+  font-size: 0.83rem;
+  padding: 9px 12px;
   cursor: pointer;
   font-family: inherit;
-  align-self: flex-start;
+  width: 100%;
+  text-align: center;
 }
-.dayEditAddOutlineBtn:hover { background: #f8fafc; border-color: #94a3b8; }
+.dayEditAddOutlineBtn:hover { background: #f8fafc; border-color: #94a3b8; color: #475569; }
 
 .dayEditAddBlueBtn {
   background: #1a3f6f;
@@ -4656,9 +4657,10 @@
 .dayEditWorkTableHeader {
   display: flex;
   align-items: center;
-  padding: 4px 10px;
-  background: #f1f5f9;
+  padding: 3px 10px 4px;
+  background: transparent;
   gap: 8px;
+  border-bottom: 1px solid #e9eef5;
 }
 .dayEditWorkRow {
   display: flex;
