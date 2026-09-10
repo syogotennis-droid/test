@@ -723,7 +723,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const enc = new TextEncoder()
   const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
   const sheetXmls = []
-  const summaryData = { totalClockMins: 0, types: {} }
+  const summaryData = { types: {} }
 
   // Fetch overtime applications for salaried employees
   const overtimeAppsByUser = {}
@@ -958,91 +958,48 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       continue
     }
 
-    // Monthly hours split by weekday+sat / sunday per type
-    // Also track per-date split for rate-period pay calculation
-    const monthlyWdMins = {}, monthlyWeMins = {}
-    const dailyTypeMinsSplit = {} // { dateStr: { type: { wd, we } } }
-    Object.entries(byDate).forEach(([dateStr, entry]) => {
-      const [y, mo, d] = dateStr.split('-').map(Number)
-      const isWe = new Date(y, mo - 1, d).getDay() === 0  // Sunday only
-      entry.sessions.forEach(session => {
-        Object.entries(session.workItems).forEach(([t, m]) => {
-          if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + m
-          else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + m
-          if (!dailyTypeMinsSplit[dateStr]) dailyTypeMinsSplit[dateStr] = {}
-          if (!dailyTypeMinsSplit[dateStr][t]) dailyTypeMinsSplit[dateStr][t] = { wd: 0, we: 0 }
-          if (isWe) dailyTypeMinsSplit[dateStr][t].we += m
-          else dailyTypeMinsSplit[dateStr][t].wd += m
-        })
-      })
-    })
-    const monthlyMins = {}
-    new Set([...Object.keys(monthlyWdMins), ...Object.keys(monthlyWeMins)])
-      .forEach(t => { monthlyMins[t] = (monthlyWdMins[t] || 0) + (monthlyWeMins[t] || 0) })
-
-    // Filter: user.workItems types, not EXCL, with actual hours this month
-    const workTypes = (user.workItems || [])
-      .filter(t => !EXCL.has(t) && (monthlyMins[t] || 0) > 0)
-
-    // Count working days (出勤 or 退勤 exists that day) for 前後5分 min-wage calc
-    const workingDays = Object.values(byDate).filter(e => e.sessions.length > 0).length
-
-    // Accumulate global summary data
-    for (const entry of Object.values(byDate)) {
-      for (const session of entry.sessions) {
-        const inStr = session.inLog?.time?.substring(0, 5) || ''
-        const outStr = session.outLog?.time?.substring(0, 5) || ''
-        const inApprStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')
-        const outApprStr = session.outLog?.approved_time?.substring(0, 5) || (outStr ? roundDown15str(outStr) : '')
-        if (inApprStr && outApprStr) {
-          const [ih, im] = inApprStr.split(':').map(Number)
-          const [oh, om] = outApprStr.split(':').map(Number)
-          summaryData.totalClockMins += Math.max(0, (oh * 60 + om) - (ih * 60 + im))
-        }
+    // Extract work reports for this user (pay calculation source)
+    const userWorkReports = {}
+    Object.entries(allWorkReports).forEach(([key, items]) => {
+      if (key.startsWith(`${user.id}_`)) {
+        const dateStr = key.slice(user.id.length + 1)
+        if (Object.values(items).some(m => m > 0)) userWorkReports[dateStr] = items
       }
-    }
-    // Compute approved-time cuts per type, per date (for per-period pay calculation)
-    const dailyCutSplit = {} // { dateStr: { type: { wd, we } } }
-    Object.entries(byDate).forEach(([dateStr, entry]) => {
+    })
+
+    // Build dailyTypeMinsSplit from work_reports
+    const dailyTypeMinsSplit = {}
+    Object.entries(userWorkReports).forEach(([dateStr, items]) => {
       const [yr, mo, d] = dateStr.split('-').map(Number)
       const isWe = new Date(yr, mo - 1, d).getDay() === 0
-      entry.sessions.forEach(session => {
-        const inStr = session.inLog?.time?.substring(0, 5) || ''
-        const outStr = session.outLog?.time?.substring(0, 5) || ''
-        if (!inStr && !outStr) return
-        const inApprStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')
-        const outApprStr = session.outLog?.approved_time?.substring(0, 5) || (outStr ? roundDown15str(outStr) : '')
-        const actualInMins = inStr ? (Number(inStr.split(':')[0]) * 60 + Number(inStr.split(':')[1])) : null
-        const actualOutMins = outStr ? (Number(outStr.split(':')[0]) * 60 + Number(outStr.split(':')[1])) : null
-        const apprInMins = inApprStr ? (Number(inApprStr.split(':')[0]) * 60 + Number(inApprStr.split(':')[1])) : null
-        const apprOutMins = outApprStr ? (Number(outApprStr.split(':')[0]) * 60 + Number(outApprStr.split(':')[1])) : null
-        const startCut = (apprInMins != null && actualInMins != null) ? Math.max(0, apprInMins - actualInMins) : 0
-        const endCut = (apprOutMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - apprOutMins) : 0
-        const addCut = (type, mins) => {
-          if (!type || mins <= 0) return
-          if (!dailyCutSplit[dateStr]) dailyCutSplit[dateStr] = {}
-          if (!dailyCutSplit[dateStr][type]) dailyCutSplit[dateStr][type] = { wd: 0, we: 0 }
-          if (isWe) dailyCutSplit[dateStr][type].we += mins
-          else dailyCutSplit[dateStr][type].wd += mins
-        }
-        addCut(session.firstWork, startCut)
-        addCut(session.lastWork, endCut)
+      Object.entries(items).forEach(([t, mm]) => {
+        if (!mm) return
+        if (!dailyTypeMinsSplit[dateStr]) dailyTypeMinsSplit[dateStr] = {}
+        if (!dailyTypeMinsSplit[dateStr][t]) dailyTypeMinsSplit[dateStr][t] = { wd: 0, we: 0 }
+        if (isWe) dailyTypeMinsSplit[dateStr][t].we += mm
+        else dailyTypeMinsSplit[dateStr][t].wd += mm
       })
     })
 
-    // Summary data: use date-appropriate rates
+    // workTypes: user.workItems types present in work_reports, not EXCL
+    const workReportTypeSet = new Set(
+      Object.values(userWorkReports).flatMap(items => Object.keys(items).filter(t => !EXCL.has(t)))
+    )
+    const workTypes = (user.workItems || []).filter(t => !EXCL.has(t) && workReportTypeSet.has(t))
+
+    // workingDays = days with work reports (for transport and prep pay)
+    const workingDays = Object.keys(userWorkReports).length
+
+    // Accumulate global summary data from work_reports
     for (const type of workTypes) {
       if (!summaryData.types[type]) summaryData.types[type] = { mins: 0, pay: 0 }
-      let totalMins = 0, totalPay = 0
       Object.entries(dailyTypeMinsSplit).forEach(([dateStr, typeMap]) => {
         const dm = typeMap[type]; if (!dm) return
         const { wd, we } = dm
         const r = getRatesForDateLocal(itemRates[type], dateStr)
-        totalMins += wd + we
-        totalPay += Math.round(wd / 60 * r.normal) + (r.sunday ? Math.round(we / 60 * r.sunday) : Math.round(we / 60 * r.normal))
+        summaryData.types[type].mins += wd + we
+        summaryData.types[type].pay += Math.round(wd / 60 * r.normal) + (r.sunday ? Math.round(we / 60 * r.sunday) : Math.round(we / 60 * r.normal))
       })
-      summaryData.types[type].mins += totalMins
-      summaryData.types[type].pay += totalPay
     }
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
@@ -1059,23 +1016,25 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       typeColMap[t].hasSunday ? [typeColMap[t].wd, typeColMap[t].su] : [typeColMap[t].wd]
     )
 
-    // Row layout: dynamic — one row per session (multiple per day if multi-session)
+    // Table 1: QR打刻記録 (one row per session, or empty row if no sessions that day)
     const T1_HDR = 4, T1_DATA = 5
-    // Build per-day session list
-    const dayRows = []
+    const dayRowsT1 = []
     for (let d = 1; d <= lastDay; d++) {
       const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
       const entry = byDate[dateStr]
-      dayRows.push({ d, dateStr, sessions: entry?.sessions || [] })
+      dayRowsT1.push({ d, dateStr, sessions: entry?.sessions || [] })
     }
-    const totalDataRows = dayRows.reduce((s, dr) => s + Math.max(1, dr.sessions.length), 0)
+    const totalDataRows = dayRowsT1.reduce((s, dr) => s + Math.max(1, dr.sessions.length), 0)
     const T1_TOT = T1_DATA + totalDataRows
+    const T1_DATA_END = T1_TOT - 1
+
+    // Table 2: 業務時間申告 (one row per calendar day from work_reports)
     const T2_HDR = T1_TOT + 2
     const T2_DATA = T2_HDR + 1
-    const T2_TOT = T2_DATA + totalDataRows
-    const T3_HDR = T2_TOT + 2
-    const T1_DATA_END = T1_TOT - 1
+    const T2_TOT = T2_DATA + lastDay
     const T2_DATA_END = T2_TOT - 1
+
+    const T3_HDR = T2_TOT + 2
 
     const row1 = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿')}</t></is></c></row>`
     const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
@@ -1083,18 +1042,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const hdrCell = (col, rn, text) =>
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
 
-    // 表1ヘッダー
+    // 表1ヘッダー（QR打刻のみ、承認時間列なし）
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
-      hdrCell('C', T1_HDR, '出勤') + hdrCell('D', T1_HDR, '退勤') +
-      hdrCell('E', T1_HDR, '休憩') + hdrCell('F', T1_HDR, '勤務時間') +
-      hdrCell('G', T1_HDR, '準備時間') + hdrCell('H', T1_HDR, '合計') +
-      hdrCell('I', T1_HDR, '出勤（承認）') + hdrCell('J', T1_HDR, '退勤（承認）') +
-      hdrCell('K', T1_HDR, '承認勤務時間') +
+      hdrCell('C', T1_HDR, 'QR出勤') + hdrCell('D', T1_HDR, 'QR退勤') +
       `</row>`
 
-    // 表2ヘッダー
+    // 表2ヘッダー（業務時間申告）
     const t2HdrCells = [hdrCell('A', T2_HDR, '日付'), hdrCell('B', T2_HDR, '曜日')]
     for (const type of workTypes) {
       const { wd, su, hasSunday } = typeColMap[type]
@@ -1110,10 +1065,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     t2HdrCells.push(hdrCell(typeTotalCol, T2_HDR, '時間計'))
     const t2Hdr = `<row r="${T2_HDR}" ht="42">${t2HdrCells.join('')}</row>`
 
-    // データ行（1セッション=1行、同日複数行あり）
-    const t1Rows = [], t2Rows = []
-    let r1 = T1_DATA, r2 = T2_DATA
-    for (const dr of dayRows) {
+    // 表1データ行（QR打刻、1セッション=1行）
+    const t1Rows = []
+    let r1 = T1_DATA
+    for (const dr of dayRowsT1) {
       const { d, sessions } = dr
       const dow = new Date(ym_y, ym_m - 1, d).getDay()
       const isSat = dow === 6, isSun = dow === 0
@@ -1122,94 +1077,69 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
       sessionsToShow.forEach((session, si) => {
         const isFirst = si === 0
-        const t1c = [], t2c = []
-
-        // 日付・曜日（最初のセッション行のみ値あり）
+        const t1c = []
         if (isFirst) {
           t1c.push(`<c r="A${r1}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
           t1c.push(`<c r="B${r1}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
-          t2c.push(`<c r="A${r2}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
-          t2c.push(`<c r="B${r2}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
         } else {
           t1c.push(`<c r="A${r1}" s="${S.date[dt]}"/>`, `<c r="B${r1}" s="${S.dow[dt]}"/>`)
-          t2c.push(`<c r="A${r2}" s="${S.date[dt]}"/>`, `<c r="B${r2}" s="${S.dow[dt]}"/>`)
         }
-
         if (session) {
           const inStr = session.inLog?.time?.substring(0, 5) || ''
           const outStr = session.outLog?.time?.substring(0, 5) || ''
-          const wi = session.workItems || {}
-          const hasAtt = !!(inStr || outStr)
-
           if (inStr) { const [h, mi] = inStr.split(':').map(Number); t1c.push(`<c r="C${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
           else t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`)
           if (outStr) { const [h, mi] = outStr.split(':').map(Number); t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
           else t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`)
-
-          const breakMins = wi['休憩'] || 0
-          t1c.push(breakMins > 0 ? `<c r="E${r1}" s="${S.hours[dt]}"><v>${breakMins / 1440}</v></c>` : `<c r="E${r1}" s="${S.hours[dt]}"/>`)
-          t1c.push(inStr && outStr ? `<c r="F${r1}" s="${S.hours[dt]}"><f>MAX(0,D${r1}-C${r1}-E${r1})</f></c>` : `<c r="F${r1}" s="${S.hours[dt]}"/>`)
-          // 準備時間: 10分/セッション（出退勤のたびに前後5分）
-          t1c.push(hasAtt ? `<c r="G${r1}" s="${S.hours[dt]}"><v>${10 / 1440}</v></c>` : `<c r="G${r1}" s="${S.hours[dt]}"/>`)
-          t1c.push(hasAtt ? `<c r="H${r1}" s="${S.hours[dt]}"><f>F${r1}+G${r1}</f></c>` : `<c r="H${r1}" s="${S.hours[dt]}"/>`)
-
-          const approvedInStr = session.inLog?.approved_time?.substring(0, 5) || (inStr ? roundUp15str(inStr) : '')
-          const approvedOutStr = session.outLog?.approved_time?.substring(0, 5) || (outStr ? roundDown15str(outStr) : '')
-          if (approvedInStr) { const [ah, am] = approvedInStr.split(':').map(Number); t1c.push(`<c r="I${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`) }
-          else t1c.push(`<c r="I${r1}" s="${S.time[dt]}"/>`)
-          if (approvedOutStr) { const [ah, am] = approvedOutStr.split(':').map(Number); t1c.push(`<c r="J${r1}" s="${S.time[dt]}"><v>${excelTime(ah, am)}</v></c>`) }
-          else t1c.push(`<c r="J${r1}" s="${S.time[dt]}"/>`)
-          t1c.push(approvedInStr && approvedOutStr ? `<c r="K${r1}" s="${S.hours[dt]}"><f>MAX(0,J${r1}-I${r1}-E${r1})</f></c>` : `<c r="K${r1}" s="${S.hours[dt]}"/>`)
-
-          for (const type of workTypes) {
-            const { wd: wdCol, su: suCol, hasSunday } = typeColMap[type]
-            const mins = wi[type] || 0
-            const hours = mins / 60
-            if (hasSunday) {
-              if (isSun) {
-                t2c.push(`<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
-                t2c.push(mins > 0 ? `<c r="${suCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${suCol}${r2}" s="${S.hours[dt]}"/>`)
-              } else {
-                t2c.push(mins > 0 ? `<c r="${wdCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
-                t2c.push(`<c r="${suCol}${r2}" s="${S.hours[dt]}"/>`)
-              }
-            } else {
-              t2c.push(mins > 0 ? `<c r="${wdCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
-            }
-          }
         } else {
-          // 空行（その日勤務なし）
           t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`, `<c r="D${r1}" s="${S.time[dt]}"/>`)
-          t1c.push(`<c r="E${r1}" s="${S.hours[dt]}"/>`, `<c r="F${r1}" s="${S.hours[dt]}"/>`)
-          t1c.push(`<c r="G${r1}" s="${S.hours[dt]}"/>`, `<c r="H${r1}" s="${S.hours[dt]}"/>`)
-          t1c.push(`<c r="I${r1}" s="${S.time[dt]}"/>`, `<c r="J${r1}" s="${S.time[dt]}"/>`)
-          t1c.push(`<c r="K${r1}" s="${S.hours[dt]}"/>`)
-          for (const col of allTypeCols) t2c.push(`<c r="${col}${r2}" s="${S.hours[dt]}"/>`)
         }
-
-        t2c.push(allTypeCols.length > 0
-          ? `<c r="${typeTotalCol}${r2}" s="${S.hours[dt]}"><f>SUM(${allTypeCols.map(c => c + r2).join(',')})</f></c>`
-          : `<c r="${typeTotalCol}${r2}" s="${S.hours[dt]}"/>`)
-
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
-        t2Rows.push(`<row r="${r2}">${t2c.join('')}</row>`)
         r1++
-        r2++
       })
     }
 
-    // 表1合計行 (E=休憩 F=勤務時間 G=準備時間 H=合計 K=承認勤務時間)
+    // 表1合計行
     const t1Tot =
       `<row r="${T1_TOT}">` +
       `<c r="A${T1_TOT}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/><c r="C${T1_TOT}" s="${S.tot_lbl}"/><c r="D${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="E${T1_TOT}" s="${S.tot_hrs}"><f>SUM(E${T1_DATA}:E${T1_DATA_END})</f></c>` +
-      `<c r="F${T1_TOT}" s="${S.tot_hrs}"><f>SUM(F${T1_DATA}:F${T1_DATA_END})</f></c>` +
-      `<c r="G${T1_TOT}" s="${S.tot_hrs}"><f>SUM(G${T1_DATA}:G${T1_DATA_END})</f></c>` +
-      `<c r="H${T1_TOT}" s="${S.tot_hrs}"><f>SUM(H${T1_DATA}:H${T1_DATA_END})</f></c>` +
-      `<c r="I${T1_TOT}" s="${S.tot_lbl}"/><c r="J${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="K${T1_TOT}" s="${S.tot_hrs}"><f>SUM(K${T1_DATA}:K${T1_DATA_END})</f></c>` +
       `</row>`
+
+    // 表2データ行（業務時間申告、1日=1行）
+    const t2Rows = []
+    let r2 = T2_DATA
+    for (let d = 1; d <= lastDay; d++) {
+      const dateStr = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
+      const dow = new Date(ym_y, ym_m - 1, d).getDay()
+      const isSat = dow === 6, isSun = dow === 0
+      const dt = isSun ? 'su' : (isSat ? 'sa' : 'wd')
+      const t2c = []
+      t2c.push(`<c r="A${r2}" s="${S.date[dt]}"><v>${excelDate(ym_y, ym_m, d)}</v></c>`)
+      t2c.push(`<c r="B${r2}" s="${S.dow[dt]}" t="inlineStr"><is><t>${DOW_NAMES[dow]}</t></is></c>`)
+      const items = userWorkReports[dateStr] || {}
+      for (const type of workTypes) {
+        const { wd: wdCol, su: suCol, hasSunday } = typeColMap[type]
+        const mins = items[type] || 0
+        const hours = mins / 60
+        if (hasSunday) {
+          if (isSun) {
+            t2c.push(`<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
+            t2c.push(mins > 0 ? `<c r="${suCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${suCol}${r2}" s="${S.hours[dt]}"/>`)
+          } else {
+            t2c.push(mins > 0 ? `<c r="${wdCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
+            t2c.push(`<c r="${suCol}${r2}" s="${S.hours[dt]}"/>`)
+          }
+        } else {
+          t2c.push(mins > 0 ? `<c r="${wdCol}${r2}" s="${S.hours[dt]}"><v>${hours / 24}</v></c>` : `<c r="${wdCol}${r2}" s="${S.hours[dt]}"/>`)
+        }
+      }
+      t2c.push(allTypeCols.length > 0
+        ? `<c r="${typeTotalCol}${r2}" s="${S.hours[dt]}"><f>SUM(${allTypeCols.map(c => c + r2).join(',')})</f></c>`
+        : `<c r="${typeTotalCol}${r2}" s="${S.hours[dt]}"/>`)
+      t2Rows.push(`<row r="${r2}">${t2c.join('')}</row>`)
+      r2++
+    }
 
     // 表2合計行
     const t2TotCells = [
@@ -1236,17 +1166,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     let totalPayHours = 0
     let totalPayAmount = 0
 
-    // Helper: sum daily mins and cuts for a type within a date range
+    // Helper: sum work_report mins for a type within a date range
     function periodMins(type, fromDate, toDate) {
       let wd = 0, we = 0
       Object.entries(dailyTypeMinsSplit).forEach(([ds, tm]) => {
-        if (ds >= fromDate && ds <= toDate && tm[type]) { wd += tm[type].wd; we += tm[type].we }
-      })
-      return { wd, we }
-    }
-    function periodCuts(type, fromDate, toDate) {
-      let wd = 0, we = 0
-      Object.entries(dailyCutSplit).forEach(([ds, tm]) => {
         if (ds >= fromDate && ds <= toDate && tm[type]) { wd += tm[type].wd; we += tm[type].we }
       })
       return { wd, we }
@@ -1261,7 +1184,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       for (const period of periods) {
         const { fromDate, toDate, normal: normalRate, sunday: sundayRate } = period
         const mins = periodMins(type, fromDate, toDate)
-        const cuts = periodCuts(type, fromDate, toDate)
 
         // Date range label suffix (only when rate changes mid-month)
         const rangeLabel = multiPeriod
@@ -1269,42 +1191,40 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           : ''
 
         if (hasSunday) {
-          const adjWd = Math.max(0, mins.wd - cuts.wd)
-          const adjWe = Math.max(0, mins.we - cuts.we)
-          if (adjWd > 0) {
-            const pay = Math.round(adjWd / 60 * normalRate)
-            totalPayHours += adjWd / 60; totalPayAmount += pay
+          if (mins.wd > 0) {
+            const pay = Math.round(mins.wd / 60 * normalRate)
+            totalPayHours += mins.wd / 60; totalPayAmount += pay
             payRows.push(
               `<row r="${payRowIdx}">` +
               `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + rangeLabel)}</t></is></c>` +
-              `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${adjWd / 60 / 24}</v></c>` +
+              `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${mins.wd / 60 / 24}</v></c>` +
               (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
               `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${pay}</v></c>` +
               `</row>`
             ); payRowIdx++
           }
-          if (adjWe > 0) {
-            const pay = Math.round(adjWe / 60 * sundayRate)
-            totalPayHours += adjWe / 60; totalPayAmount += pay
+          if (mins.we > 0) {
+            const pay = Math.round(mins.we / 60 * sundayRate)
+            totalPayHours += mins.we / 60; totalPayAmount += pay
             const suLabel = type + rangeLabel + '（日曜）'
             payRows.push(
               `<row r="${payRowIdx}">` +
               `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(suLabel)}</t></is></c>` +
-              `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${adjWe / 60 / 24}</v></c>` +
+              `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${mins.we / 60 / 24}</v></c>` +
               (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
               `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${pay}</v></c>` +
               `</row>`
             ); payRowIdx++
           }
         } else {
-          const adjTotal = Math.max(0, mins.wd + mins.we - cuts.wd - cuts.we)
-          if (adjTotal > 0) {
-            const pay = Math.round(adjTotal / 60 * normalRate)
-            totalPayHours += adjTotal / 60; totalPayAmount += pay
+          const total = mins.wd + mins.we
+          if (total > 0) {
+            const pay = Math.round(total / 60 * normalRate)
+            totalPayHours += total / 60; totalPayAmount += pay
             payRows.push(
               `<row r="${payRowIdx}">` +
               `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + rangeLabel)}</t></is></c>` +
-              `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${adjTotal / 60 / 24}</v></c>` +
+              `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${total / 60 / 24}</v></c>` +
               (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
               `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${pay}</v></c>` +
               `</row>`
@@ -1357,8 +1277,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
-    // ci now equals Excel 1-based col number of typeTotalCol (last T2 column)
-    const maxColIdx = Math.max(11, ci) // 11 = col K (last T1 column with 承認)
+    const maxColIdx = Math.max(4, ci) // 4 = col D (last T1 column)
     const colsXml =
       `<cols>` +
       `<col min="1" max="1" width="13" customWidth="1"/>` +

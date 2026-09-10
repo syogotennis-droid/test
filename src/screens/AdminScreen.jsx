@@ -5,10 +5,10 @@ import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
-  updateLogTime, saveLog, saveLogManual, setApprovedTime, setFirstLastWork, getTodayStatuses, getClockInTimeForDate,
+  updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
-  saveWorkReport, getWorkReport, migrateSessionWorkToReports
+  saveWorkReport, getWorkReport, migrateSessionWorkToReports, getWorkReportsForRange
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -1220,9 +1220,7 @@ function KinmuboTab({ today }) {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
-  const [approvedEdits, setApprovedEdits] = useState({})
-  const [workBoundaryEdits, setWorkBoundaryEdits] = useState({})
-  const [salariedDayEdits, setSalariedDayEdits] = useState({}) // { [userId_date]: { breakMins, overtimeMins } }
+  const [salariedDayEdits, setSalariedDayEdits] = useState({})
   const [salariedDaysData, setSalariedDaysData] = useState({})
 
   function timeStrToMinsK(s) {
@@ -1232,8 +1230,6 @@ function KinmuboTab({ today }) {
   function minsToTimeStrK(m) {
     return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
   }
-  function roundUp15K(tot) { const rem = tot % 15; return rem === 0 ? tot : tot + (15 - rem) }
-  function roundDown15K(tot) { return Math.floor(tot / 15) * 15 }
 
   function shiftMonth(delta) {
     const [y, m] = selectedYM.split('-').map(Number)
@@ -1247,27 +1243,27 @@ function KinmuboTab({ today }) {
     setPreview(null)
     setExpandedIds(new Set())
     setSearchQuery('')
-    setApprovedEdits({})
-    setWorkBoundaryEdits({})
     const [y, m] = selectedYM.split('-').map(Number)
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo)])
-      .then(([logs, users, minWage, salDays]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo), getWorkReportsForRange(dateFrom, dateTo)])
+      .then(([logs, users, minWage, salDays, workReports]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWage, salDays))
+        setPreview(buildPreview(logs, users, minWage, salDays, workReports))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWage, salariedDays = {}) {
+  function buildPreview(logs, users, minWage, salariedDays = {}, workReports = {}) {
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
-    const userEntries = users.filter(u => logs.some(l => l.user_id === u.id))
+    const userEntries = users.filter(u =>
+      logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.startsWith(`${u.id}_`))
+    )
     return userEntries.map(user => {
       const userLogs = logs.filter(l => l.user_id === user.id)
       const itemRates = user.itemRates || {}
@@ -1336,79 +1332,59 @@ function KinmuboTab({ today }) {
         return { user, workingDays: salWorkingDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows }
       }
 
-      const monthlyWdMins = {}, monthlyWeMins = {}
+      // ─── Hourly employee handling ───
+
+      // Extract work reports for this user
+      const userWorkReports = {}
+      Object.entries(workReports).forEach(([key, items]) => {
+        if (key.startsWith(`${user.id}_`)) {
+          const dateStr = key.slice(user.id.length + 1)
+          if (Object.values(items).some(m => m > 0)) userWorkReports[dateStr] = items
+        }
+      })
+
+      // Merge work-report-only dates into byDate and attach workReportItems
+      Object.keys(userWorkReports).forEach(dateStr => {
+        if (!byDate[dateStr]) byDate[dateStr] = { pendingIn: null, sessions: [] }
+      })
       Object.entries(byDate).forEach(([dateStr, entry]) => {
+        entry.workReportItems = userWorkReports[dateStr] || {}
+      })
+
+      // workingDays = days with ≥1 minute work reported
+      const workingDays = Object.keys(userWorkReports).length
+
+      // Build daily type minutes split from work_reports
+      const dailyTypeMinsSplit = {}
+      Object.entries(userWorkReports).forEach(([dateStr, items]) => {
         const [yr, mo, d] = dateStr.split('-').map(Number)
         const isWe = new Date(yr, mo - 1, d).getDay() === 0
-        entry.sessions.forEach(session => {
-          Object.entries(session.workItems).forEach(([t, mm]) => {
-            if (isWe) monthlyWeMins[t] = (monthlyWeMins[t] || 0) + mm
-            else monthlyWdMins[t] = (monthlyWdMins[t] || 0) + mm
-          })
-        })
-      })
-      const workingDays = Object.values(byDate).filter(e => e.sessions.length > 0).length
-
-
-      // Build daily type minutes split for rate-history-aware pay calculation
-      const dailyTypeMinsSplit = {}
-      const dailyCutSplit = {}
-      Object.entries(byDate).forEach(([dateStr, entry]) => {
-        const [yr2, mo2, d2] = dateStr.split('-').map(Number)
-        const isWe2 = new Date(yr2, mo2 - 1, d2).getDay() === 0
-        entry.sessions.forEach(session => {
-          Object.entries(session.workItems).forEach(([t, mm]) => {
-            if (!dailyTypeMinsSplit[dateStr]) dailyTypeMinsSplit[dateStr] = {}
-            if (!dailyTypeMinsSplit[dateStr][t]) dailyTypeMinsSplit[dateStr][t] = { wd: 0, we: 0 }
-            if (isWe2) dailyTypeMinsSplit[dateStr][t].we += mm
-            else dailyTypeMinsSplit[dateStr][t].wd += mm
-          })
-        })
-      })
-      Object.entries(byDate).forEach(([dateStr, entry]) => {
-        const [yr2, mo2, d2] = dateStr.split('-').map(Number)
-        const isWe2 = new Date(yr2, mo2 - 1, d2).getDay() === 0
-        entry.sessions.forEach(session => {
-          const inStr2 = session.inLog?.time?.substring(0, 5) || ''
-          const outStr2 = session.outLog?.time?.substring(0, 5) || ''
-          if (!inStr2 && !outStr2) return
-          const inAppr2 = session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr2 ? roundUp15K(timeStrToMinsK(inStr2)) : null
-          const outAppr2 = session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr2 ? roundDown15K(timeStrToMinsK(outStr2)) : null
-          const actIn2 = inStr2 ? timeStrToMinsK(inStr2) : null
-          const actOut2 = outStr2 ? timeStrToMinsK(outStr2) : null
-          const sCut = (inAppr2 != null && actIn2 != null) ? Math.max(0, inAppr2 - actIn2) : 0
-          const eCut = (outAppr2 != null && actOut2 != null) ? Math.max(0, actOut2 - outAppr2) : 0
-          const addCut = (type, mins) => {
-            if (!type || mins <= 0) return
-            if (!dailyCutSplit[dateStr]) dailyCutSplit[dateStr] = {}
-            if (!dailyCutSplit[dateStr][type]) dailyCutSplit[dateStr][type] = { wd: 0, we: 0 }
-            if (isWe2) dailyCutSplit[dateStr][type].we += mins
-            else dailyCutSplit[dateStr][type].wd += mins
-          }
-          addCut(session.firstWork, sCut)
-          addCut(session.lastWork, eCut)
+        Object.entries(items).forEach(([t, mm]) => {
+          if (!mm) return
+          if (!dailyTypeMinsSplit[dateStr]) dailyTypeMinsSplit[dateStr] = {}
+          if (!dailyTypeMinsSplit[dateStr][t]) dailyTypeMinsSplit[dateStr][t] = { wd: 0, we: 0 }
+          if (isWe) dailyTypeMinsSplit[dateStr][t].we += mm
+          else dailyTypeMinsSplit[dateStr][t].wd += mm
         })
       })
 
       // Build pay rows per type, per rate period
       const rows = []
-      const [ymY, ymM] = Object.keys(byDate)[0]?.split('-').map(Number) || [new Date().getFullYear(), new Date().getMonth() + 1]
+      const allByDateDates = Object.keys(byDate).sort()
+      const [ymY, ymM] = allByDateDates[0]?.split('-').map(Number) || [new Date().getFullYear(), new Date().getMonth() + 1]
       for (const type of (user.workItems || []).filter(t => !EXCL.has(t))) {
         const rateObj = itemRates[type] || {}
         const hasSunday = !!(rateObj.sunday)
-        // Build rate periods for this month
         const history = rateObj?.rateHistory
         let periods
         if (!history || history.length === 0) {
-          const monthDates = Object.keys(byDate).sort()
-          const fromDate = monthDates[0] || `${ymY}-01-01`
-          const toDate = monthDates[monthDates.length - 1] || fromDate
+          const fromDate = allByDateDates[0] || `${ymY}-01-01`
+          const toDate = allByDateDates[allByDateDates.length - 1] || fromDate
           periods = [{ fromDate, toDate, normal: Number(rateObj.normal) || 0, sunday: Number(rateObj.sunday) || 0 }]
         } else {
           const sorted = [...history].sort((a, b) => { if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
-          const allDates = Object.keys(byDate).sort()
-          const monthStart = allDates[0] || `${ymY}-${String(ymM).padStart(2,'0')}-01`
-          const monthEnd = allDates[allDates.length - 1] || monthStart
+          const monthStart = allByDateDates[0] || `${ymY}-${String(ymM).padStart(2,'0')}-01`
+          const monthEnd = allByDateDates[allByDateDates.length - 1] || monthStart
           const defR = { normal: Number(rateObj.normal) || 0, sunday: Number(rateObj.sunday) || 0 }
           const base = sorted.filter(e => !e.from || e.from <= monthStart).pop() || sorted[0]
           const inMonth = sorted.filter(e => e.from && e.from > monthStart && e.from <= monthEnd)
@@ -1425,21 +1401,17 @@ function KinmuboTab({ today }) {
         const multiPeriod = periods.length > 1
         for (const period of periods) {
           const { fromDate, toDate, normal: normalRate, sunday: sundayRate } = period
-          let wdM = 0, weM = 0, cutWd = 0, cutWe = 0
+          let wdM = 0, weM = 0
           Object.entries(dailyTypeMinsSplit).forEach(([ds, tm]) => {
             if (ds >= fromDate && ds <= toDate && tm[type]) { wdM += tm[type].wd; weM += tm[type].we }
           })
-          Object.entries(dailyCutSplit).forEach(([ds, tm]) => {
-            if (ds >= fromDate && ds <= toDate && tm[type]) { cutWd += tm[type].wd; cutWe += tm[type].we }
-          })
-          const adjWd = Math.max(0, wdM - cutWd), adjWe = Math.max(0, weM - cutWe)
           const periodRangeLabel = multiPeriod ? `${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}` : ''
           if (hasSunday) {
-            if (adjWd > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: adjWd, days: null, rate: normalRate, pay: Math.round(adjWd / 60 * normalRate) })
-            if (adjWe > 0) rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : type + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: adjWe, days: null, rate: sundayRate, pay: Math.round(adjWe / 60 * sundayRate) })
+            if (wdM > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: wdM, days: null, rate: normalRate, pay: Math.round(wdM / 60 * normalRate) })
+            if (weM > 0) rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : type + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sundayRate, pay: Math.round(weM / 60 * sundayRate) })
           } else {
-            const adj = adjWd + adjWe
-            if (adj > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: adj, days: null, rate: normalRate, pay: Math.round(adj / 60 * normalRate) })
+            const tot = wdM + weM
+            if (tot > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: tot, days: null, rate: normalRate, pay: Math.round(tot / 60 * normalRate) })
           }
         }
       }
@@ -1451,7 +1423,7 @@ function KinmuboTab({ today }) {
         const prepMins = workingDays * 10
         rows.push({ label: '準備時間', parentType: '準備時間', isMultiPeriod: false, dayType: null, mins: prepMins, days: null, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
       }
-      const totalWorkMins = rows.reduce((s, r) => s + (r.mins || 0), 0)
+      const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
       return { user, workingDays, totalWorkMins, rows, totalPay, byDate }
     })
@@ -1476,28 +1448,6 @@ function KinmuboTab({ today }) {
       else next.add(userId)
       return next
     })
-  }
-
-  async function handleApprovedChange(logId, newMins) {
-    setApprovedEdits(prev => ({ ...prev, [logId]: newMins }))
-    if (logId) {
-      try { await setApprovedTime(logId, minsToTimeStrK(newMins)) } catch {}
-    }
-  }
-
-  async function handleBoundaryChange(outLogId, field, value) {
-    setWorkBoundaryEdits(prev => ({
-      ...prev,
-      [outLogId]: { ...prev[outLogId], [field]: value }
-    }))
-    if (outLogId) {
-      try {
-        const cur = workBoundaryEdits[outLogId] || {}
-        const fw = field === 'firstWork' ? value : (cur.firstWork ?? null)
-        const lw = field === 'lastWork' ? value : (cur.lastWork ?? null)
-        await setFirstLastWork(outLogId, fw, lw)
-      } catch {}
-    }
   }
 
   async function handleSalariedDayChange(userId, ds, field, value) {
@@ -1574,25 +1524,8 @@ function KinmuboTab({ today }) {
 
   const globalSummary = useMemo(() => {
     if (!preview || preview.length === 0) return null
-    let totalClockMins = 0
     const typeMap = {}
-    for (const { rows, byDate } of preview) {
-      for (const entry of Object.values(byDate)) {
-        for (const session of entry.sessions) {
-          const inStr = session.inLog?.time?.substring(0, 5) || ''
-          const outStr = session.outLog?.time?.substring(0, 5) || ''
-          if (!inStr && !outStr) continue
-          const inLogId = session.inLog?.id
-          const outLogId = session.outLog?.id
-          const editedIn = inLogId ? approvedEdits[inLogId] : undefined
-          const editedOut = outLogId ? approvedEdits[outLogId] : undefined
-          const inApprMins = editedIn ?? (session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
-          const outApprMins = editedOut ?? (session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
-          if (inApprMins !== null && outApprMins !== null) {
-            totalClockMins += Math.max(0, outApprMins - inApprMins)
-          }
-        }
-      }
+    for (const { rows } of preview) {
       for (const row of rows) {
         if (row.mins === null || row.label === '準備時間') continue
         if (!typeMap[row.label]) typeMap[row.label] = { mins: 0, pay: 0 }
@@ -1601,10 +1534,9 @@ function KinmuboTab({ today }) {
       }
     }
     return {
-      totalClockMins,
       types: Object.entries(typeMap).map(([label, v]) => ({ label, mins: v.mins, pay: v.pay }))
     }
-  }, [preview, approvedEdits])
+  }, [preview])
 
   return (
     <div className={styles.calContent}>
@@ -1739,10 +1671,11 @@ function KinmuboTab({ today }) {
                   >
                     <span className={styles.kinmuboAccordionName}>{user.name}</span>
                     <span className={styles.kinmuboAccordionMeta}>
-                      <span className={styles.kinmuboAccordionDays}>{workingDays}日出勤</span>
-                      <span className={styles.kinmuboAccordionTime}>{fmtMins(totalWorkMins)}</span>
+                      <span className={styles.kinmuboAccordionDays}>勤務申告：{workingDays}日</span>
+                      <span className={styles.kinmuboAccordionSep}> ｜ </span>
+                      <span className={styles.kinmuboAccordionTime}>申告時間合計：{fmtMins(totalWorkMins)}</span>
                     </span>
-                    <span className={styles.kinmuboAccordionPay}>{totalPay.toLocaleString()}円</span>
+                    <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>
                     <svg
                       className={[styles.kinmuboAccordionChevron, isOpen ? styles.kinmuboAccordionChevronOpen : ''].join(' ')}
                       width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -1867,54 +1800,46 @@ function KinmuboTab({ today }) {
                           </table>
                         </div>
                       )}
-                      {/* Hide existing daily punch table for salaried employees */}
-                      {!isSalariedUser && Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0) && (
+                      {/* QR打刻記録: show all dates with punch or work report data */}
+                      {!isSalariedUser && Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0 || Object.keys(byDate[ds].workReportItems || {}).length > 0) && (
                         <div className={styles.kinmuboDailySection}>
-                          <div className={styles.kinmuboDailySectionTitle}>打刻・承認時間</div>
+                          <div className={styles.kinmuboDailySectionTitle}>QR打刻記録</div>
                           <table className={styles.kinmuboDailyTable}>
                             <thead>
                               <tr>
                                 <th className={styles.kinmuboDailyTh}>日付</th>
-                                <th className={styles.kinmuboDailyTh}>打刻時間</th>
-                                <th className={styles.kinmuboDailyTh}>承認時間</th>
-                                <th className={styles.kinmuboDailyTh}>開始側の控除業務</th>
-                                <th className={styles.kinmuboDailyTh}>終了側の控除業務</th>
+                                <th className={styles.kinmuboDailyTh}>QR打刻</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {Object.keys(byDate).sort().filter(ds => byDate[ds].sessions.length > 0).map(ds => {
+                              {Object.keys(byDate).sort().filter(ds =>
+                                byDate[ds].sessions.length > 0 || Object.keys(byDate[ds].workReportItems || {}).length > 0
+                              ).map(ds => {
                                 const [y, mo, d] = ds.split('-').map(Number)
                                 const dow = new Date(y, mo - 1, d).getDay()
                                 const dowLabel = ['日','月','火','水','木','金','土'][dow]
                                 const isSun = dow === 0, isSat = dow === 6
                                 const entry = byDate[ds]
-                                const numSessions = entry.sessions.length
+                                const hasSessions = entry.sessions.length > 0
+                                if (!hasSessions) {
+                                  return (
+                                    <tr key={ds} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].filter(Boolean).join(' ')}>
+                                      <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>{`${mo}/${d}（${dowLabel}）`}</td>
+                                      <td className={styles.kinmuboDailyTd} style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.85rem' }}>打刻なし</td>
+                                    </tr>
+                                  )
+                                }
                                 return entry.sessions.map((session, si) => {
                                   const inStr = session.inLog?.time?.substring(0, 5) || ''
                                   const outStr = session.outLog?.time?.substring(0, 5) || ''
-                                  const inLogId = session.inLog?.id
-                                  const outLogId = session.outLog?.id
-                                  const editedIn = inLogId ? approvedEdits[inLogId] : undefined
-                                  const editedOut = outLogId ? approvedEdits[outLogId] : undefined
-                                  const inApprMins = editedIn ?? (session.inLog?.approved_time ? timeStrToMinsK(session.inLog.approved_time.substring(0, 5)) : inStr ? roundUp15K(timeStrToMinsK(inStr)) : null)
-                                  const outApprMins = editedOut ?? (session.outLog?.approved_time ? timeStrToMinsK(session.outLog.approved_time.substring(0, 5)) : outStr ? roundDown15K(timeStrToMinsK(outStr)) : null)
-                                  const actualInMins = inStr ? timeStrToMinsK(inStr) : null
-                                  const actualOutMins = outStr ? timeStrToMinsK(outStr) : null
-                                  const startCut = (inApprMins != null && actualInMins != null) ? Math.max(0, inApprMins - actualInMins) : 0
-                                  const endCut = (outApprMins != null && actualOutMins != null) ? Math.max(0, actualOutMins - outApprMins) : 0
-                                  const boundEdit = outLogId ? (workBoundaryEdits[outLogId] || {}) : {}
-                                  const resolvedFirst = boundEdit.firstWork ?? session.firstWork
-                                  const resolvedLast = boundEdit.lastWork ?? session.lastWork
-                                  const workTypeOptions = Object.keys(session.workItems).filter(t => !new Set(['休憩']).has(t) && session.workItems[t] > 0)
-                                  const showBoundary = workTypeOptions.length >= 1 && outLogId
-                                  const approvedWorkMins = (inApprMins !== null && outApprMins !== null) ? outApprMins - inApprMins : null
-                                  const isShortWork = approvedWorkMins !== null && approvedWorkMins >= 0 && approvedWorkMins < 15
-                                  const isNegativeWork = approvedWorkMins !== null && approvedWorkMins < 0
+                                  const numSessions = entry.sessions.length
+                                  const punchText = inStr && outStr
+                                    ? `出勤 ${inStr} ／ 退勤 ${outStr}`
+                                    : inStr ? `出勤 ${inStr}（退勤なし）` : outStr ? `退勤 ${outStr}（出勤なし）` : '—'
                                   return (
                                     <tr key={`${ds}-${si}`} className={[
                                       styles.kinmuboDailyRow,
                                       isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : '',
-                                      si === 0 && numSessions > 1 ? styles.kinmuboDailyGroupFirst : '',
                                       si > 0 ? styles.kinmuboDailyGroupExtra : '',
                                     ].filter(Boolean).join(' ')}>
                                       {si === 0 && (
@@ -1923,58 +1848,7 @@ function KinmuboTab({ today }) {
                                           {numSessions > 1 && <span className={styles.multiSessionBadge}>{numSessions}回</span>}
                                         </td>
                                       )}
-                                      <td className={styles.kinmuboDailyTd}>
-                                        {inStr && outStr ? `${inStr} ～ ${outStr}` : inStr || outStr || '—'}
-                                      </td>
-                                      <td className={styles.kinmuboDailyTdAppr}>
-                                        {inStr && (
-                                          <span className={styles.apprCtrl}>
-                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, Math.max(0, (inApprMins ?? 0) - 15))}>−</button>
-                                            <span className={styles.apprTimeVal}>{inApprMins !== null ? minsToTimeStrK(inApprMins) : '—'}</span>
-                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(inLogId, Math.min((inApprMins ?? 0) + 15, outApprMins ?? Infinity))}>+</button>
-                                          </span>
-                                        )}
-                                        {inStr && outStr && <span className={styles.apprSep}>〜</span>}
-                                        {outStr && (
-                                          <span className={styles.apprCtrl}>
-                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, Math.max((outApprMins ?? 0) - 15, inApprMins ?? 0))}>−</button>
-                                            <span className={styles.apprTimeVal}>{outApprMins !== null ? minsToTimeStrK(outApprMins) : '—'}</span>
-                                            <button className={styles.apprStepBtn} onClick={() => handleApprovedChange(outLogId, (outApprMins ?? 0) + 15)}>+</button>
-                                          </span>
-                                        )}
-                                        {isShortWork && <span className={styles.shortWorkBadge}>15分未満・要確認</span>}
-                                        {isNegativeWork && <span className={styles.shortWorkBadge}>時刻逆転・要確認</span>}
-                                      </td>
-                                      <td className={styles.kinmuboDailyTd}>
-                                        {startCut > 0 && showBoundary ? (
-                                          <div className={styles.boundarySelectWrap}>
-                                            <span className={styles.cutBadge}>−{fmtMins(startCut)}</span>
-                                            <select
-                                              className={styles.boundarySelect}
-                                              value={resolvedFirst || ''}
-                                              onChange={e => handleBoundaryChange(outLogId, 'firstWork', e.target.value || null)}
-                                            >
-                                              <option value="">— 未設定 —</option>
-                                              {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                                            </select>
-                                          </div>
-                                        ) : <span className={styles.noAdjustLabel}>調整なし</span>}
-                                      </td>
-                                      <td className={styles.kinmuboDailyTd}>
-                                        {endCut > 0 && showBoundary ? (
-                                          <div className={styles.boundarySelectWrap}>
-                                            <span className={styles.cutBadge}>−{fmtMins(endCut)}</span>
-                                            <select
-                                              className={styles.boundarySelect}
-                                              value={resolvedLast || ''}
-                                              onChange={e => handleBoundaryChange(outLogId, 'lastWork', e.target.value || null)}
-                                            >
-                                              <option value="">— 未設定 —</option>
-                                              {workTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                                            </select>
-                                          </div>
-                                        ) : <span className={styles.noAdjustLabel}>調整なし</span>}
-                                      </td>
+                                      <td className={styles.kinmuboDailyTd}>{punchText}</td>
                                     </tr>
                                   )
                                 })
