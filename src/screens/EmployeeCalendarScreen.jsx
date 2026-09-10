@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveWorkReport, getWorkReport, CLOCK_OUT_HIDDEN } from '../lib/db'
+import { getLogs, saveWorkReport, getWorkReport, getSessionWorkStatusForUserRange, CLOCK_OUT_HIDDEN } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -27,7 +27,8 @@ function buildDayMap(logs, year, month) {
   logs.forEach(log => {
     const [y, m, d] = log.date.split('-').map(Number)
     if (y !== year || m !== month + 1) return
-    if (!map[d]) map[d] = { ins: [], outs: [], workType: '', outLog: null }
+    if (!map[d]) map[d] = { ins: [], outs: [], workType: '', outLog: null, sessionIds: new Set() }
+    if (log.session_id) map[d].sessionIds.add(log.session_id)
     if (log.log_type === '出勤') map[d].ins.push(log.time || '')
     else if (log.log_type === '退勤') {
       map[d].outs.push(log.time || '')
@@ -378,13 +379,21 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedDay, setSelectedDay] = useState(null)
+  const [sessionWorkStatus, setSessionWorkStatus] = useState({})
 
   const loadLogs = useCallback(() => {
     setLoading(true)
     const { from, to } = getMonthRange(year, month)
-    getLogs({ dateFrom: from, dateTo: to, userId: user.id })
-      .then(data => { setLogs(data); setLoading(false) })
-  }, [year, month, user.id])
+    const isSal = user?.employeeType === 'salaried'
+    Promise.all([
+      getLogs({ dateFrom: from, dateTo: to, userId: user.id }),
+      isSal ? Promise.resolve({}) : getSessionWorkStatusForUserRange(user.id, from, to)
+    ]).then(([data, workStatus]) => {
+      setLogs(data)
+      setSessionWorkStatus(workStatus)
+      setLoading(false)
+    })
+  }, [year, month, user.id, user?.employeeType])
 
   useEffect(() => { loadLogs() }, [loadLogs])
 
@@ -431,15 +440,42 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const entry = dayMap[d]
             const inTime = entry ? (entry.ins.sort()[0] || '').substring(0, 5) : ''
             const outTime = entry ? (entry.outs.sort().reverse()[0] || '').substring(0, 5) : ''
-            const worked = !!inTime
+            const worked = !!(inTime || outTime)
             const dow = new Date(year, month, d).getDay()
-            const hasNoWorkType = false
+            const isSalaried = user?.employeeType === 'salaried'
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            const sessionIds = entry ? [...entry.sessionIds] : []
+            const workedSessions = sessionWorkStatus[dateStr]
+
+            let workBadgeLabel = null
+            let workBadgeClass = null
+            if (!isSalaried && worked) {
+              if (!inTime && outTime) {
+                workBadgeLabel = '打刻要確認'
+                workBadgeClass = styles.calWorkBadgeRed
+              } else if (inTime && !outTime) {
+                workBadgeLabel = '勤務中'
+                workBadgeClass = styles.calWorkBadgeBlue
+              } else if (sessionIds.length > 0) {
+                const coveredCount = sessionIds.filter(id => workedSessions?.has(id)).length
+                if (coveredCount === 0) { workBadgeLabel = '業務未入力'; workBadgeClass = styles.calWorkBadgeOrange }
+                else if (coveredCount === sessionIds.length) { workBadgeLabel = '業務入力済'; workBadgeClass = styles.calWorkBadgeTeal }
+                else { workBadgeLabel = '一部未入力'; workBadgeClass = styles.calWorkBadgeOrange }
+              } else if (workedSessions?.size > 0) {
+                workBadgeLabel = '業務入力済'
+                workBadgeClass = styles.calWorkBadgeTeal
+              } else {
+                workBadgeLabel = '業務未入力'
+                workBadgeClass = styles.calWorkBadgeOrange
+              }
+            }
+
             return (
               <div
                 key={d}
                 className={[
                   styles.cell,
-                  hasNoWorkType ? styles.noWork : worked ? styles.worked : '',
+                  inTime ? styles.worked : '',
                   dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''
                 ].join(' ')}
                 onClick={() => worked && setSelectedDay(d)}
@@ -448,7 +484,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                 {inTime && <div className={styles.inTime}>出 {inTime}</div>}
                 {inTime && outTime && <div className={styles.timeSpacer} />}
                 {outTime && <div className={styles.outTime}>退 {outTime}</div>}
-                {hasNoWorkType && <div className={styles.noWorkBadge}>未入力</div>}
+                {workBadgeLabel && <div className={workBadgeClass}>{workBadgeLabel}</div>}
               </div>
             )
           })}

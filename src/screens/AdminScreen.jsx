@@ -1210,8 +1210,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     return (
                       <div key={s.sessionId} className={styles.dayEditSessionCard}>
                         <div className={styles.dayEditSessionCardHeader}>
-                          <span className={styles.dayEditSessionNumBadge}>{si + 1}</span>
-                          <span className={styles.dayEditSessionCardLabel}>{si + 1}回目</span>
+                          <span className={styles.dayEditSessionNumBadge}>{si + 1}回目</span>
                           <div className={styles.dayEditSessionBadges}>
                             <span className={punchBadgeClass}>{punchBadgeText}</span>
                             {workBadgeClass && <span className={workBadgeClass}>{workBadgeText}</span>}
@@ -1355,33 +1354,65 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           <>
             <div className={styles.modalHeader}>
               <div className={styles.modalHeaderTitle}>保存内容の確認</div>
+              <div className={styles.modalHeaderSub}>{user.name} ｜ {dateLabel}</div>
             </div>
             <div className={styles.modalBody}>
-              <div className={styles.confirmTable}>
-                <div className={styles.confirmRow}><span>担当者</span><strong>{user.name}</strong></div>
-                <div className={styles.confirmRow}><span>日付</span><strong>{dateLabel}</strong></div>
-                {sessions.map((s, si) => {
-                  const { inTime, outTime } = sessionTimes[si]
-                  const label = sessions.length > 1 ? `${si + 1}回目 ` : ''
-                  const rows = sessionWorkRows[s.sessionId] || []
-                  return (
-                    <React.Fragment key={s.sessionId}>
-                      {inTime && <div className={styles.confirmRow}><span>{label}出勤</span><strong style={{ color: '#2e7d32' }}>{inTime}</strong></div>}
-                      {outTime && <div className={styles.confirmRow}><span>{label}退勤</span><strong style={{ color: '#c62828' }}>{outTime}</strong></div>}
-                      {inTime && !outTime && <div className={styles.confirmRow}><span>{label}退勤</span><span style={{ color: '#b45309' }}>未打刻</span></div>}
+              <p className={styles.confirmInfoNote}>この日の勤務記録を更新します</p>
+              {sessions.map((s, si) => {
+                const { inTime, outTime } = sessionTimes[si]
+                const rows = sessionWorkRows[s.sessionId] || []
+                const sessionTotalMins = rows.reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
+                const hasContent = inTime || outTime || rows.some(r => r.type)
+                if (!hasContent) return null
+                return (
+                  <div key={s.sessionId} className={styles.confirmSessionCard}>
+                    <div className={styles.confirmSessionCardHeader}>
+                      <span className={styles.confirmSessionBadge}>{si + 1}回目</span>
+                    </div>
+                    <div className={styles.confirmSessionCardBody}>
+                      {inTime && (
+                        <div className={styles.confirmSessionRow}>
+                          <span>出勤</span><strong>{inTime}</strong>
+                        </div>
+                      )}
+                      {outTime && (
+                        <div className={styles.confirmSessionRow}>
+                          <span>退勤</span><strong>{outTime}</strong>
+                        </div>
+                      )}
+                      {inTime && !outTime && (
+                        <div className={styles.confirmSessionRow}>
+                          <span>退勤</span><span className={styles.confirmUnpunched}>未打刻</span>
+                        </div>
+                      )}
                       {!isSalaried && rows.filter(r => r.type).map((r, ri) => {
                         const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-                        return <div key={ri} className={styles.confirmRow}><span>{label}{r.type}</span><strong>{fmtMinutes(mins)}</strong></div>
+                        return (
+                          <div key={ri} className={styles.confirmSessionRow}>
+                            <span>{r.type}</span><strong>{fmtMinutes(mins)}</strong>
+                          </div>
+                        )
                       })}
-                    </React.Fragment>
-                  )
-                })}
-              </div>
-              {dayLogs.length > 0 && <p className={styles.confirmWarn}>既存のQR打刻記録を上書きします</p>}
+                      {!isSalaried && sessionTotalMins > 0 && (
+                        <div className={styles.confirmSessionRowTotal}>
+                          <span>この回の合計</span><strong>{fmtWorkTotal(sessionTotalMins)}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {!isSalaried && dayTotalMins > 0 && (
+                <div className={styles.confirmDayTotal}>
+                  <span>1日の合計</span><strong>{fmtWorkTotal(dayTotalMins)}</strong>
+                </div>
+              )}
             </div>
             <div className={styles.modalFooter}>
-              <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
-              <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中...' : '確定する'}</button>
+              <div className={styles.dayEditFooterBtns}>
+                <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻って修正</button>
+                <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中...' : 'この内容で保存'}</button>
+              </div>
             </div>
           </>
         )}

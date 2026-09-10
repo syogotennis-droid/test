@@ -333,6 +333,26 @@ export async function getSessionWorkReportsForRange(dateFrom, dateTo) {
   return result
 }
 
+export async function getSessionWorkStatusForUserRange(userId, dateFrom, dateTo) {
+  const q = query(
+    collection(db, 'session_work_reports'),
+    where('userId', '==', userId),
+    where('date', '>=', dateFrom),
+    where('date', '<=', dateTo)
+  )
+  const snap = await getDocs(q)
+  const result = {}
+  snap.docs.forEach(d => {
+    const data = d.data()
+    const hasWork = Object.values(data.items || {}).some(m => m > 0)
+    if (hasWork) {
+      if (!result[data.date]) result[data.date] = new Set()
+      if (data.sessionId) result[data.date].add(data.sessionId)
+    }
+  })
+  return result
+}
+
 export async function deleteSessionWorkReport(userId, dateStr, sessionId) {
   try { await deleteDoc(doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)) } catch {}
 }
