@@ -161,6 +161,63 @@
   line-height: 1;
 }
 
+/* 複数回勤務インジケーター */
+.multiCountBadge {
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 3px;
+  padding: 1px 3px;
+  line-height: 1.3;
+  text-align: center;
+  width: 100%;
+}
+
+.multiSessionRows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+}
+
+.multiSessionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.multiArrow {
+  color: #94a3b8;
+  font-size: 0.6rem;
+}
+
+.activeInline {
+  color: #1d4ed8;
+}
+
+.multiMore {
+  font-size: 0.58rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* モーダルヘッダーの回数表示 */
+.modalSessionCount {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #2563eb;
+  background: #dbeafe;
+  border-radius: 12px;
+  padding: 1px 7px;
+  margin-left: 6px;
+}
+
 /* work status badges on calendar cells */
 .calWorkBadgeTeal {
   font-size: 0.58rem;

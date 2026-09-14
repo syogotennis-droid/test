@@ -261,7 +261,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
         ) : (
           <>
             <div className={styles.modalHeader}>
-              <span className={styles.modalDate}>{month + 1}月{day}日（{dowLabel}）</span>
+              <span className={styles.modalDate}>{month + 1}月{day}日（{dowLabel}）{isMulti && <span className={styles.modalSessionCount}> {sessions.length}回</span>}</span>
               <button className={styles.modalCloseBtn} onClick={onClose}>✕</button>
             </div>
 
@@ -440,6 +440,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const inTime = sessions[0]?.in || ''
             const outTime = [...sessions].map(s => s.out).filter(Boolean).sort().reverse()[0] || ''
             const worked = sessions.length > 0
+            const multiSession = sessions.length > 1
             const dow = new Date(year, month, d).getDay()
             const isSalaried = user?.employeeType === 'salaried'
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
@@ -480,9 +481,27 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                 onClick={() => worked && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
-                {inTime && <div className={styles.inTime}>出 {inTime}</div>}
-                {inTime && outTime && <div className={styles.timeSpacer} />}
-                {outTime && <div className={styles.outTime}>退 {outTime}</div>}
+                {multiSession && (
+                  <div className={styles.multiCountBadge}>{sessions.length}回勤務</div>
+                )}
+                {multiSession ? (
+                  <div className={styles.multiSessionRows}>
+                    {sessions.slice(0, 2).map((s, si) => (
+                      <div key={si} className={styles.multiSessionRow}>
+                        <span>{s.in || '—'}</span>
+                        <span className={styles.multiArrow}>→</span>
+                        <span>{s.out || <span className={styles.activeInline}>中</span>}</span>
+                      </div>
+                    ))}
+                    {sessions.length > 2 && <div className={styles.multiMore}>ほか{sessions.length - 2}件</div>}
+                  </div>
+                ) : (
+                  <>
+                    {inTime && <div className={styles.inTime}>出 {inTime}</div>}
+                    {inTime && outTime && <div className={styles.timeSpacer} />}
+                    {outTime && <div className={styles.outTime}>退 {outTime}</div>}
+                  </>
+                )}
                 {workBadgeLabel && <div className={workBadgeClass}>{workBadgeLabel}</div>}
               </div>
             )
