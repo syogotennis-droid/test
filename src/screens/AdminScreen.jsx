@@ -2852,7 +2852,7 @@ function AddUserModal({ onClose, onAdded }) {
                                     className={styles.workItemInput}
                                     type="text"
                                     inputMode="decimal"
-                                    placeholder="1.25"
+                                    placeholder=""
                                     value={multipliers[item] || ''}
                                     disabled={!checked}
                                     onChange={e => {
@@ -4007,7 +4007,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                                           type="text"
                                           inputMode="decimal"
                                           className={styles.addRateMultInput}
-                                          placeholder="例: 1.25"
+                                          placeholder=""
                                           value={addRateForm.customMultiplierStr}
                                           onChange={e => {
                                             const v = e.target.value
