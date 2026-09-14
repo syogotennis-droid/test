@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN } from '../lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN, saveSessionWorkReport } from '../lib/db'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
 import WorkSelectScreen from '../screens/WorkSelectScreen'
@@ -159,7 +159,11 @@ export default function TabletApp() {
   async function handleWorkComplete(workItems) {
     try {
       const clockIn = await getClockInTime(currentUser.id)
-      await saveLog({ userId: currentUser.id, workItems, logType: '退勤', sessionId: clockIn?.session_id })
+      const { sessionId } = await saveLog({ userId: currentUser.id, workItems, logType: '退勤', sessionId: clockIn?.session_id })
+      const dateStr = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
+      if (sessionId && Object.values(workItems).some(m => m > 0)) {
+        await saveSessionWorkReport(currentUser.id, dateStr, sessionId, workItems)
+      }
       setCompletedInfo({
         logType: '退勤',
         workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),
