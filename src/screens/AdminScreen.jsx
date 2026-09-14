@@ -2271,12 +2271,11 @@ function KinmuboTab({ today }) {
                           <table className={styles.kinmuboDailyTable}>
                             <thead>
                               <tr>
-                                <th className={styles.kinmuboDailyTh}>日付</th>
-                                <th className={styles.kinmuboDailyTh}>回数</th>
-                                <th className={styles.kinmuboDailyTh}>出勤</th>
-                                <th className={styles.kinmuboDailyTh}>退勤</th>
-                                <th className={styles.kinmuboDailyTh}>業務内容</th>
-                                <th className={styles.kinmuboDailyTh}>回合計</th>
+                                <th className={styles.kinmuboDailyTh} style={{ width: '90px' }}>日付</th>
+                                <th className={styles.kinmuboDailyTh} style={{ width: '52px' }}>出勤</th>
+                                <th className={styles.kinmuboDailyTh} style={{ width: '52px' }}>退勤</th>
+                                <th className={[styles.kinmuboDailyTh, styles.kinmuboDailyContentTh].join(' ')}>業務内容</th>
+                                <th className={styles.kinmuboDailyTh} style={{ width: '56px' }}>回合計</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2299,7 +2298,7 @@ function KinmuboTab({ today }) {
                                   return [(
                                     <tr key={ds} className={rowClass}>
                                       <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>{dateLabel}</td>
-                                      <td className={styles.kinmuboDailyTd} colSpan={3} style={{ color: '#78716c', fontStyle: 'italic', fontSize: '0.8rem' }}>旧データ（1日合計）</td>
+                                      <td className={styles.kinmuboDailyTd} colSpan={2} style={{ color: '#78716c', fontStyle: 'italic', fontSize: '0.8rem' }}>旧データ（1日合計）</td>
                                       <td className={styles.kinmuboDailyTd} style={{ fontSize: '0.82rem', color: '#475569' }}>{legacyContent}</td>
                                       <td className={styles.kinmuboDailyTd} style={{ fontWeight: 600 }}>{legacyTotal > 0 ? fmtMins(legacyTotal) : '—'}</td>
                                     </tr>
@@ -2324,19 +2323,24 @@ function KinmuboTab({ today }) {
                                           {numSessions > 1 && <span className={styles.multiSessionBadge}>{numSessions}回</span>}
                                         </td>
                                       )}
-                                      <td className={styles.kinmuboDailyTd} style={{ color: '#6b7280', fontSize: '0.82rem' }}>
-                                        {numSessions > 1 ? `第${si + 1}回` : ''}
-                                      </td>
                                       <td className={styles.kinmuboDailyTd} style={{ color: '#2e7d32', fontWeight: 600 }}>
                                         {inStr || '—'}
                                       </td>
-                                      <td className={styles.kinmuboDailyTd} style={{ color: '#c62828', fontWeight: 600 }}>
-                                        {outStr || '—'}
+                                      <td className={styles.kinmuboDailyTd}>
+                                        {outStr
+                                          ? <span style={{ color: '#c62828', fontWeight: 600 }}>{outStr}</span>
+                                          : session.inLog
+                                            ? <span style={{ color: '#1d4ed8', fontWeight: 600 }}>勤務中</span>
+                                            : <span style={{ color: '#94a3b8' }}>—</span>
+                                        }
                                       </td>
-                                      <td className={styles.kinmuboDailyTd} style={{ fontSize: '0.82rem', color: hasWork ? '#374151' : '#9ca3af', fontStyle: hasWork ? 'normal' : 'italic' }}>
-                                        {hasWork ? workContent : '業務未入力'}
+                                      <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyContentTd].join(' ')}>
+                                        {hasWork
+                                          ? <span style={{ color: '#1e293b', fontSize: '0.82rem' }}>{workContent}</span>
+                                          : <span style={{ color: '#92400e', fontSize: '0.8rem' }}>業務未入力</span>
+                                        }
                                       </td>
-                                      <td className={styles.kinmuboDailyTd} style={{ fontWeight: hasWork ? 600 : 400, color: hasWork ? '#1e293b' : '#9ca3af' }}>
+                                      <td className={styles.kinmuboDailyTd} style={{ fontWeight: hasWork ? 600 : 400, color: hasWork ? '#1e293b' : '#94a3b8' }}>
                                         {hasWork ? fmtMins(sessionTotal) : '—'}
                                       </td>
                                     </tr>

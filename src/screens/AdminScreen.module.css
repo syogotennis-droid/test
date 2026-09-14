@@ -3672,6 +3672,7 @@
 /* ─── KinmuboTab daily log table ─── */
 .kinmuboDailySection {
   margin-bottom: 16px;
+  padding-top: 14px;
 }
 
 .kinmuboDailySectionTitle {
@@ -3681,6 +3682,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 6px;
+  padding: 0 8px;
 }
 
 .kinmuboDailyTable {
@@ -3803,6 +3805,18 @@
   font-size: 0.84rem;
   color: #1e293b;
   padding-top: 8px;
+}
+
+/* 業務内容列（折り返し許可・幅優先） */
+.kinmuboDailyContentTh {
+  min-width: 160px;
+}
+
+.kinmuboDailyContentTd {
+  white-space: normal;
+  word-break: break-all;
+  min-width: 140px;
+  vertical-align: top;
 }
 
 /* 複数打刻バッジ */
