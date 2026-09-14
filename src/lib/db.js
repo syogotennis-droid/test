@@ -1003,42 +1003,22 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
 
-    // Salaried employees: T1 (attendance) + T3 (base salary), skip T2
+    // Salaried employees: attendance only (日付・曜日・QR出勤・QR退勤)
     if (user.employeeType === 'salaried') {
-      // Validate required salaried settings before generating Excel
-      const missingFields = []
-      if (!user.regularHours) missingFields.push('所定労働時間')
-      if (user.standardBreakMins == null) missingFields.push('標準休憩時間')
-      if (missingFields.length > 0) {
-        throw new Error(`「${user.name}」の設定が未入力です：${missingFields.join('、')}。ユーザー管理で設定してください。`)
-      }
-
       const WB_NS_SAL = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
       const WB_REL_SAL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
       const hdrCellSal = (col, rn, text) => `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
-      const monthlySalaryVal = user.monthlySalary || 0
-      const overtimeRateVal = user.overtimeRate || 0
-      const regularHoursMins = user.regularHours || 0
-      const standardBreakMins = user.standardBreakMins || 0
 
       const T1_HDR_SAL = 4, T1_DATA_SAL = 5
-      // One row per calendar day
-      const T1_TOT_SAL = T1_DATA_SAL + lastDay
-      const T1_DATA_END_SAL = T1_TOT_SAL - 1
-      const T3_HDR_SAL = T1_TOT_SAL + 2
 
       const t1HdrSal =
         `<row r="${T1_HDR_SAL}" ht="36">` +
         hdrCellSal('A', T1_HDR_SAL, '日付') + hdrCellSal('B', T1_HDR_SAL, '曜日') +
         hdrCellSal('C', T1_HDR_SAL, 'QR出勤') + hdrCellSal('D', T1_HDR_SAL, 'QR退勤') +
-        hdrCellSal('E', T1_HDR_SAL, '休憩時間') + hdrCellSal('F', T1_HDR_SAL, '所定労働時間') +
-        hdrCellSal('G', T1_HDR_SAL, '残業時間') + hdrCellSal('H', T1_HDR_SAL, '合計') +
         `</row>`
 
       const t1RowsSal = []
-      let workingDaysSal = 0
       let r1sal = T1_DATA_SAL
-      const completedOvertimeByDate = {}
 
       for (let d = 1; d <= lastDay; d++) {
         const ds = `${ym_y_str}-${ym_m_str}-${String(d).padStart(2, '0')}`
@@ -1055,14 +1035,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
         let rowHtAttr = ''
         if (hasCompleted) {
-          workingDaysSal++
           const allInTimes = completedSessions.map(s => s.inLog.time.substring(0, 5))
           const allOutTimes = completedSessions.map(s => s.outLog.time.substring(0, 5))
-          const dayData = salariedDaysData[`${user.id}_${ds}`] || {}
-          const breakMinsVal = dayData.breakMins ?? standardBreakMins
-          const overtimeMinsVal = dayData.overtimeMins || 0
-          if (overtimeMinsVal > 0) completedOvertimeByDate[ds] = overtimeMinsVal
-
           if (allInTimes.length === 1) {
             const [ih, im] = allInTimes[0].split(':').map(Number)
             const [oh, om] = allOutTimes[0].split(':').map(Number)
@@ -1075,12 +1049,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             t1c.push(`<c r="C${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${inXml}</t></is></c>`)
             t1c.push(`<c r="D${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${outXml}</t></is></c>`)
           }
-          t1c.push(breakMinsVal > 0 ? `<c r="E${r1sal}" s="${S.hours[dt]}"><v>${breakMinsVal / 1440}</v></c>` : `<c r="E${r1sal}" s="${S.hours[dt]}"/>`)
-          t1c.push(`<c r="F${r1sal}" s="${S.hours[dt]}"><v>${regularHoursMins / 1440}</v></c>`)
-          t1c.push(overtimeMinsVal > 0 ? `<c r="G${r1sal}" s="${S.hours[dt]}"><v>${overtimeMinsVal / 1440}</v></c>` : `<c r="G${r1sal}" s="${S.hours[dt]}"/>`)
-          t1c.push(`<c r="H${r1sal}" s="${S.hours[dt]}"><f>F${r1sal}+G${r1sal}</f></c>`)
         } else {
-          // Incomplete or no attendance
           const hasIn = sessions.some(s => s.inLog)
           if (hasIn) {
             const firstIn = (sessions[0].inLog?.time || '').substring(0, 5)
@@ -1090,85 +1059,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"/>`)
           }
           t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"/>`)
-          t1c.push(`<c r="E${r1sal}" s="${S.hours[dt]}"/>`, `<c r="F${r1sal}" s="${S.hours[dt]}"/>`)
-          t1c.push(`<c r="G${r1sal}" s="${S.hours[dt]}"/>`, `<c r="H${r1sal}" s="${S.hours[dt]}"/>`)
         }
         t1RowsSal.push(`<row r="${r1sal}"${rowHtAttr}>${t1c.join('')}</row>`)
         r1sal++
       }
 
-      const t1TotSal =
-        `<row r="${T1_TOT_SAL}">` +
-        `<c r="A${T1_TOT_SAL}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-        `<c r="B${T1_TOT_SAL}" s="${S.tot_lbl}"/><c r="C${T1_TOT_SAL}" s="${S.tot_lbl}"/><c r="D${T1_TOT_SAL}" s="${S.tot_lbl}"/>` +
-        `<c r="E${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(E${T1_DATA_SAL}:E${T1_DATA_END_SAL})</f></c>` +
-        `<c r="F${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(F${T1_DATA_SAL}:F${T1_DATA_END_SAL})</f></c>` +
-        `<c r="G${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(G${T1_DATA_SAL}:G${T1_DATA_END_SAL})</f></c>` +
-        `<c r="H${T1_TOT_SAL}" s="${S.tot_hrs}"><f>SUM(H${T1_DATA_SAL}:H${T1_DATA_END_SAL})</f></c>` +
-        `</row>`
-
-      const t3HdrSal =
-        `<row r="${T3_HDR_SAL}" ht="32">` +
-        hdrCellSal('A', T3_HDR_SAL, '内訳') + hdrCellSal('B', T3_HDR_SAL, '時間') +
-        hdrCellSal('C', T3_HDR_SAL, '時給') + hdrCellSal('D', T3_HDR_SAL, '金額') +
-        `</row>`
-
-      const payRowsSal = []
-      let payRowIdxSal = T3_HDR_SAL + 1
-      payRowsSal.push(
-        `<row r="${payRowIdxSal}">` +
-        `<c r="A${payRowIdxSal}" s="${S.pay_lbl}" t="inlineStr"><is><t>基本給</t></is></c>` +
-        `<c r="B${payRowIdxSal}" s="${S.pay_lbl}"/>` +
-        `<c r="C${payRowIdxSal}" s="${S.pay_lbl}"/>` +
-        (monthlySalaryVal > 0 ? `<c r="D${payRowIdxSal}" s="${S.pay.wd}"><v>${monthlySalaryVal}</v></c>` : `<c r="D${payRowIdxSal}" s="${S.pay.wd}"/>`) +
-        `</row>`
-      )
-      payRowIdxSal++
-
-      for (const [otDate, otMins] of Object.entries(completedOvertimeByDate).sort(([a], [b]) => a.localeCompare(b))) {
-        if (otMins <= 0) continue
-        const dd = Number(otDate.split('-')[2])
-        const otLabel = `残業（${Number(ym_m_str)}/${dd}）`
-        const hours = otMins / 60
-        const pay = Math.round(hours * overtimeRateVal)
-        payRowsSal.push(
-          `<row r="${payRowIdxSal}">` +
-          `<c r="A${payRowIdxSal}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(otLabel)}</t></is></c>` +
-          `<c r="B${payRowIdxSal}" s="${S.hours.wd}"><v>${hours / 24}</v></c>` +
-          (overtimeRateVal > 0 ? `<c r="C${payRowIdxSal}" s="${S.pay_rate}"><v>${overtimeRateVal}</v></c>` : `<c r="C${payRowIdxSal}" s="${S.pay_rate}"/>`) +
-          `<c r="D${payRowIdxSal}" s="${S.pay.wd}"><v>${pay}</v></c>` +
-          `</row>`
-        )
-        payRowIdxSal++
-      }
-
-      const transportAmtSal = Number(user.itemRates?.['交通費']?.amount) || 0
-      if (transportAmtSal > 0 && workingDaysSal > 0) {
-        const transportTot = Math.round(workingDaysSal * transportAmtSal)
-        payRowsSal.push(
-          `<row r="${payRowIdxSal}">` +
-          `<c r="A${payRowIdxSal}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc('交通費（' + workingDaysSal + '日）')}</t></is></c>` +
-          `<c r="B${payRowIdxSal}" s="${S.pay_lbl}"/>` +
-          `<c r="C${payRowIdxSal}" s="${S.pay_rate}"><v>${transportAmtSal}</v></c>` +
-          `<c r="D${payRowIdxSal}" s="${S.pay.wd}"><v>${transportTot}</v></c>` +
-          `</row>`
-        )
-        payRowIdxSal++
-      }
-
-      const PTR_SAL = payRowIdxSal
-      const payTotRowSal =
-        `<row r="${PTR_SAL}">` +
-        `<c r="A${PTR_SAL}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-        `<c r="B${PTR_SAL}" s="${S.tot_lbl}"/>` +
-        `<c r="C${PTR_SAL}" s="${S.tot_lbl}"/>` +
-        `<c r="D${PTR_SAL}" s="${S.tot_pay}"><f>SUM(D${T3_HDR_SAL + 1}:D${PTR_SAL - 1})</f></c>` +
-        `</row>`
-
       const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
-      const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}${t1TotSal}${t3HdrSal}${payRowsSal.join('')}${payTotRowSal}</sheetData>`
-      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="8" width="20" bestFit="1"/></cols>`
+      const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}</sheetData>`
+      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="4" width="14" customWidth="1"/></cols>`
       sheetXmls.push(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<worksheet xmlns="${WB_NS_SAL}" xmlns:r="${WB_REL_SAL}">` +
