@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import styles from './WorkSelectScreen.module.css'
 
-const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費', '休憩'])
+const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
 const LEGACY_ITEMS = ['現場', '清掃', '事務']
 
 const ITEM_META = {
