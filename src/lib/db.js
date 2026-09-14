@@ -579,6 +579,10 @@ export async function upsertUser(user) {
   await setDoc(doc(db, 'users', id), data, { merge: true })
 }
 
+export async function deleteUserDoc(id) {
+  await deleteDoc(doc(db, 'users', id))
+}
+
 export async function deleteUser(id) {
   const q = query(logsCol, where('user_id', '==', id))
   const snap = await getDocs(q)

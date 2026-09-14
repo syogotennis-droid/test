@@ -12,7 +12,7 @@ import {
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
   deleteSessionWorkReport, deleteAllSessionWorkReportsForDate,
   getSessionWorkStatusForUserRange, getMergedWorkReportsForRange,
-  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch, deleteAllAttendanceData
+  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch, deleteAllAttendanceData, deleteUserDoc
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -3512,6 +3512,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [regularHoursH, setRegularHoursH] = useState(String(Math.floor((user.regularHours || 0) / 60)))
   const [regularHoursM, setRegularHoursM] = useState(String((user.regularHours || 0) % 60))
   const [standardBreakMins, setStandardBreakMins] = useState(user.standardBreakMins != null ? String(user.standardBreakMins) : '60')
+  const [newUserId, setNewUserId] = useState(user.id)
+  const [userIdError, setUserIdError] = useState('')
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -3521,7 +3523,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setIsDirty(true)
-  }, [name, pin, workItems, transportAmount, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
+  }, [name, pin, newUserId, workItems, transportAmount, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -3612,8 +3614,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   async function handleSaveAll() {
     if (!name.trim()) return
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
+    const trimmedId = newUserId.trim()
+    if (!trimmedId) { setUserIdError('ユーザーIDは必須です'); return }
     setSaving(true)
     setPinError('')
+    setUserIdError('')
     try {
       if (pin) {
         const existing = await resolveUserByPin(pin)
@@ -3623,8 +3628,10 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           return
         }
       }
+      const saveId = trimmedId
+      const idChanged = saveId !== user.id
       await upsertUser({
-        id: user.id, name: name.trim(), pin, employeeType,
+        id: saveId, name: name.trim(), pin, employeeType,
         workItems: employeeType === 'salaried' ? [] : workItems,
         itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
         ...(employeeType === 'salaried' ? {
@@ -3635,6 +3642,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           standardBreakMins: parseInt(standardBreakMins) || 0,
         } : {}),
       })
+      if (idChanged) await deleteUserDoc(user.id)
       setIsDirty(false)
       onSaved()
     } catch(e) {
@@ -3758,6 +3766,20 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                   onChange={e => setName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && isDirty && !saving && handleSaveAll()}
                 />
+              </div>
+              <div>
+                <label className={styles.userEditLabel}>ユーザーID <span className={styles.userEditRequired}>必須</span></label>
+                <input
+                  className={[styles.userEditInput, userIdError ? styles.userEditInputErr : ''].join(' ')}
+                  value={newUserId}
+                  onChange={e => { setNewUserId(e.target.value); setUserIdError('') }}
+                />
+                {userIdError
+                  ? <div className={styles.userEditErrMsg}>{userIdError}</div>
+                  : newUserId.trim() !== user.id
+                    ? <div className={styles.userEditHintText} style={{color:'#d97706'}}>⚠ IDを変更するとQRコードが変わります。旧IDの打刻記録は引き継がれません。</div>
+                    : null
+                }
               </div>
               <div>
                 <label className={styles.userEditLabel}>PINコード</label>
