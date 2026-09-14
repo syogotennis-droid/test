@@ -4,6 +4,7 @@ import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+const NUM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
 
 function getMonthRange(year, month) {
   const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
@@ -70,16 +71,6 @@ function fmtMins(mins) {
   return h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`
 }
 
-function rowsToObj(rows) {
-  const obj = {}
-  rows.forEach(r => {
-    if (!r.type) return
-    const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
-    if (mins > 0) obj[r.type] = mins
-  })
-  return obj
-}
-
 function objsEqual(a, b) {
   const ka = Object.keys(a).filter(k => (a[k] || 0) > 0).sort()
   const kb = Object.keys(b).filter(k => (b[k] || 0) > 0).sort()
@@ -87,83 +78,145 @@ function objsEqual(a, b) {
   return ka.every((k, i) => k === kb[i] && a[k] === b[k])
 }
 
-/* ─── 業務入力・編集フォーム ─── */
+/* ─── 業務入力・編集フォーム（カード＋テンキー） ─── */
 function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSave, saving }) {
-  const initRows = () => {
-    const entries = Object.entries(initialWork).filter(([, m]) => m > 0)
-    if (entries.length === 0) return [{ type: '', h: 0, m: 0 }]
-    return entries.map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
-  }
-  const [workRows, setWorkRows] = useState(initRows)
+  const [inputs, setInputs] = useState(() => {
+    const init = {}
+    Object.entries(initialWork).forEach(([type, mins]) => {
+      if (mins > 0) init[type] = { h: Math.floor(mins / 60), m: mins % 60 }
+    })
+    return init
+  })
+  const [selectedItem, setSelectedItem] = useState(editableItems[0] || null)
+  const [numpadField, setNumpadField] = useState('h')
 
-  const selectedTypes = new Set(workRows.map(r => r.type).filter(Boolean))
-  const hasMoreTypes = editableItems.some(t => !selectedTypes.has(t))
-  const canSave = !objsEqual(rowsToObj(workRows), initialWork)
+  const getHM = item => inputs[item] || { h: 0, m: 0 }
+  const currentH = selectedItem ? (getHM(selectedItem).h ?? 0) : 0
+  const currentM = selectedItem ? (getHM(selectedItem).m ?? 0) : 0
 
-  function addRow() { setWorkRows(prev => [...prev, { type: '', h: 0, m: 0 }]) }
-  function removeRow(ri) { setWorkRows(prev => prev.filter((_, i) => i !== ri)) }
-  function updateRow(ri, field, val) {
-    setWorkRows(prev => prev.map((r, i) => i === ri ? { ...r, [field]: val } : r))
+  const totalInputMinutes = editableItems.reduce((s, item) => {
+    const v = getHM(item)
+    return s + (v.h ?? 0) * 60 + (v.m ?? 0)
+  }, 0)
+
+  const currentObj = {}
+  editableItems.forEach(item => {
+    const v = getHM(item)
+    const mins = (v.h ?? 0) * 60 + (v.m ?? 0)
+    if (mins > 0) currentObj[item] = mins
+  })
+  const canSave = !objsEqual(currentObj, initialWork)
+
+  function pressKey(k) {
+    if (!selectedItem) return
+    setInputs(prev => {
+      const cur = prev[selectedItem] || { h: 0, m: 0 }
+      if (k === 'C') return { ...prev, [selectedItem]: { h: 0, m: 0 } }
+      if (k === '⌫') {
+        const curVal = cur[numpadField] ?? 0
+        const s = String(curVal)
+        const newVal = s.length > 1 ? parseInt(s.slice(0, -1)) : 0
+        return { ...prev, [selectedItem]: { ...cur, [numpadField]: newVal } }
+      }
+      const curVal = cur[numpadField] ?? 0
+      const s = (curVal === 0 ? '' : String(curVal)) + k
+      const newVal = parseInt(s)
+      if (numpadField === 'h' && newVal > 99) return prev
+      if (numpadField === 'm' && newVal > 59) return prev
+      return { ...prev, [selectedItem]: { ...cur, [numpadField]: newVal } }
+    })
   }
 
   return (
-    <div className={styles.editMode}>
-      <div className={styles.editModeHeader}>
-        <span className={styles.editModeLabel}>{sessionLabel}</span>
+    <>
+      <div className={styles.editHeader}>
+        <div className={styles.editHeaderDate}>{sessionLabel}</div>
+        <div className={styles.editHeaderStats}>
+          <span className={styles.editStatItem}>
+            <span className={styles.editStatLabel}>入力済み</span>
+            <span className={styles.editStatValue}>
+              {totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}
+            </span>
+          </span>
+        </div>
       </div>
 
-      <div className={styles.editRows}>
-        {workRows.map((row, ri) => {
-          const avail = editableItems.filter(t => t === row.type || !selectedTypes.has(t))
-          return (
-            <div key={ri} className={styles.editRow}>
-              <select
-                className={styles.editRowSelect}
-                value={row.type}
-                onChange={e => updateRow(ri, 'type', e.target.value)}
-              >
-                <option value="">業務を選択</option>
-                {avail.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <input
-                type="number" min="0" max="23"
-                className={styles.editRowNum}
-                value={row.h || ''}
-                placeholder="0"
-                onChange={e => { const n = parseInt(e.target.value); updateRow(ri, 'h', isNaN(n) ? 0 : Math.max(0, n)) }}
-                onFocus={e => e.target.select()}
-              />
-              <span className={styles.editRowUnit}>時間</span>
-              <input
-                type="number" min="0" max="59"
-                className={styles.editRowNum}
-                value={row.m || ''}
-                placeholder="0"
-                onChange={e => { const n = parseInt(e.target.value); updateRow(ri, 'm', isNaN(n) ? 0 : Math.min(59, Math.max(0, n))) }}
-                onFocus={e => e.target.select()}
-              />
-              <span className={styles.editRowUnit}>分</span>
-              {workRows.length > 1 && (
-                <button className={styles.editRowDel} onClick={() => removeRow(ri)}>削除</button>
-              )}
+      <div className={styles.editBody}>
+        <div className={styles.editLeftCol}>
+          <p className={styles.editColTitle}>業務を選択</p>
+          <div className={styles.editItemGrid}>
+            {editableItems.map(item => {
+              const hm = getHM(item)
+              const v = (hm.h ?? 0) * 60 + (hm.m ?? 0)
+              const isSel = selectedItem === item
+              return (
+                <button
+                  key={item}
+                  className={[
+                    styles.editItemBtn,
+                    isSel ? styles.editItemBtnSelected : v > 0 ? styles.editItemBtnEntered : ''
+                  ].join(' ')}
+                  onClick={() => { setSelectedItem(item); setNumpadField('h') }}
+                >
+                  <span className={styles.editItemName}>{item}</span>
+                  {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            className={styles.editSaveFinalBtn}
+            onClick={() => canSave && !saving && onSave(currentObj)}
+            disabled={!canSave || saving}
+          >
+            {saving ? '保存中…' : '保存する'}
+          </button>
+        </div>
+
+        <div className={styles.editRightCol}>
+          <div className={styles.editInputTitle}>
+            {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
+          </div>
+
+          <div className={styles.hmDisplayRow}>
+            <div
+              className={[styles.hmBox, numpadField === 'h' ? styles.hmBoxActive : ''].join(' ')}
+              onClick={() => setNumpadField('h')}
+            >
+              {currentH}
             </div>
-          )
-        })}
+            <span className={styles.hmUnit}>時間</span>
+            <div
+              className={[styles.hmBox, numpadField === 'm' ? styles.hmBoxActive : ''].join(' ')}
+              onClick={() => setNumpadField('m')}
+            >
+              {String(currentM).padStart(2, '0')}
+            </div>
+            <span className={styles.hmUnit}>分</span>
+          </div>
 
-        {hasMoreTypes && (
-          <button className={styles.addRowBtn} onClick={addRow}>＋ 別の業務を追加</button>
-        )}
-      </div>
+          <div className={styles.timeNumGrid}>
+            {NUM_KEYS.map((k, i) => (
+              <button
+                key={i}
+                className={[
+                  styles.timeNumKey,
+                  k === '⌫' ? styles.timeNumDel : '',
+                  k === 'C' ? styles.timeNumClear : ''
+                ].join(' ')}
+                onClick={() => pressKey(k)}
+              >{k}</button>
+            ))}
+          </div>
 
-      <div className={styles.editActions}>
-        <button className={styles.editCancelBtn2} onClick={onCancel} disabled={saving}>キャンセル</button>
-        <button
-          className={styles.editSaveBtn}
-          onClick={() => canSave && !saving && onSave(rowsToObj(workRows))}
-          disabled={!canSave || saving}
-        >{saving ? '保存中…' : '保存する'}</button>
+          <div className={styles.editRightActions}>
+            <button className={styles.editCancelBtn} onClick={onCancel} disabled={saving}>
+              キャンセル
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -197,7 +250,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+      <div className={[styles.modal, editingSessionIdx !== null ? styles.modalEditing : ''].join(' ')} onClick={e => e.stopPropagation()}>
         {editingSessionIdx !== null ? (
           <WorkEditMode
             sessionLabel={`${editingSessionIdx + 1}回目の業務`}
