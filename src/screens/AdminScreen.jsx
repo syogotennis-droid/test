@@ -2422,6 +2422,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
   const [adding, setAdding] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
 
   useEffect(() => { loadStatuses() }, [])
 
@@ -2443,9 +2444,13 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
     const matchStatus = statusFilter === 'all'
       || (statusFilter === 'in' && isIn)
       || (statusFilter === 'out' && !isIn)
-    return matchSearch && matchStatus
+    const isSal = u.employeeType === 'salaried'
+    const matchType = typeFilter === 'all'
+      || (typeFilter === 'salaried' && isSal)
+      || (typeFilter === 'hourly' && !isSal)
+    return matchSearch && matchStatus && matchType
   })
-  const isFiltering = !!searchQuery || statusFilter !== 'all'
+  const isFiltering = !!searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
   const countLabel = isFiltering
     ? `${users.length}名中 ${filtered.length}名を表示`
     : `登録ユーザー ${users.length}名`
@@ -2483,6 +2488,15 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
                 key={v}
                 className={[styles.usersFilterBtn, statusFilter === v ? styles.usersFilterBtnActive : ''].join(' ')}
                 onClick={() => setStatusFilter(v)}
+              >{l}</button>
+            ))}
+          </div>
+          <div className={styles.usersStatusFilter}>
+            {[['all','全種別'],['hourly','アルバイト・パート'],['salaried','社員']].map(([v,l]) => (
+              <button
+                key={v}
+                className={[styles.usersFilterBtn, typeFilter === v ? styles.usersFilterBtnActive : ''].join(' ')}
+                onClick={() => setTypeFilter(v)}
               >{l}</button>
             ))}
           </div>
