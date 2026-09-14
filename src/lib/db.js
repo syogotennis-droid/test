@@ -1014,7 +1014,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const t1HdrSal =
         `<row r="${T1_HDR_SAL}" ht="36">` +
         hdrCellSal('A', T1_HDR_SAL, '日付') + hdrCellSal('B', T1_HDR_SAL, '曜日') +
-        hdrCellSal('C', T1_HDR_SAL, 'QR出勤') + hdrCellSal('D', T1_HDR_SAL, 'QR退勤') +
+        hdrCellSal('C', T1_HDR_SAL, '出勤打刻') + hdrCellSal('D', T1_HDR_SAL, '退勤打刻') +
         `</row>`
 
       const t1RowsSal = []
