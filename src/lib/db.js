@@ -318,6 +318,32 @@ export async function getSessionWorkReportsForDate(userId, dateStr) {
   return result
 }
 
+// 従業員カレンダー用: ユーザーの全session_work_reportsとwork_reportsを1回のPromise.allで取得
+export async function getSessionWorkReportsForUser(userId) {
+  const [sessionSnap, legacySnap] = await Promise.all([
+    getDocs(query(collection(db, 'session_work_reports'), where('userId', '==', userId))),
+    getDocs(query(collection(db, 'work_reports'), where('userId', '==', userId)))
+  ])
+  const bySession = {}     // { sessionId: items }
+  const sessionsByDate = {} // { dateStr: Set<sessionId> } — 業務入力済のsessionId集合
+  sessionSnap.docs.forEach(d => {
+    const data = d.data()
+    if (!data.sessionId) return
+    bySession[data.sessionId] = data.items || {}
+    const hasWork = Object.values(data.items || {}).some(m => m > 0)
+    if (hasWork) {
+      if (!sessionsByDate[data.date]) sessionsByDate[data.date] = new Set()
+      sessionsByDate[data.date].add(data.sessionId)
+    }
+  })
+  const legacyWorkedDates = new Set() // 旧形式で業務入力済の日付
+  legacySnap.docs.forEach(d => {
+    const data = d.data()
+    if (Object.values(data.items || {}).some(m => m > 0)) legacyWorkedDates.add(data.date)
+  })
+  return { bySession, sessionsByDate, legacyWorkedDates }
+}
+
 export async function getSessionWorkReportsForRange(dateFrom, dateTo) {
   const q = query(collection(db, 'session_work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))
   const snap = await getDocs(q)

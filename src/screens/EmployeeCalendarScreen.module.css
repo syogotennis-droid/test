@@ -210,7 +210,417 @@
   width: 100%;
 }
 
-/* ─── セッションカード ─── */
+/* ─── エラー・リトライ ─── */
+.loadError {
+  text-align: center;
+  padding: 40px 16px;
+  color: #dc2626;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.retryBtn {
+  padding: 10px 24px;
+  background: #1a3f6f;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ─── 詳細モーダル ─── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--color-white);
+  border-radius: 16px;
+  width: min(520px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* モーダルヘッダー */
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.modalDate {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.modalCloseBtn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  line-height: 1;
+}
+.modalCloseBtn:hover { background: #f1f5f9; }
+
+/* セッションリスト */
+.sessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 0 4px;
+}
+
+/* 1回ごとのブロック */
+.sessionBlock {
+  padding: 14px 18px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.sessionBlock:last-child { border-bottom: none; }
+
+.sessionBlockTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+/* 「1回目」バッジ */
+.sessionNumBadge {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #fff;
+  background: #2563eb;
+  border-radius: 20px;
+  padding: 2px 10px;
+  flex-shrink: 0;
+}
+
+.sessionTimes {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+  flex: 1;
+}
+
+.timeActive {
+  color: #2563eb;
+}
+
+/* 退勤済 / 勤務中バッジ */
+.statusBadgeDone {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 20px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+.statusBadgeActive {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 20px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+/* 業務エリア */
+.sessionWorkArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 2px;
+}
+
+.workAreaHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workLabel {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+/* 業務ステータスバッジ */
+.workBadgeEntered {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #15803d;
+  background: #dcfce7;
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+
+.workBadgeEmpty {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+
+/* 業務内容リスト */
+.workEntries {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workEntry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.workEntryType {
+  color: #334155;
+  font-weight: 600;
+}
+
+.workEntryTime {
+  color: #1a3f6f;
+  font-weight: 700;
+}
+
+.workEntryTotal {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1a5f3f;
+  text-align: right;
+  padding-top: 2px;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* 業務を入力ボタン（青） */
+.inputWorkBtn {
+  align-self: flex-start;
+  background: #1a5fa8;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 20px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.inputWorkBtn:active { background: #1558a0; }
+
+/* 業務を編集ボタン（アウトライン） */
+.editWorkBtn {
+  align-self: flex-start;
+  background: #fff;
+  border: 1.5px solid #2563eb;
+  border-radius: 8px;
+  padding: 7px 18px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1a5fa8;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.editWorkBtn:active { background: #eff6ff; }
+
+.legacyHint {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* 閉じるボタン */
+.modalClose {
+  margin: 4px 18px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.modalClose:active { background: #f1f5f9; }
+
+/* ─── 業務編集モード ─── */
+.editMode {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.editModeHeader {
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.editModeLabel {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1a3f6f;
+}
+
+.editRows {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.editRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.editRowSelect {
+  flex: 0 0 auto;
+  min-width: 130px;
+  padding: 8px 10px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  cursor: pointer;
+}
+.editRowSelect:focus { outline: none; border-color: #2563eb; }
+
+.editRowNum {
+  width: 64px;
+  padding: 8px 6px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  text-align: center;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  -moz-appearance: textfield;
+}
+.editRowNum::-webkit-outer-spin-button,
+.editRowNum::-webkit-inner-spin-button { -webkit-appearance: none; }
+.editRowNum:focus { outline: none; border-color: #2563eb; }
+
+.editRowUnit {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.editRowDel {
+  margin-left: auto;
+  background: none;
+  border: 1.5px solid #fca5a5;
+  color: #dc2626;
+  border-radius: 7px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.editRowDel:hover { background: #fff5f5; }
+
+.addRowBtn {
+  align-self: flex-start;
+  background: none;
+  border: 1.5px solid #2563eb;
+  color: #1a5fa8;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.addRowBtn:active { background: #eff6ff; }
+
+.editActions {
+  display: flex;
+  gap: 10px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.editCancelBtn2 {
+  padding: 11px 18px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.editCancelBtn2:active { background: #f1f5f9; }
+
+.editSaveBtn {
+  flex: 1;
+  padding: 11px;
+  background: #1a5fa8;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.editSaveBtn:active { background: #1558a0; }
+.editSaveBtn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* ─── 旧スタイル（互換維持・未使用でも残す） ─── */
 .sessionCard {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
