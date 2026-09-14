@@ -11,7 +11,8 @@ import {
   saveWorkReport, getWorkReport, migrateSessionWorkToReports, getWorkReportsForRange,
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
   deleteSessionWorkReport, deleteAllSessionWorkReportsForDate,
-  getSessionWorkStatusForUserRange, getMergedWorkReportsForRange, saveDayEditBatch
+  getSessionWorkStatusForUserRange, getMergedWorkReportsForRange,
+  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -1337,7 +1338,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               {/* ── Per-session cards ── */}
               {sessions.length === 0 ? (
                 <div className={styles.dayEditEmptyState}>
-                  <div className={styles.dayEditEmptyText}>QR打刻記録はありません</div>
+                  <div className={styles.dayEditEmptyText}>打刻記録はありません</div>
                   <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
                 </div>
               ) : (
@@ -1475,7 +1476,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <>
                   <hr className={styles.modalDivider} />
                   <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>
-                    この日のQR打刻と業務時間をすべて削除
+                    この日の打刻と業務時間をすべて削除
                   </button>
                 </>
               )}
@@ -1500,15 +1501,27 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
 
             <div className={styles.modalFooter}>
-              {!isSalaried && workItemsLoaded && (
+              {!isSalaried && workItemsLoaded && dayTotalMins > 0 && (
                 <div className={styles.dayEditFooterTotal}>
                   <span className={styles.dayEditFooterTotalLabel}>1日の合計</span>
                   <strong className={styles.dayEditFooterTotalValue}>{fmtWorkTotal(dayTotalMins)}</strong>
                 </div>
               )}
               <div className={styles.dayEditFooterBtns}>
-                <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
-                <button className={styles.saveBtn} onClick={handleTryConfirm}>保存する</button>
+                {(() => {
+                  const canSave = sessions.length > 0 || initialSessionsRef.current.length > 0
+                  return (
+                    <>
+                      <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+                      <button
+                        className={styles.saveBtn}
+                        onClick={handleTryConfirm}
+                        disabled={!canSave}
+                        style={!canSave ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+                      >保存する</button>
+                    </>
+                  )
+                })()}
               </div>
             </div>
           </>
@@ -1598,7 +1611,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.confirmRow}><span>対象従業員</span><strong>{user.name}</strong></div>
                 <div className={styles.confirmRow}><span>削除する日付</span><strong>{dateLabel}</strong></div>
               </div>
-              <p className={styles.confirmWarn}>この日のQR打刻と業務時間をすべて削除します。この操作は元に戻せません。削除してよろしいですか？</p>
+              <p className={styles.confirmWarn}>この日の打刻と業務時間をすべて削除します。この操作は元に戻せません。削除してよろしいですか？</p>
             </div>
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
@@ -1672,19 +1685,19 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo)])
-      .then(([logs, users, minWage, salDays, workReports]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo)])
+      .then(([logs, users, minWage, salDays, workReports, sessionWorkBySession]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWage, salDays, workReports))
+        setPreview(buildPreview(logs, users, minWage, salDays, workReports, sessionWorkBySession))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWage, salariedDays = {}, workReports = {}) {
+  function buildPreview(logs, users, minWage, salariedDays = {}, workReports = {}, sessionWorkBySession = {}) {
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
     const userEntries = users.filter(u =>
       logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.startsWith(`${u.id}_`))
@@ -1774,6 +1787,11 @@ function KinmuboTab({ today }) {
       })
       Object.entries(byDate).forEach(([dateStr, entry]) => {
         entry.workReportItems = userWorkReports[dateStr] || {}
+        entry.sessions.forEach(session => {
+          const sid = session.outLog?.session_id || session.inLog?.session_id
+          const key = sid ? `${user.id}_${dateStr}_${sid}` : null
+          session.perSessionWork = key ? (sessionWorkBySession[key] || null) : null
+        })
       })
 
       // workingDays = days with work report AND ≥1 completed QR session (spec 7)
@@ -2140,8 +2158,8 @@ function KinmuboTab({ today }) {
                             <thead>
                               <tr>
                                 <th className={styles.kinmuboDailyTh}>日付</th>
-                                <th className={styles.kinmuboDailyTh}>QR出勤</th>
-                                <th className={styles.kinmuboDailyTh}>QR退勤</th>
+                                <th className={styles.kinmuboDailyTh}>出勤</th>
+                                <th className={styles.kinmuboDailyTh}>退勤</th>
                                 <th className={styles.kinmuboDailyTh}>状態</th>
                                 <th className={styles.kinmuboDailyTh}>休憩時間</th>
                                 <th className={styles.kinmuboDailyTh}>所定労働時間</th>
@@ -2246,55 +2264,81 @@ function KinmuboTab({ today }) {
                           </table>
                         </div>
                       )}
-                      {/* QR打刻記録: show all dates with punch or work report data */}
+                      {/* 打刻記録: show all dates with punch or work report data */}
                       {!isSalariedUser && Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0 || Object.keys(byDate[ds].workReportItems || {}).length > 0) && (
                         <div className={styles.kinmuboDailySection}>
-                          <div className={styles.kinmuboDailySectionTitle}>QR打刻記録</div>
+                          <div className={styles.kinmuboDailySectionTitle}>打刻記録</div>
                           <table className={styles.kinmuboDailyTable}>
                             <thead>
                               <tr>
                                 <th className={styles.kinmuboDailyTh}>日付</th>
-                                <th className={styles.kinmuboDailyTh}>QR打刻</th>
+                                <th className={styles.kinmuboDailyTh}>回数</th>
+                                <th className={styles.kinmuboDailyTh}>出勤</th>
+                                <th className={styles.kinmuboDailyTh}>退勤</th>
+                                <th className={styles.kinmuboDailyTh}>業務内容</th>
+                                <th className={styles.kinmuboDailyTh}>回合計</th>
                               </tr>
                             </thead>
                             <tbody>
                               {Object.keys(byDate).sort().filter(ds =>
                                 byDate[ds].sessions.length > 0 || Object.keys(byDate[ds].workReportItems || {}).length > 0
-                              ).map(ds => {
+                              ).flatMap(ds => {
                                 const [y, mo, d] = ds.split('-').map(Number)
                                 const dow = new Date(y, mo - 1, d).getDay()
                                 const dowLabel = ['日','月','火','水','木','金','土'][dow]
                                 const isSun = dow === 0, isSat = dow === 6
                                 const entry = byDate[ds]
-                                const hasSessions = entry.sessions.length > 0
-                                if (!hasSessions) {
-                                  return (
-                                    <tr key={ds} className={[styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].filter(Boolean).join(' ')}>
-                                      <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>{`${mo}/${d}（${dowLabel}）`}</td>
-                                      <td className={styles.kinmuboDailyTd} style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.85rem' }}>打刻なし</td>
+                                const dateLabel = `${mo}/${d}（${dowLabel}）`
+                                const rowClass = [styles.kinmuboDailyRow, isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : ''].filter(Boolean).join(' ')
+
+                                if (entry.sessions.length === 0) {
+                                  const legacyItems = entry.workReportItems || {}
+                                  const legacyEntries = Object.entries(legacyItems).filter(([, m]) => m > 0)
+                                  const legacyContent = legacyEntries.map(([t, m]) => `${t}: ${fmtMins(m)}`).join(' / ') || '—'
+                                  const legacyTotal = legacyEntries.reduce((s, [, m]) => s + m, 0)
+                                  return [(
+                                    <tr key={ds} className={rowClass}>
+                                      <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>{dateLabel}</td>
+                                      <td className={styles.kinmuboDailyTd} colSpan={3} style={{ color: '#78716c', fontStyle: 'italic', fontSize: '0.8rem' }}>旧データ（1日合計）</td>
+                                      <td className={styles.kinmuboDailyTd} style={{ fontSize: '0.82rem', color: '#475569' }}>{legacyContent}</td>
+                                      <td className={styles.kinmuboDailyTd} style={{ fontWeight: 600 }}>{legacyTotal > 0 ? fmtMins(legacyTotal) : '—'}</td>
                                     </tr>
-                                  )
+                                  )]
                                 }
+
+                                const numSessions = entry.sessions.length
                                 return entry.sessions.map((session, si) => {
                                   const inStr = session.inLog?.time?.substring(0, 5) || ''
                                   const outStr = session.outLog?.time?.substring(0, 5) || ''
-                                  const numSessions = entry.sessions.length
-                                  const punchText = inStr && outStr
-                                    ? `出勤 ${inStr} ／ 退勤 ${outStr}`
-                                    : inStr ? `出勤 ${inStr}（退勤なし）` : outStr ? `退勤 ${outStr}（出勤なし）` : '—'
+                                  const perWork = session.perSessionWork
+                                  const hasWork = perWork && Object.values(perWork).some(m => m > 0)
+                                  const workContent = hasWork
+                                    ? Object.entries(perWork).filter(([, m]) => m > 0).map(([t, m]) => `${t}: ${fmtMins(m)}`).join(' / ')
+                                    : null
+                                  const sessionTotal = hasWork ? Object.values(perWork).reduce((s, m) => s + m, 0) : 0
                                   return (
-                                    <tr key={`${ds}-${si}`} className={[
-                                      styles.kinmuboDailyRow,
-                                      isSun ? styles.kinmuboDailyRowSun : isSat ? styles.kinmuboDailyRowSat : '',
-                                      si > 0 ? styles.kinmuboDailyGroupExtra : '',
-                                    ].filter(Boolean).join(' ')}>
+                                    <tr key={`${ds}-${si}`} className={[rowClass, si > 0 ? styles.kinmuboDailyGroupExtra : ''].filter(Boolean).join(' ')}>
                                       {si === 0 && (
                                         <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')} rowSpan={numSessions}>
-                                          <span>{`${mo}/${d}（${dowLabel}）`}</span>
+                                          <span>{dateLabel}</span>
                                           {numSessions > 1 && <span className={styles.multiSessionBadge}>{numSessions}回</span>}
                                         </td>
                                       )}
-                                      <td className={styles.kinmuboDailyTd}>{punchText}</td>
+                                      <td className={styles.kinmuboDailyTd} style={{ color: '#6b7280', fontSize: '0.82rem' }}>
+                                        {numSessions > 1 ? `第${si + 1}回` : ''}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTd} style={{ color: '#2e7d32', fontWeight: 600 }}>
+                                        {inStr || '—'}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTd} style={{ color: '#c62828', fontWeight: 600 }}>
+                                        {outStr || '—'}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTd} style={{ fontSize: '0.82rem', color: hasWork ? '#374151' : '#9ca3af', fontStyle: hasWork ? 'normal' : 'italic' }}>
+                                        {hasWork ? workContent : '業務未入力'}
+                                      </td>
+                                      <td className={styles.kinmuboDailyTd} style={{ fontWeight: hasWork ? 600 : 400, color: hasWork ? '#1e293b' : '#9ca3af' }}>
+                                        {hasWork ? fmtMins(sessionTotal) : '—'}
+                                      </td>
                                     </tr>
                                   )
                                 })
