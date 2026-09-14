@@ -1038,6 +1038,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         setHasConflict(false)
       }
       setWorkItemsLoaded(true)
+    }).catch(() => {
+      setWorkItemsLoaded(true)
     })
   }, [user.id, dateStr, isSalaried])
 
