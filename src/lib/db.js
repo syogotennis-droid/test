@@ -1209,11 +1209,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     // workingDays = days with work report AND ≥1 completed QR session (spec 7)
     let workingDays = 0
+    let totalCompletedSessions = 0
     Object.entries(userWorkReports).forEach(([dateStr, items]) => {
       if (!Object.values(items).some(m => m > 0)) return
       const entry = byDate[dateStr]
       const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
-      if (completedSess.length > 0) workingDays++
+      if (completedSess.length > 0) { workingDays++; totalCompletedSessions += completedSess.length }
     })
 
     // Accumulate global summary data from work_reports
@@ -1480,8 +1481,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
 
     // 前後5分（最低賃金）行
-    if (workingDays > 0 && minWage > 0) {
-      const prepHours = workingDays * (10 / 60)
+    if (totalCompletedSessions > 0 && minWage > 0) {
+      const prepHours = totalCompletedSessions * (10 / 60)
       const prepPay = Math.round(prepHours * minWage)
       totalPayHours += prepHours; totalPayAmount += prepPay
       payRows.push(

@@ -1804,12 +1804,13 @@ function KinmuboTab({ today }) {
 
       // workingDays = days with work report AND ≥1 completed QR session (spec 7)
       let workingDays = 0
+      let totalCompletedSessions = 0
       const inconsistentDates = []
       Object.entries(userWorkReports).forEach(([dateStr, items]) => {
         if (!Object.values(items).some(m => m > 0)) return
         const entry = byDate[dateStr]
         const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
-        if (completedSess.length > 0) workingDays++
+        if (completedSess.length > 0) { workingDays++; totalCompletedSessions += completedSess.length }
         else inconsistentDates.push(dateStr)
       })
 
@@ -1878,8 +1879,8 @@ function KinmuboTab({ today }) {
       if (transport > 0 && workingDays > 0) {
         rows.push({ label: '交通費', parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: workingDays, rate: transport, pay: Math.round(workingDays * transport) })
       }
-      if (workingDays > 0 && minWage > 0) {
-        const prepMins = workingDays * 10
+      if (totalCompletedSessions > 0 && minWage > 0) {
+        const prepMins = totalCompletedSessions * 10
         rows.push({ label: '準備時間', parentType: '準備時間', isMultiPeriod: false, dayType: null, mins: prepMins, days: null, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
       }
       const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
