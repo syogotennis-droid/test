@@ -1149,7 +1149,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
       const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}${t1TotSal}${t3HdrSal}${payRowsSal.join('')}${payTotRowSal}</sheetData>`
-      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="5" customWidth="1"/><col min="3" max="8" width="16" customWidth="1"/></cols>`
+      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="8" width="20" bestFit="1"/></cols>`
       sheetXmls.push(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<worksheet xmlns="${WB_NS_SAL}" xmlns:r="${WB_REL_SAL}">` +
@@ -1488,12 +1488,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
     const maxColIdx = Math.max(4, ci) // 4 = col D (last T1 column)
+    // bestFit="1" lets Excel auto-size columns to content on open (no ####### ever)
     const colsXml =
       `<cols>` +
       `<col min="1" max="1" width="13" customWidth="1"/>` +
-      `<col min="2" max="2" width="8" customWidth="1"/>` +
-      `<col min="3" max="4" width="12" customWidth="1"/>` +
-      (maxColIdx >= 5 ? `<col min="5" max="${maxColIdx}" width="13" customWidth="1"/>` : '') +
+      `<col min="2" max="${maxColIdx}" width="20" bestFit="1"/>` +
       `</cols>`
     const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const WB_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -1535,7 +1534,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<worksheet xmlns="${WB_NS_S}" xmlns:r="${WB_REL_S}">` +
       `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
-      `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="3" width="14" customWidth="1"/></cols>` +
+      `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="3" width="20" bestFit="1"/></cols>` +
       `<sheetData>${sumRows}</sheetData></worksheet>`
     sheetXmls.unshift(summarySheetXml)
   }
