@@ -1253,9 +1253,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
-      hdrCell('C', T1_HDR, '回数') + hdrCell('D', T1_HDR, '出勤') +
-      hdrCell('E', T1_HDR, '退勤') + hdrCell('F', T1_HDR, '業務内容') +
-      hdrCell('G', T1_HDR, '回合計') +
+      hdrCell('C', T1_HDR, '出勤') + hdrCell('D', T1_HDR, '退勤') +
       `</row>`
 
     // 表2ヘッダー（業務時間申告）
@@ -1294,34 +1292,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         } else {
           t1c.push(`<c r="A${r1}" s="${S.date[dt]}"/>`, `<c r="B${r1}" s="${S.dow[dt]}"/>`)
         }
-        // 回数 column (C)
-        const sessionNumText = numSessions > 1 ? `第${si + 1}回` : ''
-        t1c.push(`<c r="C${r1}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(sessionNumText)}</t></is></c>`)
         if (session) {
           const inStr = session.inLog?.time?.substring(0, 5) || ''
           const outStr = session.outLog?.time?.substring(0, 5) || ''
-          if (inStr) { const [h, mi] = inStr.split(':').map(Number); t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
+          if (inStr) { const [h, mi] = inStr.split(':').map(Number); t1c.push(`<c r="C${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
+          else t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`)
+          if (outStr) { const [h, mi] = outStr.split(':').map(Number); t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
           else t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`)
-          if (outStr) { const [h, mi] = outStr.split(':').map(Number); t1c.push(`<c r="E${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
-          else t1c.push(`<c r="E${r1}" s="${S.time[dt]}"/>`)
-          // 業務内容・回合計 (F, G)
-          const sid = session.outLog?.session_id || session.inLog?.session_id
-          const perWork = sid ? (allSessionWorkBySession[`${user.id}_${dateStr}_${sid}`] || null) : null
-          const hasWork = perWork && Object.values(perWork).some(m => m > 0)
-          if (hasWork) {
-            const contentText = Object.entries(perWork).filter(([, m]) => m > 0).map(([t, m]) => {
-              const h = Math.floor(m / 60), min = m % 60; return `${t}: ${h}時間${String(min).padStart(2, '0')}分`
-            }).join(' / ')
-            const totalMins = Object.values(perWork).reduce((s, m) => s + m, 0)
-            t1c.push(`<c r="F${r1}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(contentText)}</t></is></c>`)
-            t1c.push(`<c r="G${r1}" s="${S.hours[dt]}"><v>${totalMins / 60 / 24}</v></c>`)
-          } else {
-            t1c.push(`<c r="F${r1}" s="${S.pay_lbl}" t="inlineStr"><is><t>業務未入力</t></is></c>`)
-            t1c.push(`<c r="G${r1}" s="${S.hours[dt]}"/>`)
-          }
         } else {
-          t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`, `<c r="E${r1}" s="${S.time[dt]}"/>`)
-          t1c.push(`<c r="F${r1}" s="${S.pay_lbl}"/>`, `<c r="G${r1}" s="${S.hours[dt]}"/>`)
+          t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`, `<c r="D${r1}" s="${S.time[dt]}"/>`)
         }
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
         r1++
@@ -1335,9 +1314,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="C${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="D${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="E${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="F${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="G${T1_TOT}" s="${S.tot_hrs}"><f>SUM(G${T1_DATA}:G${T1_DATA_END})</f></c>` +
       `</row>`
 
     // 表2データ行（業務時間申告、1日=1行）
@@ -1511,14 +1487,13 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
-    const maxColIdx = Math.max(7, ci) // 7 = col G (last T1 column)
+    const maxColIdx = Math.max(4, ci) // 4 = col D (last T1 column)
     const colsXml =
       `<cols>` +
       `<col min="1" max="1" width="13" customWidth="1"/>` +
-      `<col min="2" max="3" width="8" customWidth="1"/>` +
-      `<col min="4" max="5" width="12" customWidth="1"/>` +
-      `<col min="6" max="6" width="32" customWidth="1"/>` +
-      (maxColIdx >= 7 ? `<col min="7" max="${maxColIdx}" width="13" customWidth="1"/>` : '') +
+      `<col min="2" max="2" width="8" customWidth="1"/>` +
+      `<col min="3" max="4" width="12" customWidth="1"/>` +
+      (maxColIdx >= 5 ? `<col min="5" max="${maxColIdx}" width="13" customWidth="1"/>` : '') +
       `</cols>`
     const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const WB_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
