@@ -12,7 +12,7 @@ import {
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
   deleteSessionWorkReport, deleteAllSessionWorkReportsForDate,
   getSessionWorkStatusForUserRange, getMergedWorkReportsForRange,
-  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch, deleteAllAttendanceData, deleteUserDoc
+  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch, deleteUserDoc
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import styles from './AdminScreen.module.css'
@@ -2897,57 +2897,6 @@ function AddUserModal({ onClose, onAdded }) {
 
 // ─── SettingsTab ──────────────────────────────────────────────────────────────
 
-function DataResetSection() {
-  const [step, setStep] = useState('idle')
-  const [error, setError] = useState('')
-
-  async function handleDelete() {
-    setStep('deleting')
-    setError('')
-    try {
-      await deleteAllAttendanceData()
-      setStep('done')
-    } catch {
-      setError('削除に失敗しました。もう一度お試しください。')
-      setStep('confirm')
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#7f1d1d', marginBottom: 16 }}>データリセット</div>
-      {step === 'idle' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: '0.88rem', color: '#555' }}>打刻記録・業務時間の全データを削除します。ユーザー情報は残ります。</div>
-          <button
-            onClick={() => setStep('confirm')}
-            style={{ height: 52, background: '#fee2e2', border: '2px solid #fca5a5', borderRadius: 12, color: '#991b1b', fontSize: '1.05rem', fontWeight: 800, cursor: 'pointer' }}
-          >全打刻・勤務記録を削除する</button>
-        </div>
-      )}
-      {step === 'confirm' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: 10, padding: '12px 16px', fontSize: '0.92rem', color: '#991b1b', fontWeight: 700 }}>
-            ⚠️ 打刻記録・業務時間の全データが削除されます。この操作は元に戻せません。本当に削除しますか？
-          </div>
-          {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => { setStep('idle'); setError('') }} style={{ flex: 1, height: 48, background: '#f1f5f9', border: 'none', borderRadius: 10, fontSize: '1rem', fontWeight: 700, cursor: 'pointer', color: '#475569' }}>キャンセル</button>
-            <button onClick={handleDelete} style={{ flex: 1, height: 48, background: '#dc2626', border: 'none', borderRadius: 10, fontSize: '1rem', fontWeight: 800, cursor: 'pointer', color: '#fff' }}>削除する</button>
-          </div>
-        </div>
-      )}
-      {step === 'deleting' && <div style={{ color: '#555', fontSize: '0.95rem', fontWeight: 700 }}>削除中...</div>}
-      {step === 'done' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ color: '#16a34a', fontWeight: 800, fontSize: '0.95rem' }}>✓ 全データを削除しました</div>
-          <button onClick={() => setStep('idle')} style={{ height: 40, background: '#f1f5f9', border: 'none', borderRadius: 10, fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', color: '#475569' }}>閉じる</button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function SettingsTab() {
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
@@ -3062,9 +3011,6 @@ function SettingsTab() {
           <div style={{ fontSize: '0.8rem', color: '#9baab8' }}>出勤日の前後5分分の給与計算に使用されます（出勤簿Excel）</div>
         </div>
       </div>
-
-      {/* データリセット */}
-      <DataResetSection />
     </div>
     </div>
   )
