@@ -131,14 +131,6 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
     <>
       <div className={styles.editHeader}>
         <div className={styles.editHeaderDate}>{sessionLabel}</div>
-        <div className={styles.editHeaderStats}>
-          <span className={styles.editStatItem}>
-            <span className={styles.editStatLabel}>入力済み</span>
-            <span className={styles.editStatValue}>
-              {totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}
-            </span>
-          </span>
-        </div>
       </div>
 
       <div className={styles.editBody}>
@@ -164,13 +156,18 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
               )
             })}
           </div>
-          <button
-            className={styles.editSaveFinalBtn}
-            onClick={() => canSave && !saving && onSave(currentObj)}
-            disabled={!canSave || saving}
-          >
-            {saving ? '保存中…' : '保存する'}
-          </button>
+          <div className={styles.editLeftActions}>
+            <button className={styles.editCancelBtn} onClick={onCancel} disabled={saving}>
+              キャンセル
+            </button>
+            <button
+              className={styles.editSaveFinalBtn}
+              onClick={() => canSave && !saving && onSave(currentObj)}
+              disabled={!canSave || saving}
+            >
+              {saving ? '保存中…' : '保存する'}
+            </button>
+          </div>
         </div>
 
         <div className={styles.editRightCol}>
@@ -209,10 +206,9 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
             ))}
           </div>
 
-          <div className={styles.editRightActions}>
-            <button className={styles.editCancelBtn} onClick={onCancel} disabled={saving}>
-              キャンセル
-            </button>
+          <div className={styles.editTotalRow}>
+            <span>今回の合計</span>
+            <span>{totalInputMinutes > 0 ? fmtMins(totalInputMinutes) : '0分'}</span>
           </div>
         </div>
       </div>
@@ -226,6 +222,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
   const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried'
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   const dowLabel = DOW_LABELS[new Date(year, month, day).getDay()]
+  const isMulti = sessions.length > 1
 
   const [editingSessionIdx, setEditingSessionIdx] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -247,13 +244,14 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
 
   const editingSession = editingSessionIdx !== null ? sessions[editingSessionIdx] : null
   const editingWork = editingSession?.sessionId ? (sessionWorkItems[editingSession.sessionId] || {}) : {}
+  const sessionLabel = isMulti ? `${editingSessionIdx + 1}回目の業務` : '業務を入力'
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
       <div className={[styles.modal, editingSessionIdx !== null ? styles.modalEditing : ''].join(' ')} onClick={e => e.stopPropagation()}>
         {editingSessionIdx !== null ? (
           <WorkEditMode
-            sessionLabel={`${editingSessionIdx + 1}回目の業務`}
+            sessionLabel={sessionLabel}
             editableItems={editableItems}
             initialWork={editingWork}
             onCancel={() => setEditingSessionIdx(null)}
@@ -263,11 +261,11 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
         ) : (
           <>
             <div className={styles.modalHeader}>
-              <span className={styles.modalDate}>{year}年{month + 1}月{day}日（{dowLabel}）</span>
+              <span className={styles.modalDate}>{month + 1}月{day}日（{dowLabel}）</span>
               <button className={styles.modalCloseBtn} onClick={onClose}>✕</button>
             </div>
 
-            <div className={styles.sessionList}>
+            <div className={styles.modalBody}>
               {sessions.map((session, idx) => {
                 const workData = session.sessionId ? (sessionWorkItems[session.sessionId] || null) : null
                 const workEntries = workData ? Object.entries(workData).filter(([, m]) => m > 0) : []
@@ -278,13 +276,22 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
                 const totalWorkMins = workEntries.reduce((s, [, m]) => s + m, 0)
 
                 return (
-                  <div key={idx} className={styles.sessionBlock}>
-                    <div className={styles.sessionBlockTop}>
-                      <span className={styles.sessionNumBadge}>{idx + 1}回目</span>
-                      <span className={styles.sessionTimes}>
+                  <div key={idx} className={isMulti ? styles.sessionCard : styles.sessionSingle}>
+                    {isMulti && (
+                      <div className={styles.sessionBadgeRow}>
+                        <span className={styles.sessionNumBadge}>{idx + 1}回目</span>
+                      </div>
+                    )}
+
+                    <div className={styles.punchLine}>
+                      <span className={styles.punchLabel}>打刻</span>
+                      <span className={styles.punchTimes}>
                         {session.in || '—'}
                         {' → '}
-                        {session.out ? session.out : <span className={styles.timeActive}>勤務中</span>}
+                        {session.out
+                          ? session.out
+                          : <span className={styles.punchActive}>勤務中</span>
+                        }
                       </span>
                       {isActive
                         ? <span className={styles.statusBadgeActive}>勤務中</span>
@@ -294,13 +301,17 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
                       }
                     </div>
 
-                    <div className={styles.sessionWorkArea}>
-                      {hasWork ? (
+                    <div className={styles.workSection}>
+                      <div className={styles.workSectionHeader}>
+                        <span className={styles.workLabel}>業務</span>
+                        {hasWork
+                          ? <span className={styles.workBadgeEntered}>入力済み</span>
+                          : <span className={styles.workBadgeEmpty}>未入力</span>
+                        }
+                      </div>
+
+                      {hasWork && (
                         <>
-                          <div className={styles.workAreaHeader}>
-                            <span className={styles.workLabel}>業務</span>
-                            <span className={styles.workBadgeEntered}>入力済</span>
-                          </div>
                           <div className={styles.workEntries}>
                             {workEntries.map(([type, mins]) => (
                               <div key={type} className={styles.workEntry}>
@@ -310,36 +321,29 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
                             ))}
                           </div>
                           {workEntries.length > 1 && (
-                            <div className={styles.workEntryTotal}>今回の合計 {fmtMins(totalWorkMins)}</div>
+                            <div className={styles.workTotal}>
+                              <span>今回の合計</span>
+                              <span>{fmtMins(totalWorkMins)}</span>
+                            </div>
                           )}
-                          {canEditSession && (
-                            <button className={styles.editWorkBtn} onClick={() => setEditingSessionIdx(idx)}>
-                              業務を編集
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <div className={styles.workAreaHeader}>
-                            <span className={styles.workLabel}>業務</span>
-                            <span className={styles.workBadgeEmpty}>未入力</span>
-                          </div>
-                          {canEditSession ? (
-                            <button className={styles.inputWorkBtn} onClick={() => setEditingSessionIdx(idx)}>
-                              業務を入力
-                            </button>
-                          ) : !session.sessionId ? (
-                            <span className={styles.legacyHint}>旧データ形式（管理者が入力）</span>
-                          ) : null}
                         </>
                       )}
+
+                      {canEditSession ? (
+                        <button
+                          className={hasWork ? styles.editWorkBtn : styles.inputWorkBtn}
+                          onClick={() => setEditingSessionIdx(idx)}
+                        >
+                          {hasWork ? '業務を編集' : '業務を入力'}
+                        </button>
+                      ) : !session.sessionId ? (
+                        <span className={styles.legacyHint}>旧データ形式（管理者が入力）</span>
+                      ) : null}
                     </div>
                   </div>
                 )
               })}
             </div>
-
-            <button className={styles.modalClose} onClick={onClose}>閉じる</button>
           </>
         )}
       </div>

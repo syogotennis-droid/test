@@ -247,14 +247,12 @@
 .modal {
   background: var(--color-white);
   border-radius: 16px;
-  width: min(520px, 94vw);
+  width: min(580px, 94vw);
   max-height: 88vh;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
 }
 
 /* モーダルヘッダー */
@@ -334,8 +332,8 @@
 .statusBadgeDone {
   font-size: 0.75rem;
   font-weight: 700;
-  color: #64748b;
-  background: #f1f5f9;
+  color: #166534;
+  background: #dcfce7;
   border-radius: 20px;
   padding: 2px 8px;
   flex-shrink: 0;
@@ -693,87 +691,7 @@
   padding: 8px 0;
 }
 
-/* ─── 詳細モーダル（閲覧） ─── */
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: var(--color-white);
-  border-radius: 16px;
-  padding: 28px 24px 20px;
-  width: min(360px, 92vw);
-  max-height: 85vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-}
-
-.modalDate {
-  font-size: 1.3rem;
-  font-weight: bold;
-  color: var(--color-text);
-  text-align: center;
-  margin-bottom: 4px;
-}
-
-.modalRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modalRowLabel {
-  font-size: 1.1rem;
-  color: var(--color-subtext);
-  font-weight: 500;
-}
-
-.modalRowValue {
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: var(--color-text);
-}
-
-.modalDivider {
-  border: none;
-  border-top: 1px solid var(--color-border);
-}
-
-.modalClose {
-  margin-top: 6px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 1.1rem;
-  font-weight: bold;
-  cursor: pointer;
-  color: var(--color-text);
-  width: 100%;
-}
-
-.editWorkBtn {
-  margin-top: 4px;
-  background: #e8f0fe;
-  border: 1px solid #93b4f5;
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  color: #1a3f6f;
-  width: 100%;
-}
+/* ─── 詳細モーダル（閲覧）旧定義（上書き済み） ─── */
 
 .noWorkBadge {
   position: absolute;
@@ -1138,7 +1056,7 @@
   gap: 3px;
   padding: 10px 6px;
   border-radius: 8px;
-  border: 1.5px solid #e2e8f0;
+  border: 1.5px solid #94a3b8;
   background: #ffffff;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1147,7 +1065,7 @@
 
 .editItemBtn:hover {
   background: #f0f7ff;
-  border-color: #bfdbfe;
+  border-color: #93c5fd;
 }
 
 .editItemBtnSelected {
@@ -1173,7 +1091,7 @@
 .editItemName {
   font-size: 0.88rem;
   font-weight: 700;
-  color: #334155;
+  color: #1e293b;
   line-height: 1.2;
   text-align: center;
 }
@@ -1193,10 +1111,11 @@
 /* 保存する（左下） */
 .editSaveFinalBtn {
   flex-shrink: 0;
-  background: #1a3f6f;
+  width: 100%;
+  background: #1a5fa8;
   border: none;
   border-radius: 10px;
-  padding: 11px;
+  padding: 12px;
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
@@ -1204,10 +1123,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.editSaveFinalBtn:active { background: #163460; }
+.editSaveFinalBtn:active { background: #1558a0; }
 
 .editSaveFinalBtn:disabled {
-  opacity: 0.5;
+  background: #94a3b8;
   cursor: not-allowed;
 }
 
@@ -1352,19 +1271,21 @@
 }
 
 .editCancelBtn {
+  width: 100%;
   padding: 10px 14px;
   background: #f8fafc;
-  border: 1.5px solid #e2e8f0;
+  border: 1.5px solid #cbd5e1;
   border-radius: 10px;
   font-size: 0.9rem;
   font-weight: 700;
-  color: #64748b;
+  color: #475569;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
 }
 
 .editCancelBtn:active { background: #f1f5f9; }
+.editCancelBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .editConfirmBtn {
   flex: 1;
@@ -1384,4 +1305,108 @@
 .editConfirmBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ─── 新モーダル スタイル ─── */
+
+/* スクロール可能なモーダル本文 */
+.modalBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* 1回勤務：カードなし・シンプルなパディング */
+.sessionSingle {
+  padding: 16px 20px;
+}
+
+/* 複数回勤務：各回をカード区切り */
+.sessionCard {
+  padding: 14px 20px;
+  border-bottom: 1px solid #e8eef5;
+}
+.sessionCard:last-child { border-bottom: none; }
+
+/* 「1回目」バッジの行 */
+.sessionBadgeRow {
+  margin-bottom: 8px;
+}
+
+/* 打刻行：打刻 HH:MM → HH:MM [退勤済/勤務中] */
+.punchLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.punchLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  flex-shrink: 0;
+  min-width: 28px;
+}
+
+.punchTimes {
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.punchActive {
+  color: #1d4ed8;
+}
+
+/* 業務エリア */
+.workSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 今回の合計（モーダル閲覧側） */
+.workTotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1a5f3f;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+/* 業務入力フォーム：左列下部のボタン群 */
+.editLeftActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 今回の合計（業務入力フォーム右列） */
+.editTotalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1a5f3f;
+  background: #f0fdf4;
+  border-radius: 8px;
+  padding: 8px 12px;
+  flex-shrink: 0;
 }
