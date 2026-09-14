@@ -3617,7 +3617,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       if (pin) {
         const existing = await resolveUserByPin(pin)
         if (existing && existing.id !== user.id) {
-          setPinError('このPINは使用中です')
+          setPinError(`このPINは${existing.name}さんが使用中です`)
           setSaving(false)
           return
         }
