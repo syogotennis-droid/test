@@ -1004,6 +1004,16 @@
   box-shadow: 0 8px 40px rgba(30,60,100,0.18);
 }
 
+.modalDayEditCompact {
+  background: #fff;
+  border-radius: 16px;
+  width: min(700px, 92vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(30,60,100,0.18);
+}
+
 .modalSm {
   background: #fff;
   border-radius: 14px;
@@ -4337,14 +4347,36 @@
 .dayEditEmptyState {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 0;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 36px 24px;
+}
+.dayEditEmptyIcon {
+  font-size: 2rem;
+  opacity: 0.45;
+  line-height: 1;
 }
 .dayEditEmptyText {
-  font-size: 0.85rem;
-  color: #94a3b8;
+  font-size: 0.92rem;
+  color: #64748b;
+  font-weight: 500;
 }
+.dayEditAddPrimaryBtn {
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 24px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.dayEditAddPrimaryBtn:hover { background: #1d4ed8; }
+.dayEditAddPrimaryBtn:active { background: #1e40af; }
+.dayEditAddPrimaryBtn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
 /* session rows */
 .dayEditSessionRow {

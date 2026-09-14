@@ -1321,9 +1321,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     )
   }
 
+  const isEmpty = sessions.length === 0 && !hasLegacyData
+
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modalLg} onClick={e => e.stopPropagation()}>
+      <div className={isEmpty ? styles.modalDayEditCompact : styles.modalLg} onClick={e => e.stopPropagation()}>
         {step === 'form' && (
           <>
             <div className={styles.modalHeader}>
@@ -1338,8 +1340,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               {/* ── Per-session cards ── */}
               {sessions.length === 0 ? (
                 <div className={styles.dayEditEmptyState}>
+                  <span className={styles.dayEditEmptyIcon}>🕐</span>
                   <div className={styles.dayEditEmptyText}>打刻記録はありません</div>
-                  <button className={styles.dayEditAddOutlineBtn} onClick={addSession}>＋ 打刻を追加</button>
+                  <button className={styles.dayEditAddPrimaryBtn} onClick={addSession}>＋ 打刻を追加</button>
                 </div>
               ) : (
                 <>
@@ -1509,7 +1512,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               )}
               <div className={styles.dayEditFooterBtns}>
                 {(() => {
-                  const canSave = sessions.length > 0 || initialSessionsRef.current.length > 0
+                  const { logsToDelete: _ld, logsToUpdate: _lu, logsToCreate: _lc } = computeLogDiff()
+                  const canSave = _ld.length > 0 || _lu.length > 0 || _lc.length > 0
+                    || (workItemsLoaded && !isSalaried && hasWorkDataChanged())
                   return (
                     <>
                       <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
