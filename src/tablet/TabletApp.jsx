@@ -159,7 +159,7 @@ export default function TabletApp() {
   async function handleWorkComplete(workItems) {
     try {
       const clockIn = await getClockInTime(currentUser.id)
-      await saveLog({ userId: currentUser.id, workItems, logType: '退勤' })
+      await saveLog({ userId: currentUser.id, workItems, logType: '退勤', sessionId: clockIn?.session_id })
       setCompletedInfo({
         logType: '退勤',
         workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),
