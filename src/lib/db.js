@@ -1253,7 +1253,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
-      hdrCell('C', T1_HDR, '出勤') + hdrCell('D', T1_HDR, '退勤') +
+      hdrCell('C', T1_HDR, '出勤打刻') + hdrCell('D', T1_HDR, '退勤打刻') +
       `</row>`
 
     // 表2ヘッダー（業務時間申告）
