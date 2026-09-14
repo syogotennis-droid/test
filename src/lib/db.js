@@ -491,6 +491,25 @@ export async function saveDayEditBatch({ userId, dateStr, logsToDelete, logsToCr
   await batch.commit()
 }
 
+async function deleteCollection(colName) {
+  const snap = await getDocs(collection(db, colName))
+  const docs = snap.docs
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db)
+    docs.slice(i, i + 400).forEach(d => batch.delete(d.ref))
+    await batch.commit()
+  }
+}
+
+export async function deleteAllAttendanceData() {
+  await Promise.all([
+    deleteCollection('logs'),
+    deleteCollection('session_work_reports'),
+    deleteCollection('work_reports'),
+    deleteCollection('salaried_days'),
+  ])
+}
+
 export async function migrateSessionWorkToReports() {
   const snap = await getDocs(logsCol)
   const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
