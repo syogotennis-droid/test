@@ -1348,18 +1348,21 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <>
                   {sessions.map((s, si) => {
                     const { inTime, outTime } = sessionTimes[si]
+                    const isNewSession = !initialSessionsRef.current.some(o => o.sessionId === s.sessionId)
                     const rows = sessionWorkRows[s.sessionId] || []
                     const sessionTotalMins = rows.reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
                     const selectedSessionTypes = new Set(rows.map(r => r.type).filter(Boolean))
                     const hasMoreSessionTypes = userWorkItems.some(t => !selectedSessionTypes.has(t))
+                    const isBlankNew = isNewSession && !inTime && !outTime
                     // Punch status badge
                     let punchBadgeClass, punchBadgeText
-                    if (!inTime && !outTime) { punchBadgeClass = styles.dayEditBadgeGrey; punchBadgeText = '未打刻' }
+                    if (isBlankNew) { punchBadgeClass = styles.dayEditBadgeNew; punchBadgeText = '新しい打刻' }
+                    else if (!inTime && !outTime) { punchBadgeClass = styles.dayEditBadgeGrey; punchBadgeText = '未打刻' }
                     else if (inTime && outTime) { punchBadgeClass = styles.dayEditBadgeGreen; punchBadgeText = '退勤済' }
                     else { punchBadgeClass = styles.dayEditBadgeBlue; punchBadgeText = '勤務中' }
-                    // Work status badge (non-salaried only, shown after load)
+                    // Work status badge: skip for blank new sessions, non-salaried only, after load
                     let workBadgeClass, workBadgeText
-                    if (!isSalaried && workItemsLoaded) {
+                    if (!isSalaried && workItemsLoaded && !isBlankNew) {
                       const hasValidWork = rows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
                       const hasWorkErr = rows.some(r => getWorkRowError(r))
                       if (hasWorkErr) { workBadgeClass = styles.dayEditBadgeRed; workBadgeText = '入力要確認' }
@@ -1369,16 +1372,18 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     return (
                       <div key={s.sessionId} className={styles.dayEditSessionCard}>
                         <div className={styles.dayEditSessionCardHeader}>
-                          <span className={styles.dayEditSessionNumBadge}>{si + 1}回目</span>
+                          {sessions.length > 1 && (
+                            <span className={styles.dayEditSessionNumBadge}>{si + 1}回目</span>
+                          )}
                           <div className={styles.dayEditSessionBadges}>
                             <span className={punchBadgeClass}>{punchBadgeText}</span>
                             {workBadgeClass && <span className={workBadgeClass}>{workBadgeText}</span>}
                           </div>
-                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この回を削除</button>
+                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この打刻を削除</button>
                         </div>
                         <div className={styles.dayEditSessionCardBody}>
                           {renderSessionPunchInputs(s, si)}
-                          {!isSalaried && !inTime && workItemsLoaded && (
+                          {!isSalaried && !inTime && (workItemsLoaded || isNewSession) && (
                             <div className={styles.dayEditWorkSectionHint}>出勤時刻を入力すると業務を登録できます</div>
                           )}
                           {!isSalaried && inTime && (
@@ -1386,7 +1391,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                               <div className={styles.dayEditSectionLoading}>読込中...</div>
                             ) : (
                               <>
-                                <div className={styles.dayEditWorkSectionLabel}>業務内容</div>
                                 <div className={styles.dayEditWorkRows}>
                                   <div className={styles.dayEditWorkTableHeader}>
                                     <span className={styles.dayEditWorkColType}>業務</span>
@@ -1432,13 +1436,12 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                     )
                                   })}
                                 </div>
-                                <div className={styles.dayEditCardFooterRow}>
-                                  {hasMoreSessionTypes
-                                    ? <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
-                                    : <span />
-                                  }
+                                <div className={styles.dayEditWorkFooter}>
+                                  {hasMoreSessionTypes && (
+                                    <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
+                                  )}
                                   <div className={styles.dayEditSessionTotal}>
-                                    <span>この回の合計</span>
+                                    <span>今回の合計</span>
                                     <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
                                   </div>
                                 </div>
@@ -1628,16 +1631,21 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         {step === 'confirmDeleteSession' && (() => {
           const pendingRows = pendingDeleteSessionId ? (sessionWorkRows[pendingDeleteSessionId] || []) : []
           const hasWorkInSession = pendingRows.some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
+          const pendingIdx = sessions.findIndex(s => s.sessionId === pendingDeleteSessionId)
+          const pendingTime = pendingIdx >= 0 ? sessionTimes[pendingIdx] : { inTime: '', outTime: '' }
+          const inLabel = pendingTime.inTime || '未入力'
+          const outLabel = pendingTime.outTime || '未入力'
           return (
             <>
               <div className={styles.modalHeader}>
-                <div className={styles.modalHeaderTitle}>確認</div>
+                <div className={styles.modalHeaderTitle}>この打刻を削除しますか？</div>
               </div>
               <div className={styles.modalBody}>
+                <p className={styles.confirmPunchTimeInfo}>出勤 {inLabel} → 退勤 {outLabel}</p>
                 <p className={styles.confirmWarn}>
                   {hasWorkInSession
-                    ? 'この回には業務時間が登録されています。打刻と業務時間の両方を削除します。削除してよろしいですか？'
-                    : 'この回の打刻と業務時間を削除します。削除してよろしいですか？'}
+                    ? '業務時間も登録されています。打刻と業務時間の両方を削除します。'
+                    : '削除すると元に戻せません。'}
                 </p>
               </div>
               <div className={styles.modalFooter}>
