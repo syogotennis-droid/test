@@ -148,8 +148,15 @@ export default function TabletApp() {
           setTimeout(resetToMode, 2800)
           return
         }
-        setCurrentUser(user)
-        setState(STATE.WORK)
+        if (user.employeeType === 'salaried') {
+          const clockIn = await getClockInTime(user.id)
+          await saveLog({ userId: user.id, workType: '', logType: '退勤', sessionId: clockIn?.session_id })
+          setCompletedInfo({ logType: '退勤', workItems: {}, user, clockInTime: clockIn?.time, clockInTimestamp: clockIn?.timestamp })
+          setState(STATE.COMPLETE)
+        } else {
+          setCurrentUser(user)
+          setState(STATE.WORK)
+        }
       }
     } catch (e) {
       setNetworkError('通信エラーが発生しました。ネットワークを確認してください。')
@@ -166,7 +173,7 @@ export default function TabletApp() {
       }
       setCompletedInfo({
         logType: '退勤',
-        workTypes: Object.keys(workItems).filter(k => workItems[k] > 0),
+        workItems,
         user: currentUser,
         clockInTime: clockIn?.time,
         clockInTimestamp: clockIn?.timestamp,
@@ -242,7 +249,7 @@ export default function TabletApp() {
       {state === STATE.COMPLETE && completedInfo && (
         <CompleteScreen
           logType={completedInfo.logType}
-          workTypes={completedInfo.workTypes}
+          workItems={completedInfo.workItems}
           user={completedInfo.user}
           clockInTime={completedInfo.clockInTime}
           clockInTimestamp={completedInfo.clockInTimestamp}
