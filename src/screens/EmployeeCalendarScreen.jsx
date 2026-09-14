@@ -244,7 +244,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
 
   const editingSession = editingSessionIdx !== null ? sessions[editingSessionIdx] : null
   const editingWork = editingSession?.sessionId ? (sessionWorkItems[editingSession.sessionId] || {}) : {}
-  const sessionLabel = isMulti ? `${editingSessionIdx + 1}回目の業務` : '業務を入力'
+  const sessionLabel = '業務を入力'
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
@@ -277,11 +277,6 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
 
                 return (
                   <div key={idx} className={isMulti ? styles.sessionCard : styles.sessionSingle}>
-                    {isMulti && (
-                      <div className={styles.sessionBadgeRow}>
-                        <span className={styles.sessionNumBadge}>{idx + 1}回目</span>
-                      </div>
-                    )}
 
                     <div className={styles.punchLine}>
                       <span className={styles.punchLabel}>打刻</span>

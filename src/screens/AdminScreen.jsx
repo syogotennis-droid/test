@@ -591,7 +591,6 @@ function CalendarTab({ users, today, isTablet }) {
                     <div className={styles.calSessions}>
                       {sessions.slice(0, MAX_SHOW).map((s, idx) => (
                         <div key={idx} className={styles.calSessionRow}>
-                          <span className={styles.calSessionNum}>{idx + 1}回目</span>
                           <span className={styles.calSessionIn}>{s.in}</span>
                           <span className={styles.calSessionArrow}>→</span>
                           {s.out
@@ -1372,9 +1371,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     return (
                       <div key={s.sessionId} className={styles.dayEditSessionCard}>
                         <div className={styles.dayEditSessionCardHeader}>
-                          {sessions.length > 1 && (
-                            <span className={styles.dayEditSessionNumBadge}>{si + 1}回目</span>
-                          )}
                           <div className={styles.dayEditSessionBadges}>
                             <span className={punchBadgeClass}>{punchBadgeText}</span>
                             {workBadgeClass && <span className={workBadgeClass}>{workBadgeText}</span>}
@@ -1555,9 +1551,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 if (!hasContent) return null
                 return (
                   <div key={s.sessionId} className={styles.confirmSessionCard}>
-                    <div className={styles.confirmSessionCardHeader}>
-                      <span className={styles.confirmSessionBadge}>{si + 1}回目</span>
-                    </div>
                     <div className={styles.confirmSessionCardBody}>
                       {inTime && (
                         <div className={styles.confirmSessionRow}>
