@@ -2763,68 +2763,6 @@ function AddUserModal({ onClose, onAdded }) {
             </div>
           </div>
 
-          {/* 社員設定 */}
-          {employeeType === 'salaried' && (
-            <div className={styles.userEditSection}>
-              <div className={styles.userEditSectionTitle}>社員設定</div>
-              <div className={styles.userEditGrid2}>
-                <div>
-                  <label className={styles.userEditLabel}>固定出勤時刻</label>
-                  <input
-                    type="time"
-                    className={styles.userEditInput}
-                    value={fixedStartTime}
-                    onChange={e => setFixedStartTime(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>固定退勤時刻</label>
-                  <input
-                    type="time"
-                    className={styles.userEditInput}
-                    value={fixedEndTime}
-                    onChange={e => setFixedEndTime(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>月給（円）</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className={styles.userEditInput}
-                    value={monthlySalary}
-                    onChange={e => setMonthlySalary(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>残業時給（円）</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className={styles.userEditInput}
-                    value={overtimeRateSal}
-                    onChange={e => setOvertimeRateSal(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>所定労働時間</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="number" min="0" max="23" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursH} onChange={e => setRegularHoursH(e.target.value)} placeholder="8" />
-                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>時間</span>
-                    <input type="number" min="0" max="59" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursM} onChange={e => setRegularHoursM(e.target.value)} placeholder="0" />
-                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>分</span>
-                  </div>
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>標準休憩時間（分）</label>
-                  <input type="number" min="0" className={styles.userEditInput} value={standardBreakMins} onChange={e => setStandardBreakMins(e.target.value)} placeholder="60" />
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* 作業項目・時給 */}
           {employeeType !== 'salaried' && (
             <div className={styles.userEditSection}>
@@ -3780,68 +3718,6 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
               </div>
             </div>
           </div>
-
-          {/* 社員設定 */}
-          {employeeType === 'salaried' && (
-            <div className={styles.userEditSection}>
-              <div className={styles.userEditSectionTitle}>社員設定</div>
-              <div className={styles.userEditGrid2}>
-                <div>
-                  <label className={styles.userEditLabel}>固定出勤時刻</label>
-                  <input
-                    type="time"
-                    className={styles.userEditInput}
-                    value={fixedStartTime}
-                    onChange={e => setFixedStartTime(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>固定退勤時刻</label>
-                  <input
-                    type="time"
-                    className={styles.userEditInput}
-                    value={fixedEndTime}
-                    onChange={e => setFixedEndTime(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>月給（円）</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className={styles.userEditInput}
-                    value={monthlySalary}
-                    onChange={e => setMonthlySalary(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>残業時給（円）</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className={styles.userEditInput}
-                    value={overtimeRateSal}
-                    onChange={e => setOvertimeRateSal(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>所定労働時間</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="number" min="0" max="23" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursH} onChange={e => setRegularHoursH(e.target.value)} placeholder="8" />
-                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>時間</span>
-                    <input type="number" min="0" max="59" className={styles.userEditInput} style={{ width: 70 }} value={regularHoursM} onChange={e => setRegularHoursM(e.target.value)} placeholder="0" />
-                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>分</span>
-                  </div>
-                </div>
-                <div>
-                  <label className={styles.userEditLabel}>標準休憩時間（分）</label>
-                  <input type="number" min="0" className={styles.userEditInput} value={standardBreakMins} onChange={e => setStandardBreakMins(e.target.value)} placeholder="60" />
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* 作業項目・時給 */}
           {employeeType !== 'salaried' && (
