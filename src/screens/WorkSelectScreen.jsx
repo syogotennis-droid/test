@@ -86,72 +86,79 @@ export default function WorkSelectScreen({ user, onComplete, onCancel, sessionCo
     }
   }
 
-  const contextMsg = `本日${sessionCount}回目の業務時間を入力してください`
-
   return (
     <div className={styles.screen}>
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <button className={styles.backBtn} onClick={onCancel}>←</button>
-          <div className={styles.headerTitle}>業務時間の入力</div>
+          <div className={styles.headerTitle}>退勤登録</div>
         </div>
         <div className={styles.clockBox}>
           <Clock />
         </div>
       </div>
 
-      <div className={styles.body}>
-        <div className={styles.contextMsg}>{contextMsg}</div>
+      <div className={styles.main}>
+        {/* 今回の業務入力 */}
+        <div className={styles.workSection}>
+          <div className={styles.workSectionHeader}>
+            <span className={styles.workSectionLabel}>今回の業務</span>
+            {totalMins > 0 && (
+              <span className={styles.workTotalInline}>
+                今回の合計 {totalH}時間{String(totalM).padStart(2, '0')}分
+              </span>
+            )}
+          </div>
 
-        <div className={styles.workInputArea}>
-          {workRows.map((row, ri) => {
-            const isLast = ri === workRows.length - 1
-            const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
-            return (
-              <div key={ri} className={styles.workInputRow}>
-                <select
-                  ref={isLast ? lastSelectRef : null}
-                  className={styles.workTypeSelect}
-                  value={row.type}
-                  onChange={e => updateRow(ri, 'type', e.target.value)}
-                >
-                  <option value="">業務を選択</option>
-                  {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <input
-                  type="number" min="0" max="23"
-                  className={styles.workTimeNum}
-                  value={row.h === 0 ? '' : row.h}
-                  placeholder="0"
-                  onChange={e => { const n = parseInt(e.target.value); updateRow(ri, 'h', isNaN(n) ? 0 : Math.max(0, n)) }}
-                  onFocus={e => e.target.select()}
-                />
-                <span className={styles.workTimeUnit}>時間</span>
-                <input
-                  type="number" min="0" max="59"
-                  className={styles.workTimeNum}
-                  value={row.m === 0 ? '' : row.m}
-                  placeholder="0"
-                  onChange={e => { const n = parseInt(e.target.value); updateRow(ri, 'm', isNaN(n) ? 0 : Math.min(59, Math.max(0, n))) }}
-                  onFocus={e => e.target.select()}
-                />
-                <span className={styles.workTimeUnit}>分</span>
-                <button className={styles.workRowDel} onClick={() => removeWorkRow(ri)}>削除</button>
-              </div>
-            )
-          })}
+          <div className={styles.workRows}>
+            {workRows.map((row, ri) => {
+              const isLast = ri === workRows.length - 1
+              const availableTypes = userWorkItems.filter(t => t === row.type || !selectedTypes.has(t))
+              return (
+                <div key={ri} className={styles.workInputRow}>
+                  <select
+                    ref={isLast ? lastSelectRef : null}
+                    className={styles.workTypeSelect}
+                    value={row.type}
+                    onChange={e => updateRow(ri, 'type', e.target.value)}
+                  >
+                    <option value="">業務を選択</option>
+                    {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input
+                    type="number" min="0" max="23"
+                    className={styles.workTimeNum}
+                    value={row.h === 0 ? '' : row.h}
+                    placeholder="0"
+                    onChange={e => { const n = parseInt(e.target.value); updateRow(ri, 'h', isNaN(n) ? 0 : Math.max(0, n)) }}
+                    onFocus={e => e.target.select()}
+                  />
+                  <span className={styles.workTimeUnit}>時間</span>
+                  <input
+                    type="number" min="0" max="59"
+                    className={styles.workTimeNum}
+                    value={row.m === 0 ? '' : row.m}
+                    placeholder="0"
+                    onChange={e => { const n = parseInt(e.target.value); updateRow(ri, 'm', isNaN(n) ? 0 : Math.min(59, Math.max(0, n))) }}
+                    onFocus={e => e.target.select()}
+                  />
+                  <span className={styles.workTimeUnit}>分</span>
+                  {workRows.length > 1 && (
+                    <button className={styles.workRowDel} onClick={() => removeWorkRow(ri)}>×</button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
 
-          {hasMoreTypes && (
-            <button className={styles.addWorkBtn} onClick={addWorkRow}>＋ 別の業務を追加</button>
-          )}
-        </div>
-
-        <div className={styles.totalPanel}>
-          <span className={styles.totalLabel}>合計</span>
-          <span className={styles.totalNumber}>{totalH}</span>
-          <span className={styles.totalUnit}>時間</span>
-          <span className={styles.totalNumber}>{String(totalM).padStart(2, '0')}</span>
-          <span className={styles.totalUnit}>分</span>
+          <div className={styles.workSectionFooter}>
+            {hasMoreTypes && (
+              <button className={styles.addWorkBtn} onClick={addWorkRow}>＋ 別の業務を追加</button>
+            )}
+            {!hasValidWork && (
+              <span className={styles.workHint}>業務と時間を入力してください</span>
+            )}
+          </div>
         </div>
 
         <div className={styles.bottomRow}>
