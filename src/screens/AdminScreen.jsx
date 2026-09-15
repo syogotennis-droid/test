@@ -123,7 +123,7 @@ const SIDEBAR_ITEMS = [
   },
 ]
 
-export default function AdminScreen({ onBack, isTablet = false }) {
+export default function AdminScreen({ onBack, isTablet = false, onPinSaved }) {
   const [tab, setTab] = useState('calendar')
   const [users, setUsers] = useState([])
   const today = toDateStr(new Date())
@@ -168,7 +168,7 @@ export default function AdminScreen({ onBack, isTablet = false }) {
         {tab === 'calendar' && <CalendarTab users={users} today={today} isTablet={isTablet} />}
         {tab === 'kinmubo' && <KinmuboTab today={today} />}
         {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} isTablet={isTablet} />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'settings' && <SettingsTab onPinSaved={onPinSaved} />}
       </div>
     </div>
   )
@@ -2897,7 +2897,7 @@ function AddUserModal({ onClose, onAdded }) {
 
 // ─── SettingsTab ──────────────────────────────────────────────────────────────
 
-function SettingsTab() {
+function SettingsTab({ onPinSaved }) {
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
   const [saved, setSaved] = useState(false)
@@ -2919,6 +2919,7 @@ function SettingsTab() {
       setNewPin('')
       setConfirmPin('')
       setError('')
+      if (onPinSaved) onPinSaved(newPin)
       setTimeout(() => setSaved(false), 3000)
     } catch {
       setError('保存に失敗しました')

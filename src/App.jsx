@@ -211,7 +211,7 @@ export default function App() {
   }
 
   if (state === STATE.ADMIN) {
-    return <AdminScreen isTablet={true} onBack={() => {
+    return <AdminScreen isTablet={true} onPinSaved={p => setCurrentAdminPin(p)} onBack={() => {
       try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
       handleDone()
     }} />
