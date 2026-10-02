@@ -495,7 +495,8 @@ function isDeviceRoute(route, method, sp) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, employeeType: u.employeeType, workItems: u.workItems || [] }
+  // pin is included so the tablet can match PINs while offline
+  return { id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [] }
 }
 
 // Workers run in UTC; the business runs in JST (UTC+9)

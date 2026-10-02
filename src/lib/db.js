@@ -148,7 +148,7 @@ export async function getTodayUserLogs(userId) {
 }
 
 function cacheUsers(users) {
-  writeJSON(USERS_CACHE_KEY, users.map(u => ({ id: u.id, name: u.name, employeeType: u.employeeType, workItems: u.workItems || [] })))
+  writeJSON(USERS_CACHE_KEY, users.map(u => ({ id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [] })))
 }
 
 const enc = encodeURIComponent
@@ -264,10 +264,14 @@ export async function resolveUser(qrValue) {
   }
 }
 
-// PINs are never stored on the device, so PIN login needs the network.
 export async function resolveUserByPin(pin) {
   if (!pin) return null
-  return api('/users', { query: { pin } })
+  try {
+    return await api('/users', { query: { pin } })
+  } catch (e) {
+    if (!e.offline) throw e
+    return readJSON(USERS_CACHE_KEY, []).find(u => u.pin && u.pin === pin) || null
+  }
 }
 
 export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork, sessionId: providedSessionId }) {
