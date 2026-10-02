@@ -1,0 +1,12 @@
+name = "qr-attendance"
+compatibility_date = "2024-09-25"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "qr-attendance-db"
+database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+
+# Local dev: wrangler pages dev dist --d1 DB=<local-db-id>
+# Deploy:    wrangler pages deploy dist
+# Schema:    wrangler d1 execute qr-attendance-db --file=./schema.sql
