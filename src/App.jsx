@@ -143,7 +143,7 @@ export default function App() {
       }
       if (user.employeeType === 'salaried') {
         const clockIn = await getClockInTime(user.id)
-        await saveLog({ userId: user.id, workItems: {}, logType: '退勤' })
+        await saveLog({ userId: user.id, workItems: {}, logType: '退勤', sessionId: clockIn?.session_id })
         setCompletedInfo({ logType: '退勤', workItems: {}, user, clockInTime: clockIn?.time })
         setState(STATE.COMPLETE)
         return
