@@ -11,7 +11,7 @@
 // same IDs as Firestore, so a second run just brings D1 up to date.
 
 import { writeFileSync, mkdirSync } from 'fs'
-import { execFileSync } from 'child_process'
+import { wrangler, parseJson } from './wrangler-cli.js'
 
 const args = process.argv.slice(2)
 const arg = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined }
@@ -69,11 +69,8 @@ function q(v) {
 }
 const json = v => q(JSON.stringify(v ?? {}))
 
-function wrangler(extra) {
-  const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-  return execFileSync(cmd, ['wrangler', 'd1', 'execute', dbName, local ? '--local' : '--remote', '--yes', ...extra], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32',
-  })
+function d1(extra) {
+  return wrangler(['d1', 'execute', dbName, local ? '--local' : '--remote', '--yes', ...extra], { capture: true }).out
 }
 
 async function main() {
@@ -128,14 +125,14 @@ async function main() {
   if (dryRun) { console.log('--dry-run のためD1には書き込みません'); return }
 
   console.log(`D1「${dbName}」（${local ? 'ローカル' : '本番'}）にテーブルを用意しています…`)
-  wrangler(['--file=./schema.sql'])
+  d1(['--file=./schema.sql'])
   console.log('データを書き込んでいます…')
-  wrangler([`--file=./${file}`])
+  d1([`--file=./${file}`])
 
   console.log('件数を確認しています…')
   const tables = { users: 'users', logs: 'logs', work_reports: 'work_reports', session_work_reports: 'session_work_reports', overtime_apps: 'overtime_apps', salaried_days: 'salaried_days' }
-  const out = wrangler(['--json', '--command', 'SELECT ' + Object.keys(tables).map(t => `(SELECT COUNT(*) FROM ${t}) AS ${t}`).join(', ')])
-  const counts = JSON.parse(out)[0].results[0]
+  const out = d1(['--json', '--command', 'SELECT ' + Object.keys(tables).map(t => `(SELECT COUNT(*) FROM ${t}) AS ${t}`).join(', ')])
+  const counts = parseJson(out)[0].results[0]
   let ok = true
   for (const t of Object.keys(tables)) {
     const same = counts[t] >= data[t].length

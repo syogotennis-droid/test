@@ -10,33 +10,23 @@
 // 事前に `npx wrangler login` でCloudflareにログインしておくこと。
 
 import { spawnSync } from 'child_process'
-import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join, resolve } from 'path'
+import { join } from 'path'
 import { createInterface } from 'readline'
+import { wrangler, parseJson } from './wrangler-cli.js'
 
 const PREFIX = 'kintai-'
-// absolute path, because deploys run from a per-client folder
-const localBin = resolve('node_modules/.bin/wrangler' + (process.platform === 'win32' ? '.cmd' : ''))
-const WRANGLER = process.env.WRANGLER || (existsSync(localBin) ? `"${localBin}"` : 'npx wrangler')
 
-function run(cmd, { capture = false, allowFail = false } = {}) {
-  const r = spawnSync(cmd, { shell: true, encoding: 'utf8', stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit' })
-  if (r.status !== 0 && !allowFail) {
-    if (capture) process.stderr.write((r.stdout || '') + (r.stderr || ''))
-    throw new Error(`コマンドが失敗しました: ${cmd}`)
-  }
-  return { ok: r.status === 0, out: r.stdout || '' }
+// npm / node helpers (not wrangler) — fixed commands, no user input inside
+function run(cmd) {
+  const r = spawnSync(cmd, { shell: true, stdio: 'inherit' })
+  if (r.status !== 0) throw new Error(`コマンドが失敗しました: ${cmd}`)
 }
-const wr = (args, opts) => run(`${WRANGLER} ${args}`, opts)
-
-function parseJson(out) {
-  const i = out.search(/[[{]/)
-  return JSON.parse(out.slice(i))
-}
+const wr = (args, opts) => wrangler(args, opts)
 
 function checkLogin() {
-  const r = wr('whoami --json', { capture: true, allowFail: true })
+  const r = wr(['whoami', '--json'], { capture: true, allowFail: true })
   if (!r.ok) {
     console.error('Cloudflareにログインしていません。先に次のコマンドを実行してください:\n  npx wrangler login')
     process.exit(1)
@@ -44,20 +34,18 @@ function checkLogin() {
 }
 
 function findDatabase(dbName) {
-  const list = parseJson(wr('d1 list --json', { capture: true }).out)
+  const list = parseJson(wr(['d1', 'list', '--json'], { capture: true }).out)
   return list.find(d => d.name === dbName) || null
 }
 
-function listClientIds() {
-  const list = parseJson(wr('pages project list --json', { capture: true }).out)
-  return list
+function listProjectNames() {
+  return parseJson(wr(['pages', 'project', 'list', '--json'], { capture: true }).out)
     .map(p => p.name || p['Project Name'])
-    .filter(n => n && n.startsWith(PREFIX))
-    .map(n => n.slice(PREFIX.length))
+    .filter(Boolean)
 }
 
-function sqlString(s) {
-  return `'${String(s).replace(/'/g, "''")}'`
+function listClientIds() {
+  return listProjectNames().filter(n => n.startsWith(PREFIX)).map(n => n.slice(PREFIX.length))
 }
 
 let built = false
@@ -91,14 +79,11 @@ function deploy(id) {
     '',
   ].join('\n'))
   // apply any new tables added since the client was created (IF NOT EXISTS)
-  wr(`d1 execute ${name} --remote --yes --file=./schema.sql`, { capture: true })
+  wr(['d1', 'execute', name, '--remote', '--yes', '--file=./schema.sql'], { capture: true })
   console.log(`\n「${name}」にデプロイしています…`)
-  const prev = process.cwd()
-  process.chdir(dir)
   try {
-    wr(`pages deploy dist --project-name ${name} --branch main --commit-dirty=true`)
+    wr(['pages', 'deploy', 'dist', '--project-name', name, '--branch', 'main', '--commit-dirty=true'], { cwd: dir })
   } finally {
-    process.chdir(prev)
     rmSync(dir, { recursive: true, force: true })
   }
   return `https://${name}.pages.dev`
@@ -135,14 +120,26 @@ async function setupNew() {
   }
   const name = PREFIX + id
 
-  if (findDatabase(name)) {
+  // A DB without a Pages project means an earlier run stopped part-way: resume.
+  const dbExists = !!findDatabase(name)
+  const projectExists = dbExists && listProjectNames().includes(name)
+  if (projectExists) {
     console.error(`\nエラー: 案件「${id}」はすでにあります（データベース「${name}」）。`)
     console.error(`コードを更新するだけなら次のコマンドを使ってください:\n  node setup-new-client.js --deploy ${id}\n`)
     rl.close()
     process.exit(1)
   }
+  if (dbExists) {
+    console.log(`\n案件「${id}」は前回のセットアップが途中で止まっています。続きから再開します。`)
+    console.log('（データベースの中身は消しません。Firebaseの引き継ぎは何度実行しても二重登録になりません）\n')
+  }
 
-  const fbProject = (await rl.question('Firebaseからデータを引き継ぐ場合は、FirebaseのプロジェクトIDを入力（なければEnter）: ')).trim()
+  let fbProject
+  for (;;) {
+    fbProject = (await rl.question('Firebaseからデータを引き継ぐ場合は、FirebaseのプロジェクトIDを入力（なければEnter）: ')).trim()
+    if (fbProject === '' || /^[a-z0-9-]{4,40}$/.test(fbProject)) break
+    console.log('  FirebaseのプロジェクトIDは半角英小文字・数字・ハイフンです')
+  }
 
   let pin = ''
   for (;;) {
@@ -158,22 +155,25 @@ async function setupNew() {
   }
   rl.close()
 
-  console.log(`\nD1データベース「${name}」を作成しています…`)
-  wr(`d1 create ${name} --location apac`, { capture: true })
+  if (!dbExists) {
+    console.log(`\nD1データベース「${name}」を作成しています…`)
+    wr(['d1', 'create', name, '--location', 'apac'], { capture: true })
+  }
   console.log('テーブルを作成しています…')
-  wr(`d1 execute ${name} --remote --yes --file=./schema.sql`, { capture: true })
+  wr(['d1', 'execute', name, '--remote', '--yes', '--file=./schema.sql'], { capture: true })
 
   if (fbProject) {
     console.log('\nFirebaseのデータを引き継ぎます（Firebase側は変更しません）')
-    run(`node migrate-from-firebase.js --project ${fbProject} --db ${name}`)
+    const r = spawnSync(process.execPath, ['migrate-from-firebase.js', '--project', fbProject, '--db', name], { stdio: 'inherit' })
+    if (r.status !== 0) throw new Error('Firebaseからの引き継ぎに失敗しました。もう一度 node setup-new-client.js を実行すると続きから再開します')
   }
   if (pin) {
-    wr(`d1 execute ${name} --remote --yes --command "INSERT OR REPLACE INTO config (key, value) VALUES ('adminPin', ${sqlString(pin)})"`, { capture: true })
+    wr(['d1', 'execute', name, '--remote', '--yes', '--command', `INSERT OR REPLACE INTO config (key, value) VALUES ('adminPin', '${pin}')`], { capture: true })
     console.log('管理者PINを設定しました')
   }
 
   console.log(`\nPagesプロジェクト「${name}」を作成しています…`)
-  wr(`pages project create ${name} --production-branch main`, { capture: true })
+  wr(['pages', 'project', 'create', name, '--production-branch', 'main'], { capture: true })
 
   const url = deploy(id)
 
