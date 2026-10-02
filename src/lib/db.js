@@ -1,7 +1,32 @@
 import { zipSync } from 'fflate'
 
-const API_BASE = '/api'
 const ADMIN_TOKEN_KEY = 'adminToken'
+const SERVER_ORIGIN_KEY = 'serverOrigin'
+
+// The Android app bundles the web files, so '/api' would point at the app
+// itself; it must call the deployed site by absolute URL instead.
+function isNativeApp() {
+  return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
+}
+
+export function getServerOrigin() {
+  try { return localStorage.getItem(SERVER_ORIGIN_KEY) || import.meta.env?.VITE_SERVER_ORIGIN || '' } catch { return '' }
+}
+
+export function setServerOrigin(url) {
+  let u = String(url || '').trim().replace(/\/+$/, '')
+  if (u && !/^https?:\/\//.test(u)) u = 'https://' + u
+  try { localStorage.setItem(SERVER_ORIGIN_KEY, u) } catch {}
+  return u
+}
+
+export function needsServerOrigin() {
+  return isNativeApp()
+}
+
+function apiBase() {
+  return (isNativeApp() ? getServerOrigin() : '') + '/api'
+}
 const DEVICE_TOKEN_KEY = 'deviceToken'
 
 function getToken(key) {
@@ -21,7 +46,7 @@ function offlineError(cause) {
 const API_TIMEOUT_MS = 8000
 
 async function api(path, { method = 'GET', query, body } = {}) {
-  let url = API_BASE + path
+  let url = apiBase() + path
   if (query) {
     const qs = new URLSearchParams(
       Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -159,7 +184,7 @@ const enc = encodeURIComponent
 export async function adminLogin(pin, { device = false } = {}) {
   let res, j
   try {
-    res = await fetch(API_BASE + '/auth/login', {
+    res = await fetch(apiBase() + '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin, device }),
@@ -185,7 +210,7 @@ export async function adminLogin(pin, { device = false } = {}) {
 export function adminLogout() {
   const t = getToken(ADMIN_TOKEN_KEY)
   setToken(ADMIN_TOKEN_KEY, null)
-  if (t) fetch(API_BASE + '/auth/logout', { method: 'POST', headers: { 'X-Admin-Token': t } }).catch(() => {})
+  if (t) fetch(apiBase() + '/auth/logout', { method: 'POST', headers: { 'X-Admin-Token': t } }).catch(() => {})
 }
 
 export function hasAdminSession() {

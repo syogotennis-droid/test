@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { adminLogin } from '../lib/db'
+import { adminLogin, needsServerOrigin, getServerOrigin, setServerOrigin } from '../lib/db'
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫']
 
@@ -7,6 +7,8 @@ export default function DeviceSetupScreen({ onDone }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(false)
+  const askUrl = needsServerOrigin()
+  const [url, setUrl] = useState(getServerOrigin)
 
   function press(k) {
     if (checking || k === '') return
@@ -18,11 +20,13 @@ export default function DeviceSetupScreen({ onDone }) {
 
   async function confirm() {
     if (pin.length !== 4 || checking) return
+    if (askUrl && !url.trim()) { setError('サーバーのURLを入力してください'); return }
+    if (askUrl) setUrl(setServerOrigin(url))
     setChecking(true)
     const r = await adminLogin(pin, { device: true })
     setChecking(false)
     if (r.ok) onDone()
-    else { setError(r.message); setPin('') }
+    else { setError(askUrl && r.message.startsWith('通信できません') ? 'サーバーに接続できません。URLとネット接続を確認してください' : r.message); setPin('') }
   }
 
   return (
@@ -32,6 +36,21 @@ export default function DeviceSetupScreen({ onDone }) {
         <div style={{ fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.6 }}>
           この端末はまだ登録されていません。管理者PINを入力すると、この端末で打刻できるようになります。登録は最初の1回だけです。
         </div>
+        {askUrl && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.82rem', fontWeight: 700, color: '#374151' }}>
+            サーバーのURL
+            <input
+              type="url"
+              inputMode="url"
+              autoCapitalize="off"
+              autoCorrect="off"
+              value={url}
+              onChange={e => { setUrl(e.target.value); setError('') }}
+              placeholder="https://〇〇.pages.dev"
+              style={{ height: 44, border: '1.5px solid #d1d5db', borderRadius: 8, padding: '0 10px', fontSize: '0.95rem', fontFamily: 'inherit' }}
+            />
+          </label>
+        )}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
           {Array.from({ length: 4 }).map((_, i) => (
             <span key={i} style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #9baab8', background: i < pin.length ? '#1a5fa8' : 'transparent', display: 'inline-block' }} />
