@@ -55,26 +55,22 @@ export async function onRequest(context) {
       return ok(results.map(parseUser))
     }
     if (route.startsWith('users/') && method === 'GET') {
-      const id = route.slice(6)
-      const u = await DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first()
+      const u = await DB.prepare('SELECT * FROM users WHERE id = ?').bind(route.slice(6)).first()
       return ok(u ? parseUser(u) : null)
     }
     if (route.startsWith('users/') && method === 'PUT') {
+      // merge semantics, same as Firestore setDoc(..., { merge: true })
       const id = route.slice(6)
-      const b = await request.json()
-      await DB.prepare(
-        'INSERT OR REPLACE INTO users (id, name, employee_type, work_items, item_rates, pin, email) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).bind(
-        id, b.name || '', b.employeeType || 'hourly',
-        JSON.stringify(b.workItems || []), JSON.stringify(b.itemRates || {}),
-        b.pin || '', b.email || ''
-      ).run()
+      const { id: _ignored, ...b } = await request.json()
+      const cur = await DB.prepare('SELECT data FROM users WHERE id = ?').bind(id).first()
+      const merged = { ...(cur ? JSON.parse(cur.data || '{}') : {}), ...b }
+      await DB.prepare('INSERT OR REPLACE INTO users (id, pin, data) VALUES (?, ?, ?)')
+        .bind(id, merged.pin || '', JSON.stringify(merged)).run()
       return ok({ ok: true })
     }
     if (route.startsWith('users/') && method === 'DELETE') {
       const id = route.slice(6)
-      const docOnly = sp.get('docOnly') === 'true'
-      if (docOnly) {
+      if (sp.get('docOnly') === 'true') {
         await DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run()
       } else {
         await DB.batch([
@@ -96,7 +92,7 @@ export async function onRequest(context) {
     }
     if (route === 'logs/is_checked_in' && method === 'GET') {
       const userId = sp.get('userId')
-      const date = todayStr()
+      const date = sp.get('date') || todayStr()
       const { results } = await DB.prepare(
         'SELECT log_type FROM logs WHERE user_id = ? AND date = ?'
       ).bind(userId, date).all()
@@ -105,7 +101,7 @@ export async function onRequest(context) {
       return ok({ checkedIn: ins > outs })
     }
     if (route === 'logs/today_statuses' && method === 'GET') {
-      const date = todayStr()
+      const date = sp.get('date') || todayStr()
       const { results } = await DB.prepare(
         'SELECT user_id, log_type FROM logs WHERE date = ?'
       ).bind(date).all()
@@ -123,23 +119,20 @@ export async function onRequest(context) {
     // ── Logs — CRUD ────────────────────────────────────────────────────────
     if (route === 'logs' && method === 'GET') {
       const { date, dateFrom, dateTo, userId } = Object.fromEntries(sp)
-      let stmt, args = []
-      if (dateFrom && dateTo) { stmt = 'SELECT * FROM logs WHERE date >= ? AND date <= ?'; args = [dateFrom, dateTo] }
-      else if (dateFrom) { stmt = 'SELECT * FROM logs WHERE date >= ?'; args = [dateFrom] }
-      else if (dateTo) { stmt = 'SELECT * FROM logs WHERE date <= ?'; args = [dateTo] }
-      else { stmt = 'SELECT * FROM logs' }
-      const { results } = await DB.prepare(stmt).bind(...args).all()
-      let logs = results.map(parseLog)
-      if (date) logs = logs.filter(l => l.date === date)
-      if (userId) logs = logs.filter(l => l.user_id === userId)
-      logs.sort((a, b) => (b.timestamp || '') < (a.timestamp || '') ? -1 : 1)
-      return ok(logs)
+      const where = [], args = []
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      if (date) { where.push('date = ?'); args.push(date) }
+      if (userId) { where.push('user_id = ?'); args.push(userId) }
+      const sql = 'SELECT * FROM logs' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY timestamp DESC'
+      const { results } = await DB.prepare(sql).bind(...args).all()
+      return ok(results.map(parseLog))
     }
     if (route === 'logs' && method === 'POST') {
       const b = await request.json()
       const id = b.id || crypto.randomUUID()
       await DB.prepare(
-        'INSERT INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)'
+        'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)'
       ).bind(
         id, b.user_id, b.log_type || '', b.date || '', b.time || '', b.timestamp || '',
         b.work_type || '', b.session_id || null,
@@ -162,11 +155,8 @@ export async function onRequest(context) {
         // compute timestamp from existing log's date
         const log = await DB.prepare('SELECT date FROM logs WHERE id = ?').bind(id).first()
         if (log) {
-          const [y, mo, d] = log.date.split('-').map(Number)
-          const [h, m] = b.time.split(':').map(Number)
-          const dt = new Date(y, mo - 1, d, h, m, 0)
           sets.push('time = ?', 'timestamp = ?')
-          args.push(b.time + ':00', dt.toISOString())
+          args.push(b.time + ':00', jstIso(log.date, b.time))
         }
       } else {
         if ('time' in b) { sets.push('time = ?'); args.push(b.time) }
@@ -401,20 +391,13 @@ export async function onRequest(context) {
       const stmts = []
       for (const log of (logsToDelete || []))
         stmts.push(DB.prepare('DELETE FROM logs WHERE id = ?').bind(log.id))
-      for (const { id, time } of (logsToUpdate || [])) {
-        const [y, mo, d] = dateStr.split('-').map(Number)
-        const [h, m] = time.split(':').map(Number)
-        const dt = new Date(y, mo - 1, d, h, m, 0)
-        stmts.push(DB.prepare('UPDATE logs SET time = ?, timestamp = ? WHERE id = ?').bind(time + ':00', dt.toISOString(), id))
-      }
+      for (const { id, time } of (logsToUpdate || []))
+        stmts.push(DB.prepare('UPDATE logs SET time = ?, timestamp = ? WHERE id = ?').bind(time + ':00', jstIso(dateStr, time), id))
       for (const { logType, time, sessionId } of (logsToCreate || [])) {
         const logId = crypto.randomUUID()
-        const [y, mo, d] = dateStr.split('-').map(Number)
-        const [h, m] = time.split(':').map(Number)
-        const dt = new Date(y, mo - 1, d, h, m, 0)
         stmts.push(DB.prepare(
           "INSERT INTO logs (id, user_id, log_type, date, time, work_type, session_id, timestamp, synced) VALUES (?, ?, ?, ?, ?, '', ?, ?, 0)"
-        ).bind(logId, userId, logType, dateStr, time + ':00', sessionId, dt.toISOString()))
+        ).bind(logId, userId, logType, dateStr, time + ':00', sessionId, jstIso(dateStr, time)))
       }
       if (!isSalaried) {
         for (const { sessionId, items } of (sessionWorkData || [])) {
@@ -445,21 +428,21 @@ export async function onRequest(context) {
   }
 }
 
+// Workers run in UTC; the business runs in JST (UTC+9)
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000
+
 function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+function jstIso(dateStr, time) {
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  const [h, m] = time.split(':').map(Number)
+  return new Date(Date.UTC(y, mo - 1, d, h, m, 0) - JST_OFFSET_MS).toISOString()
 }
 
 function parseUser(u) {
-  return {
-    id: u.id,
-    name: u.name,
-    employeeType: u.employee_type || 'hourly',
-    workItems: JSON.parse(u.work_items || '[]'),
-    itemRates: JSON.parse(u.item_rates || '{}'),
-    pin: u.pin || '',
-    email: u.email || '',
-  }
+  return { ...JSON.parse(u.data || '{}'), id: u.id }
 }
 
 function parseLog(l) {

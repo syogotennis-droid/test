@@ -1,105 +1,72 @@
-import { initializeApp } from 'firebase/app'
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  getFirestore,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  getDocsFromServer,
-  addDoc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  writeBatch
-} from 'firebase/firestore'
-import * as XLSX from 'xlsx'
 import { zipSync } from 'fflate'
 
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyCKm6AYwlgw9aAtY4xICdbLcmIz6ZuMb3o",
-  authDomain: "kamiyashiro-swim-c6f20.firebaseapp.com",
-  projectId: "kamiyashiro-swim-c6f20",
-  storageBucket: "kamiyashiro-swim-c6f20.firebasestorage.app",
-  messagingSenderId: "340386787852",
-  appId: "1:340386787852:web:1fc745bde363c4b7347429"
+const API_BASE = '/api'
+
+async function api(path, { method = 'GET', query, body } = {}) {
+  let url = API_BASE + path
+  if (query) {
+    const qs = new URLSearchParams(
+      Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
+    ).toString()
+    if (qs) url += '?' + qs
+  }
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`API ${method} ${path} failed (${res.status})`)
+  return res.json()
 }
 
-const firebaseApp = initializeApp(firebaseConfig)
-let db
-try {
-  db = initializeFirestore(firebaseApp, { localCache: persistentLocalCache() })
-} catch {
-  db = getFirestore(firebaseApp)
-}
-
-const usersCol = collection(db, 'users')
-const logsCol = collection(db, 'logs')
-const configDocRef = doc(db, 'config', 'system')
+const enc = encodeURIComponent
 
 export const DEFAULT_ADMIN_PIN = '2607'
 
 export async function getAdminPin() {
   try {
-    const snap = await getDoc(configDocRef)
-    if (snap.exists() && snap.data()?.adminPin) return snap.data().adminPin
+    const cfg = await api('/config')
+    if (cfg.adminPin) return cfg.adminPin
   } catch {}
   return DEFAULT_ADMIN_PIN
 }
 
 export async function saveAdminPin(newPin) {
-  await setDoc(configDocRef, { adminPin: newPin }, { merge: true })
+  await api('/config/adminPin', { method: 'PUT', body: { value: newPin } })
 }
 
 export const DEFAULT_MIN_WAGE = 1077  // 愛知県 2024年10月改定
 
 export async function getMinWage() {
   try {
-    const snap = await getDoc(configDocRef)
-    if (snap.exists() && snap.data()?.minWage) return snap.data().minWage
+    const cfg = await api('/config')
+    if (Number(cfg.minWage)) return Number(cfg.minWage)
   } catch {}
   return DEFAULT_MIN_WAGE
 }
 
 export async function saveMinWage(wage) {
-  await setDoc(configDocRef, { minWage: wage }, { merge: true })
+  await api('/config/minWage', { method: 'PUT', body: { value: wage } })
 }
 
 export async function saveOvertimeApp(userId, date, minutes) {
-  const id = `${userId}_${date}`
-  if (!minutes || minutes <= 0) {
-    try { await deleteDoc(doc(db, 'overtime_apps', id)) } catch {}
-  } else {
-    await setDoc(doc(db, 'overtime_apps', id), { userId, date, minutes })
-  }
+  await api('/overtime_apps', { method: 'PUT', body: { userId, date, minutes } })
 }
 
 export async function getOvertimeApp(userId, date) {
   try {
-    const snap = await getDoc(doc(db, 'overtime_apps', `${userId}_${date}`))
-    return snap.exists() ? (snap.data().minutes || 0) : 0
+    const r = await api('/overtime_apps', { query: { userId, date } })
+    return r.minutes || 0
   } catch { return 0 }
 }
 
 export async function saveSalariedDay(userId, date, { breakMins, overtimeMins }) {
-  const id = `${userId}_${date}`
-  await setDoc(doc(db, 'salaried_days', id), { userId, date, breakMins: breakMins ?? 0, overtimeMins: overtimeMins ?? 0 })
+  await api('/salaried_days', { method: 'PUT', body: { userId, date, breakMins: breakMins ?? 0, overtimeMins: overtimeMins ?? 0 } })
 }
 
 export async function getSalariedDaysForMonth(dateFrom, dateTo) {
   try {
-    const q = query(collection(db, 'salaried_days'), where('date', '>=', dateFrom), where('date', '<=', dateTo))
-    const snap = await getDocs(q)
-    const result = {}
-    snap.docs.forEach(d => {
-      const data = d.data()
-      result[`${data.userId}_${data.date}`] = data
-    })
-    return result
+    return await api('/salaried_days', { query: { dateFrom, dateTo } })
   } catch { return {} }
 }
 
@@ -120,97 +87,20 @@ export const PAY_ITEMS = [
 // Items that are not shown on the clock-out work selection screen
 export const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
 
-// Default users seeded on first run
-const DEFAULT_USERS = [
-  { id: 'USER001', name: '永谷 仁美', workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'],
-    itemRates: { 'アスレ':{normal:1480,sunday:1628},'スイム':{normal:1480,sunday:1776},'スイム短期':{normal:1628},'スイムベビー':{normal:1480,sunday:1628},'スイム成人':{normal:1480,sunday:1628},'フロント':{normal:1480,sunday:1628},'フロント短期':{normal:1628},'監視':{normal:1480,sunday:1628},'監視短期':{normal:1628},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'エアロ':{normal:1480,sunday:1628},'準備':{normal:1140},'交通費':{amount:1140} } },
-  { id: 'USER002', name: '夫馬 紀子', workItems: ['スイム','スイム短期','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1420,sunday:1704},'スイム短期':{normal:1562},'スイム成人':{normal:1420,sunday:1562},'フロント':{normal:1420,sunday:1562},'監視':{normal:1420,sunday:1562},'監視短期':{normal:1562},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:1140} } },
-  { id: 'USER003', name: '木村 千明', workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理','エアロ'],
-    itemRates: { 'アスレ':{normal:1420,sunday:1562},'スイム':{normal:1420,sunday:1704},'スイム短期':{normal:1562},'スイムベビー':{normal:1420,sunday:1562},'スイム成人':{normal:1420,sunday:1562},'フロント':{normal:1420,sunday:1562},'フロント短期':{normal:1540},'監視':{normal:1420,sunday:1562},'監視短期':{normal:1562},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'エアロ':{normal:1420,sunday:1562},'準備':{normal:1140},'交通費':{amount:135.3} } },
-  { id: 'USER004', name: '杉山 健太郎', workItems: ['ドライバー','研修会'],
-    itemRates: { 'ドライバー':{normal:1500},'研修会':{normal:1000},'準備':{normal:1140} } },
-  { id: 'USER005', name: '上出 哲哉', workItems: ['ドライバー'],
-    itemRates: { 'ドライバー':{normal:1300},'準備':{normal:1140},'交通費':{amount:86.1} } },
-  { id: 'USER006', name: '加藤 英民', workItems: ['ドライバー'],
-    itemRates: { 'ドライバー':{normal:1500},'準備':{normal:1140},'交通費':{amount:492} } },
-  { id: 'USER007', name: '福田 伊左男', workItems: ['ドライバー'],
-    itemRates: { 'ドライバー':{normal:1300},'準備':{normal:1140},'交通費':{amount:360.8} } },
-  { id: 'USER008', name: '鈴木 和美', workItems: ['ドライバー'],
-    itemRates: { 'ドライバー':{normal:1500},'準備':{normal:1140},'交通費':{amount:106.6} } },
-  { id: 'USER009', name: '桐山 健一', workItems: ['ドライバー'],
-    itemRates: { 'ドライバー':{normal:1300},'準備':{normal:1140},'交通費':{amount:492} } },
-  { id: 'USER010', name: '中山 文香', workItems: ['フロント','フロント短期','研修会','清掃','事務処理'],
-    itemRates: { 'フロント':{normal:1390,sunday:1529},'フロント短期':{normal:1529},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER011', name: '東條 曉美', workItems: ['スイム','スイム短期','スイムベビー','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1154,sunday:1384.8},'スイム短期':{normal:1269.4},'スイムベビー':{normal:1040,sunday:1144},'フロント':{normal:1230,sunday:1353},'フロント短期':{normal:1353},'監視':{normal:1230,sunday:1353},'監視短期':{normal:1353},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER012', name: '大澤 京子', workItems: ['スイム','スイム短期','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'フロント':{normal:1410,sunday:1551},'フロント短期':{normal:1551},'監視':{normal:1380,sunday:1518},'監視短期':{normal:1518},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER013', name: '田中 真粧美', workItems: ['フロント','フロント短期','研修会','清掃','事務処理'],
-    itemRates: { 'フロント':{normal:1280,sunday:1408},'フロント短期':{normal:1408},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:400} } },
-  { id: 'USER014', name: '野田 陽子', workItems: ['フロント','フロント短期','研修会','清掃','事務処理'],
-    itemRates: { 'フロント':{normal:1154,sunday:1269.4},'フロント短期':{normal:1269.4},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER015', name: '和田 那美', workItems: ['アスレ','フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
-    itemRates: { 'アスレ':{normal:1154,sunday:1269.4},'フロント':{normal:1154,sunday:1269.4},'フロント短期':{normal:1269.4},'監視':{normal:1154,sunday:1269.4},'監視短期':{normal:1269.4},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER016', name: '鈴木 清隆', workItems: ['スイム','スイム短期','スイム成人','監視','研修会','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1420,sunday:1704},'スイム短期':{normal:1562},'スイム成人':{normal:1420,sunday:1562},'監視':{normal:1090,sunday:1199},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:200.9} } },
-  { id: 'USER017', name: '滋野 峰子', workItems: ['スイム','スイム短期','スイムベビー','研修会','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'スイムベビー':{normal:1154,sunday:1269.4},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:1020} } },
-  { id: 'USER018', name: '岡田 利奈', workItems: ['スイム','スイム短期','スイムベビー','スイム成人','監視','研修会','清掃','事務処理','選手引率'],
-    itemRates: { 'スイム':{normal:1350,sunday:1620},'スイム短期':{normal:1485},'スイムベビー':{normal:1350,sunday:1485},'スイム成人':{normal:1350,sunday:1485},'監視':{normal:1350,sunday:1485},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'選手引率':{normal:1140},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER019', name: '緒方 幸代', workItems: ['アスレ','スイム','スイム短期','スイムベビー','スイム成人','フロント','監視','監視短期','研修会','清掃','事務処理'],
-    itemRates: { 'アスレ':{normal:1470,sunday:1617},'スイム':{normal:1470,sunday:1764},'スイム短期':{normal:1764},'スイムベビー':{normal:1470,sunday:1617},'スイム成人':{normal:1470,sunday:1617},'フロント':{normal:1470,sunday:1617},'監視':{normal:1470,sunday:1617},'監視短期':{normal:1617},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:840} } },
-  { id: 'USER020', name: 'アルベス・エゴン', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER021', name: '池戸 柊生', workItems: ['監視','監視短期','清掃','事務処理'],
-    itemRates: { '監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER022', name: '矢野 快晟', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1140,sunday:1368},'スイム短期':{normal:1254},'監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:1210} } },
-  { id: 'USER023', name: '山田 亜美', workItems: ['フロント','フロント短期','監視','監視短期','研修会','清掃','事務処理'],
-    itemRates: { 'フロント':{normal:1140,sunday:1254},'フロント短期':{normal:1254},'監視':{normal:1140,sunday:1254},'監視短期':{normal:1254},'研修会':{normal:1140,sunday:1254},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:0} } },
-  { id: 'USER024', name: '市野 圭子', workItems: ['スイム','スイム短期','監視','監視短期','清掃','事務処理'],
-    itemRates: { 'スイム':{normal:1400,sunday:1680},'スイム短期':{normal:1540},'監視':{normal:1400,sunday:1540},'監視短期':{normal:1540},'清掃':{normal:1140,sunday:1254},'事務処理':{normal:1140,sunday:1254},'準備':{normal:1140},'交通費':{amount:492} } },
-]
-
-export async function initDB() {
-  const snap = await getDocs(usersCol)
-  const existing = Object.fromEntries(snap.docs.map(d => [d.id, d.data()]))
-  const batch = writeBatch(db)
-  let hasChanges = false
-
-  DEFAULT_USERS.forEach(u => {
-    const cur = existing[u.id]
-    if (!cur) return
-    if (!cur.workItems || cur.workItems.length === 0) {
-      batch.update(doc(db, 'users', u.id), { workItems: u.workItems || [], itemRates: u.itemRates || {} })
-      hasChanges = true
-    } else if (!cur.itemRates) {
-      batch.update(doc(db, 'users', u.id), { itemRates: u.itemRates || {} })
-      hasChanges = true
-    }
-  })
-
-  if (hasChanges) await batch.commit()
-}
+export async function initDB() {}
 
 export async function resolveUser(qrValue) {
-  const d = await getDoc(doc(db, 'users', qrValue))
-  if (!d.exists()) return null
-  return { id: d.id, ...d.data() }
+  if (!qrValue) return null
+  return api(`/users/${enc(qrValue)}`)
 }
 
 export async function resolveUserByPin(pin) {
   if (!pin) return null
-  const q = query(collection(db, 'users'), where('pin', '==', pin))
-  const snap = await getDocs(q)
-  if (snap.empty) return null
-  const d = snap.docs[0]
-  return { id: d.id, ...d.data() }
+  return api('/users', { query: { pin } })
 }
 
 export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork, sessionId: providedSessionId }) {
   const now = new Date()
-  const timestamp = now.toISOString()
   const date = now.toLocaleDateString('ja-JP', {
     year: 'numeric', month: '2-digit', day: '2-digit'
   }).replace(/\//g, '-')
@@ -221,31 +111,25 @@ export async function saveLog({ userId, workType, workItems, logType, transportC
     ? Object.entries(workItems).filter(([, m]) => m > 0).map(([t, m]) => `${t}:${m}`).join(',')
     : (workType || '')
   const sessionId = providedSessionId || crypto.randomUUID()
-  const logData = {
-    user_id: userId,
-    work_type: workTypeStr,
-    log_type: logType || '',
-    timestamp,
-    date,
-    time,
-    synced: 0,
-    session_id: sessionId
-  }
-  if (workItems) logData.work_items = workItems
-  if (transportCount) logData.transport_count = transportCount
-  if (firstWork) logData.first_work = firstWork
-  if (lastWork) logData.last_work = lastWork
-  const ref = await addDoc(logsCol, logData)
-  return { id: ref.id, sessionId }
-}
-
-export async function setFirstLastWork(logId, firstWork, lastWork) {
-  const updates = {}
-  if (firstWork != null) updates.first_work = firstWork
-  if (lastWork != null) updates.last_work = lastWork
-  if (Object.keys(updates).length > 0) {
-    await updateDoc(doc(db, 'logs', logId), updates)
-  }
+  const id = crypto.randomUUID()
+  await api('/logs', {
+    method: 'POST',
+    body: {
+      id,
+      user_id: userId,
+      work_type: workTypeStr,
+      log_type: logType || '',
+      timestamp: now.toISOString(),
+      date,
+      time,
+      session_id: sessionId,
+      work_items: workItems || null,
+      transport_count: transportCount || null,
+      first_work: firstWork || null,
+      last_work: lastWork || null,
+    },
+  })
+  return { id, sessionId }
 }
 
 // Parse work_items from a log entry (handles both new object and legacy string format)
@@ -261,43 +145,26 @@ export function getWorkItems(log) {
 }
 
 export async function getClockInTime(userId) {
-  const today = getTodayDate()
-  const q = query(logsCol, where('date', '==', today))
-  const snap = await getDocs(q)
-  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    .filter(l => l.user_id === userId && l.log_type === '出勤')
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-  return logs.length > 0 ? logs[logs.length - 1] : null
+  return api('/logs/check_in', { query: { userId, date: getTodayDate() } })
 }
 
 export async function getClockInTimeForDate(userId, date) {
-  const q = query(logsCol, where('date', '==', date))
-  const snap = await getDocs(q)
-  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    .filter(l => l.user_id === userId && l.log_type === '出勤')
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-  return logs.length > 0 ? logs[logs.length - 1] : null
+  return api('/logs/check_in', { query: { userId, date } })
 }
 
 // ─── Work Reports (業務時間申告) ────────────────────────────────────────────────
 
 export async function saveWorkReport(userId, dateStr, items) {
   const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
-  const docRef = doc(db, 'work_reports', `${userId}_${dateStr}`)
-  await setDoc(docRef, { userId, date: dateStr, items: filtered, updatedAt: new Date().toISOString() })
+  await api('/work_reports', { method: 'PUT', body: { userId, date: dateStr, items: filtered } })
 }
 
 export async function getWorkReport(userId, dateStr) {
-  const snap = await getDoc(doc(db, 'work_reports', `${userId}_${dateStr}`))
-  return snap.exists() ? (snap.data().items || {}) : {}
+  return api('/work_reports', { query: { userId, date: dateStr } })
 }
 
 export async function getWorkReportsForRange(dateFrom, dateTo) {
-  const q = query(collection(db, 'work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))
-  const snap = await getDocs(q)
-  const result = {}
-  snap.docs.forEach(d => { result[d.id] = d.data().items || {} })
-  return result
+  return api('/work_reports', { query: { dateFrom, dateTo } })
 }
 
 export function generateSessionId() {
@@ -305,395 +172,108 @@ export function generateSessionId() {
 }
 
 export async function saveSessionWorkReport(userId, dateStr, sessionId, items) {
-  const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
-  const docRef = doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)
-  await setDoc(docRef, { userId, date: dateStr, sessionId, items: filtered, updatedAt: new Date().toISOString() })
+  await api('/session_work_reports', { method: 'PUT', body: { userId, date: dateStr, sessionId, items } })
 }
 
 export async function getSessionWorkReportsForDate(userId, dateStr) {
-  const q = query(collection(db, 'session_work_reports'), where('userId', '==', userId), where('date', '==', dateStr))
-  const snap = await getDocs(q)
-  const result = {}
-  snap.docs.forEach(d => { result[d.data().sessionId] = d.data().items || {} })
-  return result
+  return api('/session_work_reports', { query: { userId, date: dateStr } })
 }
 
-// 従業員カレンダー用: ユーザーの全session_work_reportsとwork_reportsを1回のPromise.allで取得
+// 従業員カレンダー用: ユーザーの全session_work_reportsとwork_reports
 export async function getSessionWorkReportsForUser(userId) {
-  const [sessionSnap, legacySnap] = await Promise.all([
-    getDocs(query(collection(db, 'session_work_reports'), where('userId', '==', userId))),
-    getDocs(query(collection(db, 'work_reports'), where('userId', '==', userId)))
-  ])
-  const bySession = {}     // { sessionId: items }
-  const sessionsByDate = {} // { dateStr: Set<sessionId> } — 業務入力済のsessionId集合
-  sessionSnap.docs.forEach(d => {
-    const data = d.data()
-    if (!data.sessionId) return
-    bySession[data.sessionId] = data.items || {}
-    const hasWork = Object.values(data.items || {}).some(m => m > 0)
-    if (hasWork) {
-      if (!sessionsByDate[data.date]) sessionsByDate[data.date] = new Set()
-      sessionsByDate[data.date].add(data.sessionId)
-    }
-  })
-  const legacyWorkedDates = new Set() // 旧形式で業務入力済の日付
-  legacySnap.docs.forEach(d => {
-    const data = d.data()
-    if (Object.values(data.items || {}).some(m => m > 0)) legacyWorkedDates.add(data.date)
-  })
-  return { bySession, sessionsByDate, legacyWorkedDates }
+  const r = await api('/session_work_reports', { query: { userId } })
+  const sessionsByDate = {}
+  Object.entries(r.sessionsByDate || {}).forEach(([d, ids]) => { sessionsByDate[d] = new Set(ids) })
+  return { bySession: r.bySession || {}, sessionsByDate, legacyWorkedDates: new Set(r.legacyWorkedDates || []) }
 }
 
 export async function getSessionWorkReportsForRange(dateFrom, dateTo) {
-  const q = query(collection(db, 'session_work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))
-  const snap = await getDocs(q)
-  const result = {}
-  snap.docs.forEach(d => {
-    const data = d.data()
-    const key = `${data.userId}_${data.date}`
-    if (!result[key]) result[key] = {}
-    Object.entries(data.items || {}).forEach(([type, mins]) => {
-      result[key][type] = (result[key][type] || 0) + (mins || 0)
-    })
-  })
-  return result
+  return api('/session_work_reports', { query: { dateFrom, dateTo } })
 }
 
 export async function getSessionWorkStatusForUserRange(userId, dateFrom, dateTo) {
-  const [sessionSnap, legacySnap] = await Promise.all([
-    getDocs(query(collection(db, 'session_work_reports'), where('userId', '==', userId))),
-    getDocs(query(collection(db, 'work_reports'), where('userId', '==', userId)))
-  ])
+  const r = await api('/session_work_reports/status', { query: { userId, dateFrom, dateTo } })
   const sessionByDate = {}
-  const sessionItemsByDate = {}
-  sessionSnap.docs.forEach(d => {
-    const data = d.data()
-    if (data.date < dateFrom || data.date > dateTo) return
-    const hasWork = Object.values(data.items || {}).some(m => m > 0)
-    if (hasWork) {
-      if (!sessionByDate[data.date]) { sessionByDate[data.date] = new Set(); sessionItemsByDate[data.date] = {} }
-      if (data.sessionId) sessionByDate[data.date].add(data.sessionId)
-      Object.entries(data.items || {}).forEach(([t, v]) => {
-        sessionItemsByDate[data.date][t] = (sessionItemsByDate[data.date][t] || 0) + v
-      })
-    }
-  })
-  const legacyDates = new Set()
-  const legacyItemsByDate = {}
-  legacySnap.docs.forEach(d => {
-    const data = d.data()
-    if (data.date < dateFrom || data.date > dateTo) return
-    const hasWork = Object.values(data.items || {}).some(m => m > 0)
-    if (hasWork) { legacyDates.add(data.date); legacyItemsByDate[data.date] = data.items || {} }
-  })
-  const conflictDates = new Set()
-  for (const date of legacyDates) {
-    if (!sessionByDate[date]) continue
-    const ses = sessionItemsByDate[date] || {}, leg = legacyItemsByDate[date] || {}
-    const sk = Object.keys(ses).sort(), lk = Object.keys(leg).filter(k => leg[k] > 0).sort()
-    if (sk.join() !== lk.join() || sk.some(k => ses[k] !== leg[k])) conflictDates.add(date)
-  }
-  return { sessionByDate, legacyDates, conflictDates }
+  Object.entries(r.sessionByDate || {}).forEach(([d, ids]) => { sessionByDate[d] = new Set(ids) })
+  return { sessionByDate, legacyDates: new Set(r.legacyDates || []), conflictDates: new Set(r.conflictDates || []) }
 }
 
 export async function deleteSessionWorkReport(userId, dateStr, sessionId) {
-  try { await deleteDoc(doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)) } catch {}
+  try { await api('/session_work_reports', { method: 'DELETE', query: { userId, date: dateStr, sessionId } }) } catch {}
 }
 
 export async function deleteAllSessionWorkReportsForDate(userId, dateStr) {
-  const q = query(collection(db, 'session_work_reports'), where('userId', '==', userId), where('date', '==', dateStr))
-  const snap = await getDocs(q)
-  if (snap.docs.length === 0) return
-  const batch = writeBatch(db)
-  snap.docs.forEach(d => batch.delete(d.ref))
-  await batch.commit()
+  await api('/session_work_reports', { method: 'DELETE', query: { userId, date: dateStr } })
 }
 
 export async function getMergedWorkReportsForRange(dateFrom, dateTo) {
-  const [sessionSnap, legacySnap] = await Promise.all([
-    getDocs(query(collection(db, 'session_work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo))),
-    getDocs(query(collection(db, 'work_reports'), where('date', '>=', dateFrom), where('date', '<=', dateTo)))
-  ])
-  const sessionData = {}
-  const sessionHasValid = new Set()
-  sessionSnap.docs.forEach(d => {
-    const data = d.data()
-    const key = `${data.userId}_${data.date}`
-    if (!sessionData[key]) sessionData[key] = {}
-    Object.entries(data.items || {}).forEach(([type, mins]) => {
-      if (mins > 0) {
-        sessionData[key][type] = (sessionData[key][type] || 0) + mins
-        sessionHasValid.add(key)
-      }
-    })
-  })
-  const legacyData = {}
-  legacySnap.docs.forEach(d => {
-    const items = d.data().items || {}
-    if (Object.values(items).some(m => m > 0)) legacyData[d.id] = items
-  })
-  const result = {}
-  const allKeys = new Set([...Object.keys(sessionData), ...Object.keys(legacyData)])
-  allKeys.forEach(key => {
-    if (sessionHasValid.has(key)) result[key] = sessionData[key]
-    else if (legacyData[key]) result[key] = legacyData[key]
-  })
-  return result
+  return api('/work_reports/merged', { query: { dateFrom, dateTo } })
 }
 
 export async function getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo) {
-  const snap = await getDocs(query(
-    collection(db, 'session_work_reports'),
-    where('date', '>=', dateFrom),
-    where('date', '<=', dateTo)
-  ))
-  const result = {}
-  snap.docs.forEach(d => {
-    const data = d.data()
-    if (!data.sessionId) return
-    const key = `${data.userId}_${data.date}_${data.sessionId}`
-    result[key] = data.items || {}
-  })
-  return result
+  return api('/session_work_reports/with_sessions', { query: { dateFrom, dateTo } })
 }
 
-export async function saveDayEditBatch({ userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds }) {
-  const batch = writeBatch(db)
-  const now = new Date().toISOString()
-  for (const log of (logsToDelete || [])) batch.delete(doc(db, 'logs', log.id))
-  for (const { id, time } of (logsToUpdate || [])) {
-    const [y, mo, d] = dateStr.split('-').map(Number)
-    const [h, m] = time.split(':').map(Number)
-    const dt = new Date(y, mo - 1, d, h, m, 0)
-    batch.update(doc(db, 'logs', id), { time: time + ':00', timestamp: dt.toISOString() })
-  }
-  for (const { logType, time, sessionId } of (logsToCreate || [])) {
-    const logRef = doc(logsCol)
-    const [y, mo, d] = dateStr.split('-').map(Number)
-    const [h, m] = time.split(':').map(Number)
-    const dt = new Date(y, mo - 1, d, h, m, 0)
-    batch.set(logRef, { user_id: userId, log_type: logType, date: dateStr, time: time + ':00', work_type: '', session_id: sessionId, timestamp: dt.toISOString(), synced: 0 })
-  }
-  if (!isSalaried) {
-    for (const { sessionId, items } of (sessionWorkData || [])) {
-      const ref = doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`)
-      const hasValidItems = Object.values(items || {}).some(m => m > 0)
-      if (hasValidItems) {
-        batch.set(ref, { userId, date: dateStr, sessionId, items, updatedAt: now })
-      } else {
-        batch.delete(ref)
-      }
-    }
-    for (const sessionId of (deletedSessionIds || [])) {
-      batch.delete(doc(db, 'session_work_reports', `${userId}_${dateStr}_${sessionId}`))
-    }
-  }
-  await batch.commit()
-}
-
-export async function migrateSessionWorkToReports() {
-  const snap = await getDocs(logsCol)
-  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-  const byUserDate = {}
-  logs.forEach(log => {
-    if (!log.work_type && !log.work_items) return
-    const key = `${log.user_id}_${log.date}`
-    if (!byUserDate[key]) byUserDate[key] = { userId: log.user_id, date: log.date, items: {} }
-    const items = log.work_items && typeof log.work_items === 'object'
-      ? log.work_items
-      : (log.work_type ? { [log.work_type]: log.work_minutes || 0 } : {})
-    Object.entries(items).forEach(([type, mins]) => {
-      byUserDate[key].items[type] = (byUserDate[key].items[type] || 0) + Number(mins)
-    })
-  })
-  const batch = writeBatch(db)
-  let count = 0
-  for (const [key, data] of Object.entries(byUserDate)) {
-    const ref = doc(db, 'work_reports', key)
-    const existing = await getDoc(ref)
-    if (!existing.exists()) {
-      const filtered = Object.fromEntries(Object.entries(data.items).filter(([, m]) => m > 0))
-      batch.set(ref, { userId: data.userId, date: data.date, items: filtered, updatedAt: new Date().toISOString() })
-      count++
-      if (count % 400 === 0) await batch.commit()
-    }
-  }
-  if (count % 400 !== 0) await batch.commit()
-  return count
+export async function saveDayEditBatch(payload) {
+  await api('/batch/day_edit', { method: 'POST', body: payload })
 }
 
 export async function isCheckedIn(userId) {
-  const today = getTodayDate()
-  const q = query(logsCol, where('user_id', '==', userId))
-  const snap = await getDocs(q)
-  const logs = snap.docs.map(d => d.data()).filter(l => l.date === today)
-  const ins = logs.filter(l => l.log_type === '出勤').length
-  const outs = logs.filter(l => l.log_type === '退勤').length
-  return ins > outs
+  const r = await api('/logs/is_checked_in', { query: { userId, date: getTodayDate() } })
+  return r.checkedIn
 }
 
 export async function getLogs({ date, dateFrom, dateTo, userId } = {}) {
-  let q
-  if (dateFrom && dateTo) {
-    q = query(logsCol, where('date', '>=', dateFrom), where('date', '<=', dateTo))
-  } else if (dateFrom) {
-    q = query(logsCol, where('date', '>=', dateFrom))
-  } else if (dateTo) {
-    q = query(logsCol, where('date', '<=', dateTo))
-  } else {
-    q = query(logsCol)
-  }
-  const snap = await getDocs(q)
-  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-  if (date) results = results.filter(l => l.date === date)
-  if (userId) results = results.filter(l => l.user_id === userId)
-  return results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+  return api('/logs', { query: { date, dateFrom, dateTo, userId } })
 }
 
 export async function getUsers() {
-  const snap = await getDocs(usersCol)
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  return api('/users')
 }
 
 export async function upsertUser(user) {
-  const { id, ...data } = user
-  await setDoc(doc(db, 'users', id), data, { merge: true })
+  await api(`/users/${enc(user.id)}`, { method: 'PUT', body: user })
 }
 
 export async function deleteUserDoc(id) {
-  await deleteDoc(doc(db, 'users', id))
+  await api(`/users/${enc(id)}`, { method: 'DELETE', query: { docOnly: 'true' } })
 }
 
 export async function deleteUser(id) {
-  const q = query(logsCol, where('user_id', '==', id))
-  const snap = await getDocs(q)
-  const batch = writeBatch(db)
-  snap.docs.forEach(d => batch.delete(d.ref))
-  batch.delete(doc(db, 'users', id))
-  await batch.commit()
+  await api(`/users/${enc(id)}`, { method: 'DELETE' })
 }
 
 export async function deleteLog(id) {
-  await deleteDoc(doc(db, 'logs', id))
-}
-
-export async function seedSampleData() {
-  const users = await getUsers()
-  if (users.length === 0) return 0
-
-  const today = new Date()
-  today.setHours(23, 59, 59, 999)
-  const start = new Date()
-  start.setMonth(start.getMonth() - 3)
-  start.setDate(1)
-  start.setHours(0, 0, 0, 0)
-
-  const SEED_TYPES = ['現場', '清掃', '事務']
-
-  function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min }
-  function pad(n) { return String(n).padStart(2, '0') }
-  function fmtDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
-
-  const allDocs = []
-
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    const dow = d.getDay()
-    const workRate = (dow === 0 || dow === 6) ? 0.15 : 0.72
-
-    for (const user of users) {
-      if (Math.random() > workRate) continue
-
-      const dateStr = fmtDate(d)
-      const inH = rnd(8, 9)
-      const inM = inH === 9 ? rnd(0, 30) : rnd(0, 59)
-      const outH = rnd(17, 19)
-      const outM = outH === 19 ? rnd(0, 30) : rnd(0, 59)
-      const totalMins = (outH * 60 + outM) - (inH * 60 + inM)
-
-      const typeCount = Math.random() < 0.4 ? 2 : 1
-      const shuffled = [...SEED_TYPES].sort(() => Math.random() - 0.5)
-      const chosen = shuffled.slice(0, typeCount)
-      const workTypeStr = typeCount === 1
-        ? `${chosen[0]}:${totalMins}`
-        : (() => {
-            const split = rnd(Math.floor(totalMins * 0.3), Math.floor(totalMins * 0.7))
-            return `${chosen[0]}:${split},${chosen[1]}:${totalMins - split}`
-          })()
-
-      const inDt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), inH, inM, 0)
-      const outDt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), outH, outM, 0)
-
-      allDocs.push({ user_id: user.id, work_type: '', log_type: '出勤', timestamp: inDt.toISOString(), date: dateStr, time: `${pad(inH)}:${pad(inM)}:00`, synced: 0 })
-      allDocs.push({ user_id: user.id, work_type: workTypeStr, log_type: '退勤', timestamp: outDt.toISOString(), date: dateStr, time: `${pad(outH)}:${pad(outM)}:00`, synced: 0 })
-    }
-  }
-
-  for (let i = 0; i < allDocs.length; i += 400) {
-    const batch = writeBatch(db)
-    allDocs.slice(i, i + 400).forEach(data => batch.set(doc(logsCol), data))
-    await batch.commit()
-  }
-
-  return allDocs.length
+  await api(`/logs/${enc(id)}`, { method: 'DELETE' })
 }
 
 export async function getTodayStatuses() {
-  const today = getTodayDate()
-  const q = query(logsCol, where('date', '==', today))
-  const snap = await getDocs(q)
-  const groups = {}
-  snap.docs.forEach(d => {
-    const l = d.data()
-    if (!groups[l.user_id]) groups[l.user_id] = { ins: 0, outs: 0 }
-    if (l.log_type === '出勤') groups[l.user_id].ins++
-    else if (l.log_type === '退勤') groups[l.user_id].outs++
-  })
-  const result = {}
-  for (const [uid, g] of Object.entries(groups)) {
-    result[uid] = g.ins > g.outs
-  }
-  return result
+  return api('/logs/today_statuses', { query: { date: getTodayDate() } })
 }
 
 export async function saveLogManual({ userId, workType, logType, date, time, firstWork, lastWork, sessionId }) {
   const [y, mo, d] = date.split('-').map(Number)
   const [h, m] = time.split(':').map(Number)
   const dt = new Date(y, mo - 1, d, h, m, 0)
-  const data = {
-    user_id: userId,
-    work_type: workType || '',
-    log_type: logType,
-    timestamp: dt.toISOString(),
-    date,
-    time: time + ':00',
-    synced: 0
-  }
-  if (firstWork) data.first_work = firstWork
-  if (lastWork) data.last_work = lastWork
-  if (sessionId) data.session_id = sessionId
-  await addDoc(logsCol, data)
-}
-
-export async function setApprovedTime(logId, approvedTime) {
-  await updateDoc(doc(db, 'logs', logId), { approved_time: approvedTime })
-}
-
-export async function updateLogWorkItems(logId, workItems) {
-  const workTypeStr = Object.entries(workItems).filter(([, m]) => m > 0).map(([t, m]) => `${t}:${m}`).join(',')
-  await updateDoc(doc(db, 'logs', logId), { work_type: workTypeStr, work_items: workItems })
+  await api('/logs', {
+    method: 'POST',
+    body: {
+      id: crypto.randomUUID(),
+      user_id: userId,
+      work_type: workType || '',
+      log_type: logType,
+      timestamp: dt.toISOString(),
+      date,
+      time: time + ':00',
+      session_id: sessionId || null,
+      first_work: firstWork || null,
+      last_work: lastWork || null,
+    },
+  })
 }
 
 export async function updateLogTime(id, timeStr) {
-  const d = await getDoc(doc(db, 'logs', id))
-  if (!d.exists()) return
-  const logData = d.data()
-  const [year, month, day] = logData.date.split('-').map(Number)
-  const [h, m] = timeStr.split(':').map(Number)
-  const dt = new Date(year, month - 1, day, h, m, 0)
-  await updateDoc(doc(db, 'logs', id), {
-    time: timeStr + ':00',
-    timestamp: dt.toISOString()
-  })
+  await api(`/logs/${enc(id)}`, { method: 'PATCH', body: { time: timeStr } })
 }
 
 // Returns the applicable { normal, sunday } rates for a given date given a user's itemRates entry for one type
@@ -711,30 +291,12 @@ export function getRatesForDate(rateObj, dateStr) {
   return result
 }
 
-// ─── Excel export helpers ──────────────────────────────────────────────────────
-
-function formatWorkType(wt) {
-  if (!wt) return ''
-  return wt.split(',').map(entry => {
-    const [type, mins] = entry.split(':')
-    if (mins === undefined) return type
-    const h = Math.floor(Number(mins) / 60)
-    const m = Number(mins) % 60
-    return h > 0 ? `${type} ${h}時間${m}分` : `${type} ${m}分`
-  }).join(' / ')
-}
 
 // Export monthly attendance register (出勤簿) as XLSX
 // Fully dynamic columns: one sheet per user, time and pay sections separated
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
-  let users
-  try {
-    const snap = await getDocsFromServer(usersCol)
-    users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-  } catch {
-    users = await getUsers()
-  }
+  const users = await getUsers()
 
   const [ym_y_str, ym_m_str] = (dateFrom || '').split('-')
   const ym_y = Number(ym_y_str)
@@ -919,30 +481,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   }
 
   const enc = new TextEncoder()
-
-  // Fetch overtime applications for salaried employees
-  const overtimeAppsByUser = {}
-  try {
-    const otSnap = await getDocs(collection(db, 'overtime_apps'))
-    otSnap.docs.forEach(d => {
-      const data = d.data()
-      if (!overtimeAppsByUser[data.userId]) overtimeAppsByUser[data.userId] = {}
-      if ((!dateFrom || data.date >= dateFrom) && (!dateTo || data.date <= dateTo)) {
-        overtimeAppsByUser[data.userId][data.date] = data.minutes
-      }
-    })
-  } catch {}
-
-  // Fetch salaried_days for salaried employees
-  const salariedDaysData = {}
-  try {
-    const sdQ = query(collection(db, 'salaried_days'), where('date', '>=', dateFrom || ''), where('date', '<=', dateTo || '9999-99-99'))
-    const sdSnap = await getDocs(sdQ)
-    sdSnap.docs.forEach(d => {
-      const data = d.data()
-      salariedDaysData[`${data.userId}_${data.date}`] = data
-    })
-  } catch {}
 
   // Fetch work_reports: prefer session data over legacy, merge correctly
   const [allWorkReports, allSessionWorkBySession] = await Promise.all([
@@ -1509,42 +1047,3 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
   return zipSync(out, { level: 6 })
 }
-
-export async function exportXLSX({ dateFrom, dateTo, userId } = {}) {
-  const logs = await getLogs({ dateFrom, dateTo })
-  const users = await getUsers()
-  const userMap = Object.fromEntries(users.map(u => [u.id, u.name]))
-
-  const wb = XLSX.utils.book_new()
-  const targetUsers = userId ? users.filter(u => u.id === userId) : users
-
-  for (const user of targetUsers) {
-    const userLogs = logs
-      .filter(l => l.user_id === user.id)
-      .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
-
-    if (userLogs.length === 0 && !userId) continue
-
-    const header = ['ID', 'ユーザーID', '氏名', '種別', '作業内容', '日付', '時刻']
-    const rows = userLogs.map(log => [
-      log.id,
-      log.user_id,
-      userMap[log.user_id] || '',
-      log.log_type || '',
-      formatWorkType(log.work_type),
-      log.date,
-      log.time || ''
-    ])
-
-    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
-    XLSX.utils.book_append_sheet(wb, ws, user.name.substring(0, 31))
-  }
-
-  if (wb.SheetNames.length === 0) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['データなし']]), 'データなし')
-  }
-
-  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
-}
-
-export default db

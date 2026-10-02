@@ -8,7 +8,7 @@ import {
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
-  saveWorkReport, getWorkReport, migrateSessionWorkToReports, getWorkReportsForRange,
+  saveWorkReport, getWorkReport, getWorkReportsForRange,
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
   deleteSessionWorkReport, deleteAllSessionWorkReportsForDate,
   getSessionWorkStatusForUserRange, getMergedWorkReportsForRange,

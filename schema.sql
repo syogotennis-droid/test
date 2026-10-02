@@ -1,15 +1,13 @@
 -- D1 schema for QR Attendance System
 -- Apply with: wrangler d1 execute qr-attendance-db --file=./schema.sql
 
+-- data: all user fields except id as JSON (name, employeeType, workItems, itemRates, ...)
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL DEFAULT '',
-  employee_type TEXT DEFAULT 'hourly',
-  work_items TEXT DEFAULT '[]',
-  item_rates TEXT DEFAULT '{}',
   pin TEXT DEFAULT '',
-  email TEXT DEFAULT ''
+  data TEXT NOT NULL DEFAULT '{}'
 );
+CREATE INDEX IF NOT EXISTS idx_users_pin ON users(pin);
 
 CREATE TABLE IF NOT EXISTS logs (
   id TEXT PRIMARY KEY,
