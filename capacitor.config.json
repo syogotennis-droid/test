@@ -3,7 +3,6 @@
   "appName": "QR打刻システム",
   "webDir": "dist",
   "android": {
-    "webContentsDebuggingEnabled": true,
     "allowMixedContent": false
   }
 }
