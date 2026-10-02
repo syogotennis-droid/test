@@ -11,6 +11,15 @@ function setToken(key, value) {
   try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key) } catch {}
 }
 
+function offlineError(cause) {
+  const e = new Error('オフラインです')
+  e.offline = true
+  e.cause = cause
+  return e
+}
+
+const API_TIMEOUT_MS = 8000
+
 async function api(path, { method = 'GET', query, body } = {}) {
   let url = API_BASE + path
   if (query) {
@@ -24,15 +33,122 @@ async function api(path, { method = 'GET', query, body } = {}) {
   const adminT = getToken(ADMIN_TOKEN_KEY), deviceT = getToken(DEVICE_TOKEN_KEY)
   if (adminT) headers['X-Admin-Token'] = adminT
   if (deviceT) headers['X-Device-Token'] = deviceT
-  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw offlineError()
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS)
+  let res
+  try {
+    res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal })
+  } catch (e) {
+    throw offlineError(e)
+  } finally {
+    clearTimeout(timer)
+  }
   if (res.status === 401) {
     const j = await res.json().catch(() => ({}))
     setToken(j.need === 'device' ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, null)
     window.dispatchEvent(new CustomEvent('auth-required', { detail: { need: j.need } }))
     throw new Error('認証が必要です')
   }
-  if (!res.ok) throw new Error(`API ${method} ${path} failed (${res.status})`)
+  if (!res.ok) {
+    const e = new Error(`API ${method} ${path} failed (${res.status})`)
+    e.status = res.status
+    throw e
+  }
   return res.json()
+}
+
+// ─── Offline support for punching ─────────────────────────────────────────────
+// Writes go to a localStorage outbox first and are sent in order; the server
+// side is idempotent (client-generated log ids, upserts), so resending is safe.
+const OUTBOX_KEY = 'outbox'
+const LOCAL_PUNCHES_KEY = 'localPunches'
+const TODAY_LOGS_CACHE_KEY = 'todayLogsCache'
+const USERS_CACHE_KEY = 'usersCache'
+
+function readJSON(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
+}
+function writeJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+}
+
+function notifyOutbox() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('outbox-change'))
+}
+
+function enqueue(item) {
+  // a newer upsert of the same record replaces an unsent older one
+  const box = readJSON(OUTBOX_KEY, []).filter(x => !(item.key && x.key === item.key))
+  box.push(item)
+  writeJSON(OUTBOX_KEY, box)
+  notifyOutbox()
+}
+
+export function getPendingCount() {
+  return readJSON(OUTBOX_KEY, []).length
+}
+
+let flushing = null
+export function flushOutbox() {
+  if (!flushing) flushing = doFlush().finally(() => { flushing = null })
+  return flushing
+}
+
+async function doFlush() {
+  for (;;) {
+    const box = readJSON(OUTBOX_KEY, [])
+    if (box.length === 0) return
+    const item = box[0]
+    try {
+      await api(item.path, { method: item.method, body: item.body })
+    } catch (e) {
+      if (e.offline || e.message === '認証が必要です' || (e.status && e.status >= 500)) return
+      console.error('送信できないデータを破棄しました', item, e)
+    }
+    writeJSON(OUTBOX_KEY, readJSON(OUTBOX_KEY, []).filter(x => x.qid !== item.qid))
+    notifyOutbox()
+  }
+}
+
+// Call once from the punch app; returns a cleanup function.
+export function startOutboxSync() {
+  const onOnline = () => flushOutbox()
+  window.addEventListener('online', onOnline)
+  const t = setInterval(flushOutbox, 30000)
+  flushOutbox()
+  return () => { window.removeEventListener('online', onOnline); clearInterval(t) }
+}
+
+function rememberLocalPunch(log) {
+  const today = getTodayDate()
+  const list = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.date === today)
+  list.push(log)
+  writeJSON(LOCAL_PUNCHES_KEY, list)
+}
+
+// Today's logs for one user: server copy (or last cached copy when offline)
+// plus punches made on this device that the server may not have yet.
+export async function getTodayUserLogs(userId) {
+  const today = getTodayDate()
+  const cache = readJSON(TODAY_LOGS_CACHE_KEY, {})
+  let serverLogs
+  try {
+    serverLogs = await api('/logs', { query: { userId, date: today } })
+    cache[userId] = { date: today, logs: serverLogs }
+    Object.keys(cache).forEach(k => { if (cache[k].date !== today) delete cache[k] })
+    writeJSON(TODAY_LOGS_CACHE_KEY, cache)
+  } catch (e) {
+    if (!e.offline) throw e
+    serverLogs = cache[userId]?.date === today ? cache[userId].logs : []
+  }
+  const ids = new Set(serverLogs.map(l => l.id))
+  const local = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.user_id === userId && l.date === today && !ids.has(l.id))
+  return [...serverLogs, ...local].sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
+}
+
+function cacheUsers(users) {
+  writeJSON(USERS_CACHE_KEY, users.map(u => ({ id: u.id, name: u.name, employeeType: u.employeeType, workItems: u.workItems || [] })))
 }
 
 const enc = encodeURIComponent
@@ -140,9 +256,15 @@ export async function initDB() {}
 
 export async function resolveUser(qrValue) {
   if (!qrValue) return null
-  return api(`/users/${enc(qrValue)}`)
+  try {
+    return await api(`/users/${enc(qrValue)}`)
+  } catch (e) {
+    if (!e.offline) throw e
+    return readJSON(USERS_CACHE_KEY, []).find(u => u.id === qrValue) || null
+  }
 }
 
+// PINs are never stored on the device, so PIN login needs the network.
 export async function resolveUserByPin(pin) {
   if (!pin) return null
   return api('/users', { query: { pin } })
@@ -161,23 +283,23 @@ export async function saveLog({ userId, workType, workItems, logType, transportC
     : (workType || '')
   const sessionId = providedSessionId || crypto.randomUUID()
   const id = crypto.randomUUID()
-  await api('/logs', {
-    method: 'POST',
-    body: {
-      id,
-      user_id: userId,
-      work_type: workTypeStr,
-      log_type: logType || '',
-      timestamp: now.toISOString(),
-      date,
-      time,
-      session_id: sessionId,
-      work_items: workItems || null,
-      transport_count: transportCount || null,
-      first_work: firstWork || null,
-      last_work: lastWork || null,
-    },
-  })
+  const log = {
+    id,
+    user_id: userId,
+    work_type: workTypeStr,
+    log_type: logType || '',
+    timestamp: now.toISOString(),
+    date,
+    time,
+    session_id: sessionId,
+    work_items: workItems || null,
+    transport_count: transportCount || null,
+    first_work: firstWork || null,
+    last_work: lastWork || null,
+  }
+  rememberLocalPunch(log)
+  enqueue({ qid: id, path: '/logs', method: 'POST', body: log })
+  await flushOutbox()
   return { id, sessionId }
 }
 
@@ -194,7 +316,8 @@ export function getWorkItems(log) {
 }
 
 export async function getClockInTime(userId) {
-  return api('/logs/check_in', { query: { userId, date: getTodayDate() } })
+  const ins = (await getTodayUserLogs(userId)).filter(l => l.log_type === '出勤')
+  return ins.length ? ins[ins.length - 1] : null
 }
 
 export async function getClockInTimeForDate(userId, date) {
@@ -205,7 +328,9 @@ export async function getClockInTimeForDate(userId, date) {
 
 export async function saveWorkReport(userId, dateStr, items) {
   const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
-  await api('/work_reports', { method: 'PUT', body: { userId, date: dateStr, items: filtered } })
+  const key = `wr:${userId}_${dateStr}`
+  enqueue({ qid: crypto.randomUUID(), key, path: '/work_reports', method: 'PUT', body: { userId, date: dateStr, items: filtered } })
+  await flushOutbox()
 }
 
 export async function getWorkReport(userId, dateStr) {
@@ -221,7 +346,9 @@ export function generateSessionId() {
 }
 
 export async function saveSessionWorkReport(userId, dateStr, sessionId, items) {
-  await api('/session_work_reports', { method: 'PUT', body: { userId, date: dateStr, sessionId, items } })
+  const key = `swr:${userId}_${dateStr}_${sessionId}`
+  enqueue({ qid: crypto.randomUUID(), key, path: '/session_work_reports', method: 'PUT', body: { userId, date: dateStr, sessionId, items } })
+  await flushOutbox()
 }
 
 export async function getSessionWorkReportsForDate(userId, dateStr) {
@@ -268,8 +395,10 @@ export async function saveDayEditBatch(payload) {
 }
 
 export async function isCheckedIn(userId) {
-  const r = await api('/logs/is_checked_in', { query: { userId, date: getTodayDate() } })
-  return r.checkedIn
+  const logs = await getTodayUserLogs(userId)
+  const ins = logs.filter(l => l.log_type === '出勤').length
+  const outs = logs.filter(l => l.log_type === '退勤').length
+  return ins > outs
 }
 
 export async function getLogs({ date, dateFrom, dateTo, userId } = {}) {
@@ -277,7 +406,14 @@ export async function getLogs({ date, dateFrom, dateTo, userId } = {}) {
 }
 
 export async function getUsers() {
-  return api('/users')
+  try {
+    const users = await api('/users')
+    cacheUsers(users)
+    return users
+  } catch (e) {
+    if (!e.offline) throw e
+    return readJSON(USERS_CACHE_KEY, [])
+  }
 }
 
 export async function upsertUser(user) {
@@ -297,7 +433,26 @@ export async function deleteLog(id) {
 }
 
 export async function getTodayStatuses() {
-  return api('/logs/today_statuses', { query: { date: getTodayDate() } })
+  const today = getTodayDate()
+  let statuses = {}
+  try {
+    statuses = await api('/logs/today_statuses', { query: { date: today } })
+  } catch (e) {
+    if (!e.offline) throw e
+    const cache = readJSON(TODAY_LOGS_CACHE_KEY, {})
+    Object.entries(cache).forEach(([uid, c]) => {
+      if (c.date !== today) return
+      const ins = c.logs.filter(l => l.log_type === '出勤').length
+      statuses[uid] = ins > c.logs.length - ins
+    })
+  }
+  // punches still waiting in the outbox aren't known to the server yet
+  const pendingIds = new Set(readJSON(OUTBOX_KEY, []).map(x => x.qid))
+  readJSON(LOCAL_PUNCHES_KEY, [])
+    .filter(l => l.date === today && pendingIds.has(l.id))
+    .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
+    .forEach(l => { statuses[l.user_id] = l.log_type === '出勤' })
+  return statuses
 }
 
 export async function saveLogManual({ userId, workType, logType, date, time, firstWork, lastWork, sessionId }) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getLogs, saveWorkReport, saveSessionWorkReport, adminLogin, adminLogout, hasAdminSession, isDeviceRegistered } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getTodayUserLogs, saveWorkReport, saveSessionWorkReport, adminLogin, adminLogout, hasAdminSession, isDeviceRegistered, startOutboxSync } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -8,6 +8,7 @@ import CompleteScreen from './screens/CompleteScreen'
 import AdminScreen from './screens/AdminScreen'
 import EmployeeCalendarScreen from './screens/EmployeeCalendarScreen'
 import DeviceSetupScreen from './screens/DeviceSetupScreen'
+import SyncStatus from './screens/SyncStatus'
 import styles from './App.module.css'
 
 const STATE = {
@@ -96,7 +97,9 @@ export default function App() {
       setState(s => (s === STATE.ADMIN ? STATE.MODE : s))
     }
     window.addEventListener('auth-required', onAuthRequired)
+    const stopSync = startOutboxSync()
     return () => {
+      stopSync()
       clearTimeout(timer)
       window.removeEventListener('auth-required', onAuthRequired)
     }
@@ -147,9 +150,7 @@ export default function App() {
       }
       // Count today's completed sessions and get current check-in session_id
       try {
-        const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        const todayLogs = await getLogs({ dateFrom: today, dateTo: today })
-        const userTodayLogs = todayLogs.filter(l => l.user_id === user.id)
+        const userTodayLogs = await getTodayUserLogs(user.id)
         const outs = userTodayLogs.filter(l => l.log_type === '退勤').length
         setTodaySessionCount(outs + 1) // completed so far + this new one
       } catch { setTodaySessionCount(1) }
@@ -268,6 +269,8 @@ export default function App() {
           onDone={handleDone}
         />
       )}
+
+      <SyncStatus />
 
       {error && (
         <div className={styles.errorOverlay}>

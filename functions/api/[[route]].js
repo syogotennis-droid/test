@@ -134,16 +134,6 @@ export async function onRequest(context) {
       ).bind(userId, date).all()
       return ok(results.length ? parseLog(results[results.length - 1]) : null)
     }
-    if (route === 'logs/is_checked_in' && method === 'GET') {
-      const userId = sp.get('userId')
-      const date = sp.get('date') || todayStr()
-      const { results } = await DB.prepare(
-        'SELECT log_type FROM logs WHERE user_id = ? AND date = ?'
-      ).bind(userId, date).all()
-      const ins = results.filter(l => l.log_type === '出勤').length
-      const outs = results.filter(l => l.log_type === '退勤').length
-      return ok({ checkedIn: ins > outs })
-    }
     if (route === 'logs/today_statuses' && method === 'GET') {
       const date = sp.get('date') || todayStr()
       const { results } = await DB.prepare(
@@ -495,7 +485,7 @@ async function resolveRole(DB, request) {
 function isDeviceRoute(route, method, sp) {
   if (method === 'GET') {
     if (route === 'users' || route.startsWith('users/')) return true
-    if (route === 'logs/check_in' || route === 'logs/is_checked_in' || route === 'logs/today_statuses') return true
+    if (route === 'logs/check_in' || route === 'logs/today_statuses') return true
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
     return false
   }

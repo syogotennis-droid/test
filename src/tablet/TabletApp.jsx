@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { initDB, saveLog, isCheckedIn, getClockInTime, saveSessionWorkReport, adminLogin, adminLogout, isDeviceRegistered } from '../lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, saveSessionWorkReport, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from '../lib/db'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
 import WorkSelectScreen from '../screens/WorkSelectScreen'
@@ -7,6 +7,7 @@ import CompleteScreen from '../screens/CompleteScreen'
 import AdminScreen from '../screens/AdminScreen'
 import EmployeeCalendarScreen from '../screens/EmployeeCalendarScreen'
 import DeviceSetupScreen from '../screens/DeviceSetupScreen'
+import SyncStatus from '../screens/SyncStatus'
 import styles from './TabletApp.module.css'
 
 const STATE = {
@@ -95,12 +96,14 @@ export default function TabletApp() {
       else setState(s => (s === STATE.ADMIN ? STATE.MODE : s))
     }
     window.addEventListener('auth-required', onAuthRequired)
+    const stopSync = startOutboxSync()
 
     const onOnline = () => setIsOnline(true)
     const onOffline = () => setIsOnline(false)
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
     return () => {
+      stopSync()
       window.removeEventListener('auth-required', onAuthRequired)
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
@@ -237,7 +240,7 @@ export default function TabletApp() {
         <div className={styles.networkBanner}>
           <span className={styles.bannerIcon}>{!isOnline ? '📡' : '⚠️'}</span>
           <span className={styles.bannerText}>
-            {!isOnline ? 'オフライン — ネットワークに接続してください' : networkError}
+            {!isOnline ? 'オフライン — 打刻は端末に保存され、接続が戻ると自動で送信されます' : networkError}
           </span>
           {networkError && (
             <button className={styles.bannerClose} onClick={() => setNetworkError(null)}>✕</button>
@@ -289,6 +292,8 @@ export default function TabletApp() {
           onClose={() => { setAdminPinMode(false); setAdminTaps(0) }}
         />
       )}
+
+      <SyncStatus />
 
       {/* 一時エラー（出勤済み・未出勤など） */}
       {flashError && (

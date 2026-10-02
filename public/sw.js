@@ -17,15 +17,27 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // ナビゲーション（ページ遷移）: ネット優先、失敗時はキャッシュ
+  const url = new URL(e.request.url);
+  // API is never cached here (offline punches are queued by the app itself)
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  // ナビゲーション（ページ遷移）: ネット優先、成功したら保存、失敗時はキャッシュ
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request).catch(() => caches.match('/index.html'))
+      fetch(e.request)
+        .then(res => {
+          if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put('/index.html', copy)); }
+          return res;
+        })
+        .catch(() => caches.match('/index.html'))
     );
     return;
   }
-  // 静的アセット: キャッシュ優先
+  // 静的アセット（ファイル名にハッシュ付き）: キャッシュ優先、初回取得時に保存
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+      return res;
+    }))
   );
 });

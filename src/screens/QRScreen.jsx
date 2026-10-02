@@ -29,8 +29,8 @@ function PinOverlay({ mode, onSubmit, onClose }) {
         setError('PINが一致しません')
         setPin('')
       }
-    } catch {
-      setError('通信エラーが発生しました')
+    } catch (e) {
+      setError(e?.offline ? 'オフライン中はPINで打刻できません。QRコードを使ってください' : '通信エラーが発生しました')
     } finally {
       setLoading(false)
     }
