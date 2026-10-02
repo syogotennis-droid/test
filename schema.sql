@@ -69,3 +69,18 @@ CREATE TABLE IF NOT EXISTS salaried_days (
   break_mins INTEGER DEFAULT 0,
   overtime_mins INTEGER DEFAULT 0
 );
+
+-- Login sessions. role: 'admin' (expires) or 'device' (kiosk tablet, no expiry)
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER
+);
+
+-- Admin PIN brute-force lockout, per client IP
+CREATE TABLE IF NOT EXISTS login_attempts (
+  ip TEXT PRIMARY KEY,
+  fails INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0
+);

@@ -1,6 +1,15 @@
 import { zipSync } from 'fflate'
 
 const API_BASE = '/api'
+const ADMIN_TOKEN_KEY = 'adminToken'
+const DEVICE_TOKEN_KEY = 'deviceToken'
+
+function getToken(key) {
+  try { return localStorage.getItem(key) } catch { return null }
+}
+function setToken(key, value) {
+  try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key) } catch {}
+}
 
 async function api(path, { method = 'GET', query, body } = {}) {
   let url = API_BASE + path
@@ -10,25 +19,65 @@ async function api(path, { method = 'GET', query, body } = {}) {
     ).toString()
     if (qs) url += '?' + qs
   }
-  const res = await fetch(url, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  const headers = {}
+  if (body) headers['Content-Type'] = 'application/json'
+  const adminT = getToken(ADMIN_TOKEN_KEY), deviceT = getToken(DEVICE_TOKEN_KEY)
+  if (adminT) headers['X-Admin-Token'] = adminT
+  if (deviceT) headers['X-Device-Token'] = deviceT
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  if (res.status === 401) {
+    const j = await res.json().catch(() => ({}))
+    setToken(j.need === 'device' ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, null)
+    window.dispatchEvent(new CustomEvent('auth-required', { detail: { need: j.need } }))
+    throw new Error('認証が必要です')
+  }
   if (!res.ok) throw new Error(`API ${method} ${path} failed (${res.status})`)
   return res.json()
 }
 
 const enc = encodeURIComponent
 
-export const DEFAULT_ADMIN_PIN = '2607'
-
-export async function getAdminPin() {
+// ─── Auth ──────────────────────────────────────────────────────────────────────
+// Admin PIN is only ever checked on the server. device=true registers this
+// device as a punch tablet (no expiry) instead of opening an admin session.
+export async function adminLogin(pin, { device = false } = {}) {
+  let res, j
   try {
-    const cfg = await api('/config')
-    if (cfg.adminPin) return cfg.adminPin
-  } catch {}
-  return DEFAULT_ADMIN_PIN
+    res = await fetch(API_BASE + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, device }),
+    })
+    j = await res.json().catch(() => ({}))
+  } catch {
+    return { ok: false, message: '通信できません。ネット接続を確認してください' }
+  }
+  if (res.ok) {
+    setToken(device ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, j.token)
+    return { ok: true }
+  }
+  if (res.status === 429) {
+    return { ok: false, message: `PINを続けて間違えたため、${Math.ceil(j.retryAfterSec / 60)}分間ロックされています` }
+  }
+  if (res.status === 403) {
+    return { ok: false, message: j.remaining <= 2 ? `PINが違います（あと${j.remaining}回でロック）` : 'PINが違います' }
+  }
+  if (j.error === 'admin_pin_not_configured') return { ok: false, message: '管理者PINが設定されていません' }
+  return { ok: false, message: 'エラーが発生しました' }
+}
+
+export function adminLogout() {
+  const t = getToken(ADMIN_TOKEN_KEY)
+  setToken(ADMIN_TOKEN_KEY, null)
+  if (t) fetch(API_BASE + '/auth/logout', { method: 'POST', headers: { 'X-Admin-Token': t } }).catch(() => {})
+}
+
+export function hasAdminSession() {
+  return !!getToken(ADMIN_TOKEN_KEY)
+}
+
+export function isDeviceRegistered() {
+  return !!getToken(DEVICE_TOKEN_KEY)
 }
 
 export async function saveAdminPin(newPin) {

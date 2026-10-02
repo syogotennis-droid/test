@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getLogs, getAdminPin, DEFAULT_ADMIN_PIN, saveWorkReport, saveSessionWorkReport } from './lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, getLogs, saveWorkReport, saveSessionWorkReport, adminLogin, adminLogout, hasAdminSession, isDeviceRegistered } from './lib/db'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
 import CompleteScreen from './screens/CompleteScreen'
 import AdminScreen from './screens/AdminScreen'
 import EmployeeCalendarScreen from './screens/EmployeeCalendarScreen'
+import DeviceSetupScreen from './screens/DeviceSetupScreen'
 import styles from './App.module.css'
 
 const STATE = {
@@ -23,20 +24,25 @@ const ADMIN_SESSION_KEY = 'adminSessionExpiry'
 const ADMIN_SESSION_DURATION = 30 * 60 * 1000 // 30分
 const ADMIN_TAP_TIMEOUT = 3000
 
-function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
+function AdminPinOverlay({ onSuccess, onClose }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
   const inputRef = React.useRef(null)
 
   React.useEffect(() => { inputRef.current?.focus() }, [])
 
-  function handleChange(e) {
+  async function handleChange(e) {
+    if (checking) return
     const v = e.target.value.replace(/\D/g, '').slice(0, 4)
     setPin(v)
     setError('')
     if (v.length === 4) {
-      if (v === adminPin) { onSuccess() }
-      else { setError('PINが違います'); setPin('') }
+      setChecking(true)
+      const r = await adminLogin(v)
+      setChecking(false)
+      if (r.ok) onSuccess()
+      else { setError(r.message); setPin('') }
     }
   }
 
@@ -73,7 +79,7 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false)
   const [adminTaps, setAdminTaps] = useState(0)
   const [adminPinMode, setAdminPinMode] = useState(false)
-  const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN)
+  const [deviceReady, setDeviceReady] = useState(isDeviceRegistered)
   const [todaySessionCount, setTodaySessionCount] = useState(1)
   const [currentSessionId, setCurrentSessionId] = useState(null)
   const adminTapTimer = React.useRef(null)
@@ -84,8 +90,16 @@ export default function App() {
     initDB()
       .then(() => { clearTimeout(timer); setDbReady(true) })
       .catch(err => { clearTimeout(timer); console.error('DB init error:', err); setDbReady(true) })
-    getAdminPin().then(p => setCurrentAdminPin(p))
-    return () => clearTimeout(timer)
+    const onAuthRequired = e => {
+      if (e.detail?.need === 'device') { setDeviceReady(false); return }
+      try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+      setState(s => (s === STATE.ADMIN ? STATE.MODE : s))
+    }
+    window.addEventListener('auth-required', onAuthRequired)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('auth-required', onAuthRequired)
+    }
   }, [])
 
   function handleModeSelect(selectedMode) {
@@ -188,7 +202,7 @@ export default function App() {
       setAdminTaps(0)
       try {
         const expiry = localStorage.getItem(ADMIN_SESSION_KEY)
-        if (expiry && Date.now() < Number(expiry)) {
+        if (expiry && Date.now() < Number(expiry) && hasAdminSession()) {
           setState(STATE.ADMIN)
           return
         }
@@ -210,9 +224,14 @@ export default function App() {
     )
   }
 
+  if (!deviceReady) {
+    return <DeviceSetupScreen onDone={() => setDeviceReady(true)} />
+  }
+
   if (state === STATE.ADMIN) {
-    return <AdminScreen isTablet={true} onPinSaved={p => setCurrentAdminPin(p)} onBack={() => {
+    return <AdminScreen isTablet={true} onBack={() => {
       try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+      adminLogout()
       handleDone()
     }} />
   }
@@ -270,7 +289,6 @@ export default function App() {
 
       {adminPinMode && (
         <AdminPinOverlay
-          adminPin={currentAdminPin}
           onSuccess={() => {
             try { localStorage.setItem(ADMIN_SESSION_KEY, String(Date.now() + ADMIN_SESSION_DURATION)) } catch {}
             setAdminPinMode(false)

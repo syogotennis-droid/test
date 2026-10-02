@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getAdminPin, DEFAULT_ADMIN_PIN, saveSessionWorkReport } from '../lib/db'
+import { initDB, saveLog, isCheckedIn, getClockInTime, saveSessionWorkReport, adminLogin, adminLogout, isDeviceRegistered } from '../lib/db'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
 import WorkSelectScreen from '../screens/WorkSelectScreen'
 import CompleteScreen from '../screens/CompleteScreen'
 import AdminScreen from '../screens/AdminScreen'
 import EmployeeCalendarScreen from '../screens/EmployeeCalendarScreen'
+import DeviceSetupScreen from '../screens/DeviceSetupScreen'
 import styles from './TabletApp.module.css'
 
 const STATE = {
@@ -21,9 +22,10 @@ const STATE = {
 const ADMIN_TAP_COUNT = 1
 const ADMIN_TAP_TIMEOUT = 3000
 
-function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
+function AdminPinOverlay({ onSuccess, onClose }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
   const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫']
   function press(k) {
     if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
@@ -32,10 +34,14 @@ function AdminPinOverlay({ onSuccess, onClose, adminPin }) {
     setPin(p => p + k)
     setError('')
   }
-  function confirm() {
+  async function confirm() {
     if (pin.length !== 4) { setError('4桁で入力してください'); return }
-    if (pin === adminPin) { onSuccess() }
-    else { setError('PINが違います'); setPin('') }
+    if (checking) return
+    setChecking(true)
+    const r = await adminLogin(pin)
+    setChecking(false)
+    if (r.ok) onSuccess()
+    else { setError(r.message); setPin('') }
   }
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
@@ -73,24 +79,29 @@ export default function TabletApp() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [adminTaps, setAdminTaps] = useState(0)
   const [adminPinMode, setAdminPinMode] = useState(false)
-  const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN)
+  const [deviceReady, setDeviceReady] = useState(isDeviceRegistered)
   const adminTapTimer = useRef(null)
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setNetworkError('接続タイムアウト。Firestoreのルール期限切れかネットワークを確認してください。')
+      setNetworkError('接続タイムアウト。ネットワークを確認してください。')
       setState(STATE.MODE)
     }, 10000)
     initDB()
       .then(() => { clearTimeout(timer); setState(STATE.MODE) })
       .catch(e => { clearTimeout(timer); setNetworkError('初期化エラー: ' + (e?.message || e)); setState(STATE.MODE) })
-    getAdminPin().then(p => setCurrentAdminPin(p))
+    const onAuthRequired = e => {
+      if (e.detail?.need === 'device') setDeviceReady(false)
+      else setState(s => (s === STATE.ADMIN ? STATE.MODE : s))
+    }
+    window.addEventListener('auth-required', onAuthRequired)
 
     const onOnline = () => setIsOnline(true)
     const onOffline = () => setIsOnline(false)
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
     return () => {
+      window.removeEventListener('auth-required', onAuthRequired)
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
     }
@@ -207,8 +218,12 @@ export default function TabletApp() {
     )
   }
 
+  if (!deviceReady) {
+    return <DeviceSetupScreen onDone={() => setDeviceReady(true)} />
+  }
+
   if (state === STATE.ADMIN) {
-    return <AdminScreen isTablet={true} onBack={handleDone} />
+    return <AdminScreen isTablet={true} onBack={() => { adminLogout(); handleDone() }} />
   }
 
   if (state === STATE.CHECK && currentUser) {
@@ -270,7 +285,6 @@ export default function TabletApp() {
 
       {adminPinMode && (
         <AdminPinOverlay
-          adminPin={currentAdminPin}
           onSuccess={() => { setAdminPinMode(false); setState(STATE.ADMIN) }}
           onClose={() => { setAdminPinMode(false); setAdminTaps(0) }}
         />

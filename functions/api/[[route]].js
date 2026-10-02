@@ -12,7 +12,7 @@ export async function onRequest(context) {
   const cors = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Device-Token',
   }
 
   if (method === 'OPTIONS') return new Response(null, { headers: cors })
@@ -22,19 +22,63 @@ export async function onRequest(context) {
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
   }
-  function fail(msg, status = 500) {
-    return new Response(JSON.stringify({ error: msg }), {
+  function fail(msg, status = 500, extra = {}) {
+    return new Response(JSON.stringify({ error: msg, ...extra }), {
       status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
   }
 
   try {
+    // ── Auth ──────────────────────────────────────────────────────────────
+    if (route === 'auth/login' && method === 'POST') {
+      const ip = request.headers.get('CF-Connecting-IP') || 'local'
+      const now = Date.now()
+      const att = await DB.prepare('SELECT fails, locked_until FROM login_attempts WHERE ip = ?').bind(ip).first()
+      if (att && att.locked_until > now) {
+        return fail('locked', 429, { retryAfterSec: Math.ceil((att.locked_until - now) / 1000) })
+      }
+      const { pin, device } = await request.json()
+      const cfg = await DB.prepare("SELECT value FROM config WHERE key = 'adminPin'").first()
+      const adminPin = cfg?.value || env.ADMIN_PIN
+      if (!adminPin) return fail('admin_pin_not_configured', 503)
+      if (String(pin) !== String(adminPin)) {
+        const fails = (att && att.locked_until === 0 ? att.fails : 0) + 1
+        if (fails >= MAX_LOGIN_FAILS) {
+          await DB.prepare('INSERT OR REPLACE INTO login_attempts (ip, fails, locked_until) VALUES (?, 0, ?)').bind(ip, now + LOCK_MS).run()
+          return fail('locked', 429, { retryAfterSec: LOCK_MS / 1000 })
+        }
+        await DB.prepare('INSERT OR REPLACE INTO login_attempts (ip, fails, locked_until) VALUES (?, ?, 0)').bind(ip, fails).run()
+        return fail('wrong_pin', 403, { remaining: MAX_LOGIN_FAILS - fails })
+      }
+      const role = device ? 'device' : 'admin'
+      const token = newToken()
+      await DB.batch([
+        DB.prepare('DELETE FROM login_attempts WHERE ip = ?').bind(ip),
+        DB.prepare('DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at < ?').bind(now),
+        DB.prepare('INSERT INTO sessions (token, role, created_at, expires_at) VALUES (?, ?, ?, ?)')
+          .bind(token, role, now, role === 'admin' ? now + ADMIN_SESSION_MS : null),
+      ])
+      return ok({ token, role })
+    }
+    if (route === 'auth/logout' && method === 'POST') {
+      const t = request.headers.get('X-Admin-Token')
+      if (t) await DB.prepare("DELETE FROM sessions WHERE token = ? AND role = 'admin'").bind(t).run()
+      return ok({ ok: true })
+    }
+
+    const role = await resolveRole(DB, request)
+    const deviceOk = isDeviceRoute(route, method, sp)
+    if (role !== 'admin' && !(role === 'device' && deviceOk)) {
+      return fail('unauthorized', 401, { need: deviceOk ? 'device' : 'admin' })
+    }
+    const pubUser = u => (role === 'admin' ? parseUser(u) : publicUser(parseUser(u)))
+
     // ── Config ────────────────────────────────────────────────────────────
     if (route === 'config' && method === 'GET') {
       const { results } = await DB.prepare('SELECT key, value FROM config').all()
       const cfg = {}
-      results.forEach(r => { cfg[r.key] = r.value })
+      results.forEach(r => { if (r.key !== 'adminPin') cfg[r.key] = r.value })
       return ok(cfg)
     }
     if (route.startsWith('config/') && method === 'PUT') {
@@ -49,14 +93,14 @@ export async function onRequest(context) {
       const pin = sp.get('pin')
       if (pin) {
         const u = await DB.prepare('SELECT * FROM users WHERE pin = ?').bind(pin).first()
-        return ok(u ? parseUser(u) : null)
+        return ok(u ? pubUser(u) : null)
       }
       const { results } = await DB.prepare('SELECT * FROM users').all()
-      return ok(results.map(parseUser))
+      return ok(results.map(pubUser))
     }
     if (route.startsWith('users/') && method === 'GET') {
       const u = await DB.prepare('SELECT * FROM users WHERE id = ?').bind(route.slice(6)).first()
-      return ok(u ? parseUser(u) : null)
+      return ok(u ? pubUser(u) : null)
     }
     if (route.startsWith('users/') && method === 'PUT') {
       // merge semantics, same as Firestore setDoc(..., { merge: true })
@@ -417,15 +461,51 @@ export async function onRequest(context) {
       return ok({ ok: true })
     }
 
-    // ── Init (migration helper) ────────────────────────────────────────────
-    if (route === 'init' && method === 'POST') {
-      return ok({ ok: true })
-    }
-
     return fail('Not found', 404)
   } catch (e) {
     return fail(e?.message || 'Internal server error')
   }
+}
+
+const MAX_LOGIN_FAILS = 5
+const LOCK_MS = 15 * 60 * 1000
+const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000
+
+function newToken() {
+  const b = crypto.getRandomValues(new Uint8Array(32))
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+}
+
+async function resolveRole(DB, request) {
+  const adminT = request.headers.get('X-Admin-Token')
+  const deviceT = request.headers.get('X-Device-Token')
+  const tokens = [adminT, deviceT].filter(Boolean)
+  if (tokens.length === 0) return null
+  const now = Date.now()
+  const { results } = await DB.prepare(
+    `SELECT token, role FROM sessions WHERE token IN (${tokens.map(() => '?').join(',')}) AND (expires_at IS NULL OR expires_at > ?)`
+  ).bind(...tokens, now).all()
+  if (results.some(r => r.role === 'admin' && r.token === adminT)) return 'admin'
+  if (results.some(r => r.role === 'device' && r.token === deviceT)) return 'device'
+  return null
+}
+
+// What a registered punch tablet may do: punch, look up the scanned employee,
+// and view/enter that employee's own work time. Everything else needs admin.
+function isDeviceRoute(route, method, sp) {
+  if (method === 'GET') {
+    if (route === 'users' || route.startsWith('users/')) return true
+    if (route === 'logs/check_in' || route === 'logs/is_checked_in' || route === 'logs/today_statuses') return true
+    if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
+    return false
+  }
+  if (method === 'POST') return route === 'logs'
+  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports'
+  return false
+}
+
+function publicUser(u) {
+  return { id: u.id, name: u.name, employeeType: u.employeeType, workItems: u.workItems || [] }
 }
 
 // Workers run in UTC; the business runs in JST (UTC+9)

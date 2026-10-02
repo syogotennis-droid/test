@@ -5,14 +5,13 @@ import App from './App.jsx'
 import TabletApp from './tablet/TabletApp.jsx'
 import AdminScreen from './screens/AdminScreen.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
-import { getAdminPin, DEFAULT_ADMIN_PIN } from './lib/db.js'
+import { adminLogin, adminLogout, hasAdminSession } from './lib/db.js'
 import './styles/global.css'
 
 const ADMIN_SESSION_KEY = 'adminSessionExpiry'
 const ADMIN_SESSION_DURATION = 30 * 60 * 1000
 
 function AdminRoute() {
-  const [adminPin, setAdminPin] = useState(DEFAULT_ADMIN_PIN)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [showPin, setShowPin] = useState(false)
@@ -21,11 +20,19 @@ function AdminRoute() {
   const inputRef = React.useRef(null)
 
   const isSessionValid = () => {
-    try { const e = localStorage.getItem(ADMIN_SESSION_KEY); return e && Date.now() < Number(e) } catch { return false }
+    try { const e = localStorage.getItem(ADMIN_SESSION_KEY); return e && Date.now() < Number(e) && hasAdminSession() } catch { return false }
   }
   const [unlocked, setUnlocked] = useState(() => isSessionValid())
 
-  useEffect(() => { getAdminPin().then(p => setAdminPin(p)) }, [])
+  useEffect(() => {
+    const onAuthRequired = () => {
+      try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+      setUnlocked(false)
+      setError('ログインの有効期限が切れました。もう一度PINを入力してください。')
+    }
+    window.addEventListener('auth-required', onAuthRequired)
+    return () => window.removeEventListener('auth-required', onAuthRequired)
+  }, [])
   useEffect(() => { if (!unlocked) setTimeout(() => inputRef.current?.focus(), 50) }, [unlocked])
 
   function unlock() {
@@ -42,13 +49,16 @@ function AdminRoute() {
     if (error) setError('')
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (pin.length < 4 || checking) return
     setChecking(true)
-    if (pin === adminPin) {
+    const r = await adminLogin(pin)
+    if (r.ok) {
+      setChecking(false)
+      setError('')
       unlock()
     } else {
-      setError('PINが正しくありません。もう一度入力してください。')
+      setError(r.message)
       setPin('')
       setChecking(false)
       setTimeout(() => inputRef.current?.focus(), 0)
@@ -57,6 +67,7 @@ function AdminRoute() {
 
   if (unlocked) return <AdminScreen onBack={() => {
     try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+    adminLogout()
     setUnlocked(false)
     setPin('')
     setError('')
