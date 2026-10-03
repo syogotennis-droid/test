@@ -102,7 +102,8 @@ export async function onRequest(context) {
         const u = await DB.prepare('SELECT * FROM users WHERE pin = ?').bind(pin).first()
         return ok(u ? pubUser(u) : null)
       }
-      const { results } = await DB.prepare('SELECT * FROM users').all()
+      // ID order, same as the Firebase version (saving a user must not move it)
+      const { results } = await DB.prepare('SELECT * FROM users ORDER BY id').all()
       return ok(results.map(pubUser))
     }
     if (route.startsWith('users/') && method === 'GET') {

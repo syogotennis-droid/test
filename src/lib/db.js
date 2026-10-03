@@ -157,7 +157,9 @@ function rememberLocalPunch(log) {
 export async function getTodayUserLogs(userId) {
   const today = getTodayDate()
   const cache = readJSON(TODAY_LOGS_CACHE_KEY, {})
-  let serverLogs
+  // read before asking the server: a punch sent meanwhile is still counted
+  const pendingIds = new Set(readJSON(OUTBOX_KEY, []).map(x => x.qid))
+  let serverLogs, online = true
   try {
     serverLogs = await api('/logs', { query: { userId, date: today } })
     cache[userId] = { date: today, logs: serverLogs }
@@ -165,10 +167,16 @@ export async function getTodayUserLogs(userId) {
     writeJSON(TODAY_LOGS_CACHE_KEY, cache)
   } catch (e) {
     if (!e.offline) throw e
+    online = false
     serverLogs = cache[userId]?.date === today ? cache[userId].logs : []
   }
   const ids = new Set(serverLogs.map(l => l.id))
-  const local = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.user_id === userId && l.date === today && !ids.has(l.id))
+  // Online, the server is the truth: only punches still waiting to be sent are
+  // added, so a punch an admin deleted doesn't come back from this device.
+  // Offline, the cached copy may be older than punches already sent, so all
+  // of this device's punches are added.
+  const local = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.user_id === userId && l.date === today && !ids.has(l.id)
+    && (!online || pendingIds.has(l.id)))
   return [...serverLogs, ...local].sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
 }
 
