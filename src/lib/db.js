@@ -369,7 +369,101 @@ export const PAY_ITEMS = [
 // Items that are not shown on the clock-out work selection screen
 export const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
 
-export async function initDB() {}
+// ─── Work items (業務の管理) ──────────────────────────────────────────────────
+// Records store a work item by its id. The items that existed before this
+// screen keep their name as id, so no stored data ever needs rewriting; a
+// rename only changes the display name. Deleted items stay in the list
+// (deleted: true) so past records, rates and the 出勤簿 keep working.
+//  { id, name, group?, variant?, deleted? }  — list order = display order
+
+// Calculation items (pay logic depends on them); not managed on the screen
+export const SYSTEM_ITEMS = new Set(['休憩', '準備', '交通費', '有給', '固定手当'])
+
+export const DEFAULT_WORK_ITEM_DEFS = [
+  { id: 'アスレ', name: 'アスレ' },
+  { id: 'スイム', name: 'スイム', group: 'スイム', variant: '通常' },
+  { id: 'スイム短期', name: 'スイム短期', group: 'スイム', variant: '短期' },
+  { id: 'スイム成人', name: 'スイム成人', group: 'スイム', variant: '成人' },
+  { id: 'スイムベビー', name: 'スイムベビー', group: 'スイム', variant: 'ベビー' },
+  { id: 'フロント', name: 'フロント', group: 'フロント', variant: '通常' },
+  { id: 'フロント短期', name: 'フロント短期', group: 'フロント', variant: '短期' },
+  { id: '監視', name: '監視', group: '監視', variant: '通常' },
+  { id: '監視短期', name: '監視短期', group: '監視', variant: '短期' },
+  { id: '研修会', name: '研修会' },
+  { id: '清掃', name: '清掃' },
+  { id: '事務処理', name: '事務処理' },
+  { id: 'エアロ', name: 'エアロ' },
+  { id: 'ドライバー', name: 'ドライバー' },
+  { id: '選手引率', name: '選手引率' },
+]
+
+const WORK_ITEM_DEFS_KEY = 'workItemDefs'
+let workItemDefs = (() => {
+  const cached = readJSON(WORK_ITEM_DEFS_KEY, null)
+  return Array.isArray(cached) && cached.length > 0 ? cached : DEFAULT_WORK_ITEM_DEFS
+})()
+
+function setWorkItemDefsCache(list) {
+  workItemDefs = Array.isArray(list) && list.length > 0 ? list : DEFAULT_WORK_ITEM_DEFS
+  writeJSON(WORK_ITEM_DEFS_KEY, workItemDefs)
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('work-items-change'))
+}
+
+// Fetches the latest list (kept on the device for offline use)
+export async function loadWorkItemDefs() {
+  // not registered / not logged in yet: keep the saved copy
+  if (!getToken(DEVICE_TOKEN_KEY) && !getToken(ADMIN_TOKEN_KEY)) return workItemDefs
+  try {
+    const r = await api('/work_item_defs')
+    setWorkItemDefsCache(r?.items)
+  } catch {}
+  return workItemDefs
+}
+
+export async function saveWorkItemDefs(list) {
+  await api('/config/workItemDefs', { method: 'PUT', body: { value: JSON.stringify(list) } })
+  setWorkItemDefsCache(list)
+}
+
+// All items incl. deleted ones, in display order
+export function getWorkItemDefs() {
+  return workItemDefs
+}
+
+export function activeWorkItemDefs() {
+  return workItemDefs.filter(d => !d.deleted)
+}
+
+export function workItemDef(id) {
+  return workItemDefs.find(d => d.id === id) || null
+}
+
+export function isDeletedWorkItem(id) {
+  return !!workItemDef(id)?.deleted
+}
+
+// Display name for a stored id (unknown / legacy ids are shown as they are)
+export function itemLabel(id) {
+  return workItemDef(id)?.name || id
+}
+
+// Sorts ids by the order set on the 業務の管理 screen; unknown ids keep
+// their relative order after the known ones.
+export function sortByItemOrder(ids) {
+  const pos = new Map(workItemDefs.map((d, i) => [d.id, i]))
+  return ids
+    .map((id, i) => [id, pos.has(id) ? pos.get(id) : workItemDefs.length + i])
+    .sort((a, b) => a[1] - b[1])
+    .map(([id]) => id)
+}
+
+export function newWorkItemId() {
+  return 'w_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
+export async function initDB() {
+  await loadWorkItemDefs()
+}
 
 export async function resolveUser(qrValue) {
   if (!qrValue) return null
@@ -830,6 +924,7 @@ export function attendanceDates(byDate) {
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   const users = await getUsers()
+  await loadWorkItemDefs() // latest names / order for the columns
 
   const [ym_y_str, ym_m_str] = (dateFrom || '').split('-')
   const ym_y = Number(ym_y_str)
@@ -1165,7 +1260,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const workReportTypeSet = new Set(
       Object.values(userWorkReports).flatMap(items => Object.keys(items).filter(t => !EXCL.has(t)))
     )
-    const workTypes = (user.workItems || []).filter(t => !EXCL.has(t) && workReportTypeSet.has(t))
+    const workTypes = sortByItemOrder((user.workItems || []).filter(t => !EXCL.has(t) && workReportTypeSet.has(t)))
 
     // workingDays = days with work report AND ≥1 completed QR session (spec 7)
     let workingDays = 0
@@ -1255,11 +1350,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const { wd, su, hasSunday } = typeColMap[type]
       if (hasSunday) {
         t2HdrCells.push(
-          hdrCell(wd, T2_HDR, type),
-          `<c r="${su}${T2_HDR}" s="${S.hdr}" t="inlineStr"><is><t xml:space="preserve">${esc(type)}&#10;（日曜）</t></is></c>`
+          hdrCell(wd, T2_HDR, itemLabel(type)),
+          `<c r="${su}${T2_HDR}" s="${S.hdr}" t="inlineStr"><is><t xml:space="preserve">${esc(itemLabel(type))}&#10;（日曜）</t></is></c>`
         )
       } else {
-        t2HdrCells.push(hdrCell(wd, T2_HDR, type))
+        t2HdrCells.push(hdrCell(wd, T2_HDR, itemLabel(type)))
       }
     }
     t2HdrCells.push(hdrCell(typeTotalCol, T2_HDR, '時間計'))
@@ -1399,7 +1494,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             totalPayHours += mins.wd / 60; totalPayAmount += pay
             payRows.push(
               `<row r="${payRowIdx}">` +
-              `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + rangeLabel)}</t></is></c>` +
+              `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(itemLabel(type) + rangeLabel)}</t></is></c>` +
               `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${mins.wd / 60 / 24}</v></c>` +
               (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
               `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${pay}</v></c>` +
@@ -1409,7 +1504,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           if (mins.we > 0) {
             const pay = Math.round(mins.we / 60 * sundayRate)
             totalPayHours += mins.we / 60; totalPayAmount += pay
-            const suLabel = type + rangeLabel + '（日曜）'
+            const suLabel = itemLabel(type) + rangeLabel + '（日曜）'
             payRows.push(
               `<row r="${payRowIdx}">` +
               `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(suLabel)}</t></is></c>` +
@@ -1426,7 +1521,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             totalPayHours += total / 60; totalPayAmount += pay
             payRows.push(
               `<row r="${payRowIdx}">` +
-              `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(type + rangeLabel)}</t></is></c>` +
+              `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(itemLabel(type) + rangeLabel)}</t></is></c>` +
               `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${total / 60 / 24}</v></c>` +
               (normalRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${normalRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
               `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${pay}</v></c>` +
@@ -1501,7 +1596,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const WB_REL_S = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     const shdrCell = (col, rn, text) =>
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
-    const summaryTypeEntries = Object.entries(summaryData.types)
+    const summaryTypeEntries = sortByItemOrder(Object.keys(summaryData.types)).map(t => [itemLabel(t), summaryData.types[t]])
     const totalTypeMins = summaryTypeEntries.reduce((s, [, v]) => s + v.mins, 0)
     const totalTypePay = summaryTypeEntries.reduce((s, [, v]) => s + v.pay, 0)
     let sumRows = ''

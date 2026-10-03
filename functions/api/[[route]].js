@@ -81,6 +81,13 @@ export async function onRequest(context) {
       results.forEach(r => { if (r.key !== 'adminPin') cfg[r.key] = r.value })
       return ok(cfg)
     }
+    // 業務の管理 (names / groups / order). null = never saved, the app uses its defaults
+    if (route === 'work_item_defs' && method === 'GET') {
+      const r = await DB.prepare("SELECT value FROM config WHERE key = 'workItemDefs'").first()
+      let items = null
+      try { items = r ? JSON.parse(r.value) : null } catch {}
+      return ok({ items: Array.isArray(items) ? items : null })
+    }
     if (route.startsWith('config/') && method === 'PUT') {
       const key = route.slice(7)
       const body = await request.json()
@@ -558,6 +565,7 @@ async function resolveRole(DB, request) {
 function isDeviceRoute(route, method, sp) {
   if (method === 'GET') {
     if (route === 'users' || route.startsWith('users/')) return true
+    if (route === 'work_item_defs') return true
     if (route === 'logs/check_in' || route === 'logs/today_statuses') return true
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
     // the employee's own transport choice / weekly copy

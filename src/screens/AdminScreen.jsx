@@ -6,7 +6,7 @@ import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  resolveUserByPin, PAY_ITEMS, saveAdminPin,
+  resolveUserByPin, saveAdminPin,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
   saveWorkReport, getWorkReport, getWorkReportsForRange,
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
@@ -18,8 +18,12 @@ import {
   COMMUTE_METHODS, carRateForDate,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
   prepTimeRows, planMinWageChange, withRateFrom,
+  getWorkItemDefs, activeWorkItemDefs, itemLabel, sortByItemOrder, isDeletedWorkItem, SYSTEM_ITEMS,
+  saveWorkItemDefs, newWorkItemId,
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
+import WorkItemSettings from './WorkItemSettings'
+import { useWorkItemDefs } from '../lib/useWorkItemDefs'
 import styles from './AdminScreen.module.css'
 
 const LOG_TYPE_COLOR = { '出勤': '#2e7d32', '退勤': '#1a73e8' }
@@ -38,9 +42,10 @@ const WORK_TYPES = ['現場', '清掃', '事務', '休憩']
 const WORK_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
 const LEGACY_WORK_ITEMS = ['現場', '清掃', '事務', '休憩']
 
+// Items that can be chosen for new input (deleted items excluded), in the set order
 function getWorkItemsForUser(workItems) {
   const base = (workItems && workItems.length > 0) ? workItems : LEGACY_WORK_ITEMS
-  const filtered = base.filter(item => !WORK_HIDDEN.has(item))
+  const filtered = sortByItemOrder(base.filter(item => !WORK_HIDDEN.has(item) && !isDeletedWorkItem(item)))
   if (!filtered.includes('休憩')) filtered.push('休憩')
   return filtered
 }
@@ -132,6 +137,7 @@ export default function AdminScreen({ onBack, isTablet = false }) {
   const [tab, setTab] = useState('calendar')
   const [users, setUsers] = useState([])
   const today = toDateStr(new Date())
+  useWorkItemDefs({ load: true }) // re-render everything when item names / order change
 
   useEffect(() => {
     getUsers().then(setUsers)
@@ -173,7 +179,7 @@ export default function AdminScreen({ onBack, isTablet = false }) {
         {tab === 'calendar' && <CalendarTab users={users} today={today} isTablet={isTablet} />}
         {tab === 'kinmubo' && <KinmuboTab today={today} />}
         {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} isTablet={isTablet} />}
-        {tab === 'settings' && <SettingsTab onUsersChanged={() => getUsers().then(setUsers)} />}
+        {tab === 'settings' && <SettingsTab users={users} onUsersChanged={() => getUsers().then(setUsers)} />}
       </div>
     </div>
   )
@@ -703,8 +709,8 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
 
   function workSummary(t) {
     const tw = workTimes[t]
-    if (!tw || (tw.h === 0 && tw.m === 0)) return t
-    return `${t} ${tw.h > 0 ? `${tw.h}時間` : ''}${tw.m > 0 ? `${tw.m}分` : ''}`
+    if (!tw || (tw.h === 0 && tw.m === 0)) return itemLabel(t)
+    return `${itemLabel(t)} ${tw.h > 0 ? `${tw.h}時間` : ''}${tw.m > 0 ? `${tw.m}分` : ''}`
   }
 
   async function handleConfirm() {
@@ -804,7 +810,7 @@ function CreateLogModal({ users, today, defaultUserId, onClose, onSaved }) {
                               onClick={e => { e.stopPropagation(); setWorkTimes(prev => { const c = { ...prev }; delete c[t]; return c }) }}
                             >×</button>
                           )}
-                          <div className={styles.wCardLabel}>{t}</div>
+                          <div className={styles.wCardLabel}>{itemLabel(t)}</div>
                           {active && <div className={styles.wCardTime}>{fmtMinutes(workTimes[t].h * 60 + workTimes[t].m)}</div>}
                         </div>
                       )
@@ -1217,7 +1223,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${rpfx}業務種別を選択してください`)
           if (r.type && (parseInt(r.h) || 0) === 0 && (parseInt(r.m) || 0) === 0) errs.push(`${rpfx}業務時間を入力してください`)
           if (r.type) {
-            if (typesSeen.has(r.type)) errs.push(`${sessionPfx}：「${r.type}」が複数行に登録されています`)
+            if (typesSeen.has(r.type)) errs.push(`${sessionPfx}：「${itemLabel(r.type)}」が複数行に登録されています`)
             typesSeen.add(r.type)
           }
         }
@@ -1523,7 +1529,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                   {rows.map((row, ri) => {
                                     const isLastRow = rows.length === 1
                                     const isNewRow = pendingFocusSessionId === s.sessionId && ri === rows.length - 1
-                                    const availableTypes = userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t))
+                                    // a saved item that can no longer be chosen (e.g. deleted) stays visible
+                                    const availableTypes = [
+                                      ...(row.type && !userWorkItems.includes(row.type) ? [row.type] : []),
+                                      ...userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t)),
+                                    ]
                                     const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
                                     const rowErr = getWorkRowError(row)
                                     return (
@@ -1535,7 +1545,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                           onChange={e => updateWorkRow(s.sessionId, ri, 'type', e.target.value)}
                                         >
                                           <option value="">業務を選択</option>
-                                          {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                          {availableTypes.map(t => <option key={t} value={t}>{itemLabel(t)}</option>)}
                                         </select>
                                         <div className={styles.dayEditWorkTimeCell}>
                                           <input type="number" min="0" max="23"
@@ -1584,7 +1594,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.dayEditLegacySection}>
                   <div className={styles.dayEditLegacyTitle}>旧データ（打刻回未設定）</div>
                   {Object.entries(legacyWorkItems).filter(([, m]) => m > 0).map(([type, mins]) => (
-                    <div key={type} className={styles.dayEditLegacyItem}>{type}：{fmtWorkTotal(mins)}</div>
+                    <div key={type} className={styles.dayEditLegacyItem}>{itemLabel(type)}：{fmtWorkTotal(mins)}</div>
                   ))}
                 </div>
               )}
@@ -1721,7 +1731,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
                         return (
                           <div key={ri} className={styles.confirmSessionRow}>
-                            <span>{r.type}</span><strong>{fmtMinutes(mins)}</strong>
+                            <span>{itemLabel(r.type)}</span><strong>{fmtMinutes(mins)}</strong>
                           </div>
                         )
                       })}
@@ -2008,7 +2018,7 @@ function KinmuboTab({ today }) {
       const rows = []
       const allByDateDates = Object.keys(byDate).sort()
       const [ymY, ymM] = allByDateDates[0]?.split('-').map(Number) || [new Date().getFullYear(), new Date().getMonth() + 1]
-      for (const type of (user.workItems || []).filter(t => !EXCL.has(t))) {
+      for (const type of sortByItemOrder((user.workItems || []).filter(t => !EXCL.has(t)))) {
         const rateObj = itemRates[type] || {}
         const hasSunday = !!(rateObj.sunday)
         const history = rateObj?.rateHistory
@@ -2043,11 +2053,11 @@ function KinmuboTab({ today }) {
           })
           const periodRangeLabel = multiPeriod ? `${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}` : ''
           if (hasSunday) {
-            if (wdM > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: wdM, days: null, rate: normalRate, pay: Math.round(wdM / 60 * normalRate) })
-            if (weM > 0) rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : type + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sundayRate, pay: Math.round(weM / 60 * sundayRate) })
+            if (wdM > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: wdM, days: null, rate: normalRate, pay: Math.round(wdM / 60 * normalRate) })
+            if (weM > 0) rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : itemLabel(type) + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sundayRate, pay: Math.round(weM / 60 * sundayRate) })
           } else {
             const tot = wdM + weM
-            if (tot > 0) rows.push({ label: multiPeriod ? periodRangeLabel : type, parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: tot, days: null, rate: normalRate, pay: Math.round(tot / 60 * normalRate) })
+            if (tot > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: tot, days: null, rate: normalRate, pay: Math.round(tot / 60 * normalRate) })
           }
         }
       }
@@ -2490,7 +2500,7 @@ function KinmuboTab({ today }) {
                                 if (entry.sessions.length === 0) {
                                   const legacyItems = entry.workReportItems || {}
                                   const legacyEntries = Object.entries(legacyItems).filter(([, m]) => m > 0)
-                                  const legacyContent = legacyEntries.map(([t, m]) => `${t}: ${fmtMins(m)}`).join(' / ') || '—'
+                                  const legacyContent = legacyEntries.map(([t, m]) => `${itemLabel(t)}: ${fmtMins(m)}`).join(' / ') || '—'
                                   const legacyTotal = legacyEntries.reduce((s, [, m]) => s + m, 0)
                                   return [(
                                     <tr key={ds} className={rowClass}>
@@ -2509,7 +2519,7 @@ function KinmuboTab({ today }) {
                                   const perWork = session.perSessionWork
                                   const hasWork = perWork && Object.values(perWork).some(m => m > 0)
                                   const workContent = hasWork
-                                    ? Object.entries(perWork).filter(([, m]) => m > 0).map(([t, m]) => `${t}: ${fmtMins(m)}`).join(' / ')
+                                    ? sortByItemOrder(Object.keys(perWork)).filter(t => perWork[t] > 0).map(t => `${itemLabel(t)}: ${fmtMins(perWork[t])}`).join(' / ')
                                     : null
                                   const sessionTotal = hasWork ? Object.values(perWork).reduce((s, m) => s + m, 0) : 0
                                   return (
@@ -2571,7 +2581,7 @@ function KinmuboTab({ today }) {
                                 <React.Fragment key={i}>
                                   {needsGroupHeader && (
                                     <tr className={styles.kinmuboDetailGroupHeader}>
-                                      <td colSpan={4} className={styles.kinmuboDetailGroupTd}>{r.parentType}</td>
+                                      <td colSpan={4} className={styles.kinmuboDetailGroupTd}>{itemLabel(r.parentType)}</td>
                                     </tr>
                                   )}
                                   <tr className={[styles.kinmuboDetailRow, r.isMultiPeriod ? styles.kinmuboDetailSubRow : ''].join(' ')}>
@@ -2801,7 +2811,7 @@ function AddUserModal({ onClose, onAdded }) {
   const [workItems, setWorkItems] = useState([])
   const [itemRates, setItemRates] = useState(() => {
     const r = {}
-    ASSIGNABLE_ITEMS.forEach(item => { r[item] = { normal: '', sunday: '', amount: '' } })
+    assignableItems().forEach(item => { r[item] = { normal: '', sunday: '', amount: '' } })
     return r
   })
   const [multipliers, setMultipliers] = useState({})
@@ -2850,14 +2860,14 @@ function AddUserModal({ onClose, onAdded }) {
 
   function buildItemRates() {
     const result = {}
-    ASSIGNABLE_ITEMS.forEach(item => {
+    assignableItems().forEach(item => {
       const r = itemRates[item] || {}
       if (item === '交通費') {
-        if (r.amount !== '') result[item] = { amount: Number(r.amount) }
+        if ((r.amount ?? '') !== '') result[item] = { amount: Number(r.amount) }
       } else {
         const entry = {}
-        if (r.normal !== '') entry.normal = Number(r.normal)
-        if (r.sunday !== '') entry.sunday = Number(r.sunday)
+        if ((r.normal ?? '') !== '') entry.normal = Number(r.normal)
+        if ((r.sunday ?? '') !== '') entry.sunday = Number(r.sunday)
         if (multipliers[item] != null) entry.multiplier = Number(multipliers[item])
         if (Object.keys(entry).length > 0) result[item] = entry
       }
@@ -2990,7 +3000,7 @@ function AddUserModal({ onClose, onAdded }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {ASSIGNABLE_ITEMS.filter(item => item !== '交通費').map(item => {
+                    {assignableItems().filter(item => item !== '交通費').map(item => {
                       const checked = workItems.includes(item)
                       const r = itemRates[item] || {}
                       const isTransport = item === '交通費'
@@ -3005,7 +3015,7 @@ function AddUserModal({ onClose, onAdded }) {
                             />
                           </td>
                           <td className={styles.workItemTd}>
-                            <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{item}</span>
+                            <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{itemLabel(item)}</span>
                           </td>
                           {isTransport ? (
                             <>
@@ -3121,7 +3131,7 @@ function MinWageSettings({ onUsersChanged }) {
 
   const sorted = [...(history || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''))
   const currentIdx = sorted.findIndex(e => !e.from || e.from <= today)
-  const linkable = ASSIGNABLE_ITEMS.filter(i => i !== '交通費')
+  const linkable = activeWorkItemDefs().map(d => d.id)
 
   async function toggleItem(item) {
     const next = items.includes(item) ? items.filter(i => i !== item) : [...items, item]
@@ -3137,9 +3147,10 @@ function MinWageSettings({ onUsersChanged }) {
     if ((history || []).some(e => e.from === from)) { setErr(`${fmtJaDate(from)}の最低賃金はすでに登録されています`); return }
     setErr('')
     const users = await getUsers()
-    const rows = planMinWageChange(users, items, wage, from)
+    const linked = items.filter(i => !isDeletedWorkItem(i)) // deleted items are not raised
+    const rows = planMinWageChange(users, linked, wage, from)
     const higher = users.filter(u => u.employeeType !== 'salaried')
-      .reduce((n, u) => n + items.filter(i => (u.workItems || []).includes(i) && getRatesForDate(u.itemRates?.[i], from).normal >= wage).length, 0)
+      .reduce((n, u) => n + linked.filter(i => (u.workItems || []).includes(i) && getRatesForDate(u.itemRates?.[i], from).normal >= wage).length, 0)
     setPlan({ wage, from, rows, keep: new Set(rows.map((_, k) => k)), higher, users })
   }
 
@@ -3196,7 +3207,7 @@ function MinWageSettings({ onUsersChanged }) {
         {items && linkable.map(it => (
           <label key={it} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${items.includes(it) ? '#1a5fa8' : '#e2e8f0'}`, background: items.includes(it) ? '#eff6ff' : '#fff', fontSize: '0.88rem', cursor: 'pointer', minHeight: 32 }}>
             <input type="checkbox" checked={items.includes(it)} onChange={() => toggleItem(it)} style={{ width: 18, height: 18 }} />
-            {it}
+            {itemLabel(it)}
           </label>
         ))}
       </div>
@@ -3235,7 +3246,7 @@ function MinWageSettings({ onUsersChanged }) {
                     <input type="checkbox" checked={plan.keep.has(k)} style={{ width: 18, height: 18 }}
                       onChange={() => setPlan(p => { const keep = new Set(p.keep); keep.has(k) ? keep.delete(k) : keep.add(k); return { ...p, keep } })} />
                     <span style={{ minWidth: 90, fontWeight: 700 }}>{r.name}</span>
-                    <span style={{ minWidth: 70 }}>{r.item}</span>
+                    <span style={{ minWidth: 70 }}>{itemLabel(r.item)}</span>
                     <span style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>
                       {r.oldNormal ? `${r.oldNormal.toLocaleString()}円` : '未設定'} → <strong>{r.newNormal.toLocaleString()}円</strong>
                       {r.newSunday ? <span style={{ color: '#64748b' }}>（日曜 {r.newSunday.toLocaleString()}円）</span> : null}
@@ -3344,7 +3355,7 @@ function CarRateSettings() {
 
 // ─── SettingsTab ──────────────────────────────────────────────────────────────
 
-function SettingsTab({ onUsersChanged }) {
+function SettingsTab({ users, onUsersChanged }) {
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
   const [saved, setSaved] = useState(false)
@@ -3408,6 +3419,8 @@ function SettingsTab({ onUsersChanged }) {
           <div style={{ fontSize: '0.8rem', color: '#9baab8' }}>変更後は次回PIN入力から新しいPINが有効になります</div>
         </div>
       </div>
+
+      <WorkItemSettings users={users} />
 
       <MinWageSettings onUsersChanged={onUsersChanged} />
 
@@ -3565,7 +3578,7 @@ function PcWorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onCl
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.pcWorkTimeBox} onClick={e => e.stopPropagation()}>
         <div className={styles.pcWorkTimeHeader}>
-          <div className={styles.pcWorkTimeTitle}>{item}</div>
+          <div className={styles.pcWorkTimeTitle}>{itemLabel(item)}</div>
           <button className={styles.modalCloseBtn} onClick={onClose} tabIndex={-1}>✕</button>
         </div>
 
@@ -3683,7 +3696,7 @@ function WorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onClos
   return (
     <div className={styles.numpadOverlay} onClick={e => { e.stopPropagation(); onClose() }}>
       <div className={styles.numpadBox} onClick={e => e.stopPropagation()}>
-        <div className={styles.numpadTitle}>{item}</div>
+        <div className={styles.numpadTitle}>{itemLabel(item)}</div>
         <input
           ref={inputRef}
           type="text"
@@ -3914,7 +3927,20 @@ function commuteHistoryWith(user, entry) {
 
 // ─── UserEditModal ────────────────────────────────────────────────────────────
 
-const ASSIGNABLE_ITEMS = PAY_ITEMS.filter(p => !['有給', '固定手当', '休憩', '準備'].includes(p))
+// Items that can be assigned on the user screens (deleted ones hidden) + 交通費
+function assignableItems() {
+  return [...activeWorkItemDefs().map(d => d.id), '交通費']
+}
+
+// Every item whose rates must survive a save: deleted items and ones not in
+// the list (older data) included, so saving a user never drops a rate.
+function rateItems(user) {
+  return [...new Set([
+    ...getWorkItemDefs().map(d => d.id),
+    ...Object.keys(user?.itemRates || {}).filter(k => !SYSTEM_ITEMS.has(k)),
+    '交通費',
+  ])]
+}
 
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [step, setStep] = useState('main')
@@ -3924,7 +3950,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [workItems, setWorkItems] = useState(user.workItems || [])
   const [rateHistory, setRateHistory] = useState(() => {
     const h = {}
-    ASSIGNABLE_ITEMS.forEach(item => {
+    rateItems(user).forEach(item => {
       if (item === '交通費') return
       const ur = user.itemRates?.[item] || {}
       const hist = ur.rateHistory || []
@@ -3987,7 +4013,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
 
   function buildItemRates() {
     const result = {}
-    ASSIGNABLE_ITEMS.forEach(item => {
+    rateItems(user).forEach(item => {
       if (item === '交通費') {
         if (transportAmount !== '') result[item] = { amount: Number(transportAmount) }
         return
@@ -4282,7 +4308,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {ASSIGNABLE_ITEMS.filter(item => item !== '交通費').map(item => {
+                    {assignableItems().filter(item => item !== '交通費').map(item => {
                       const checked = workItems.includes(item)
                       const isTransport = item === '交通費'
                       const hist = rateHistory[item] || []
@@ -4296,7 +4322,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                             <input type="checkbox" className={styles.workItemCheckbox} checked={checked} onChange={() => toggleWorkItem(item)} />
                           </td>
                           <td className={styles.workItemTd}>
-                            <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{item}</span>
+                            <span className={[styles.workItemName, !checked ? styles.workItemNameDim : ''].join(' ')}>{itemLabel(item)}</span>
                           </td>
                           {isTransport ? (
                             <>
@@ -4384,7 +4410,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             <div className={styles.modalOverlay} onClick={() => { setHistoryModalItem(null); setAddRateForm(null) }}>
               <div className={styles.rateHistoryModal} onClick={e => e.stopPropagation()}>
                 <div className={styles.rateHistoryModalHeader}>
-                  <div className={styles.rateHistoryModalTitle}>{historyModalItem} の時給履歴</div>
+                  <div className={styles.rateHistoryModalTitle}>{itemLabel(historyModalItem)} の時給履歴</div>
                   <button className={styles.modalCloseBtn} onClick={() => { setHistoryModalItem(null); setAddRateForm(null) }}>✕</button>
                 </div>
                 <div className={styles.rateHistoryModalBody}>

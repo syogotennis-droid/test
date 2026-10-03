@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, localToday } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -80,7 +80,11 @@ function objsEqual(a, b) {
 }
 
 /* ─── 業務入力・編集フォーム（カード＋テンキー） ─── */
-function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSave, saving }) {
+function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, onCancel, onSave, saving }) {
+  // items already entered stay editable even if no longer selectable (e.g. deleted)
+  const [editableItems] = useState(() => sortByItemOrder([...new Set([
+    ...selectable, ...Object.keys(initialWork).filter(t => initialWork[t] > 0),
+  ])]))
   const [inputs, setInputs] = useState(() => {
     const init = {}
     Object.entries(initialWork).forEach(([type, mins]) => {
@@ -151,7 +155,7 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
                   ].join(' ')}
                   onClick={() => { setSelectedItem(item); setNumpadField('h') }}
                 >
-                  <span className={styles.editItemName}>{item}</span>
+                  <span className={styles.editItemName}>{itemLabel(item)}</span>
                   {v > 0 && <span className={styles.editItemTime}>{fmtMins(v)}</span>}
                 </button>
               )
@@ -173,7 +177,7 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
 
         <div className={styles.editRightCol}>
           <div className={styles.editInputTitle}>
-            {selectedItem ? `${selectedItem}の時間を入力` : '業務を選択してください'}
+            {selectedItem ? `${itemLabel(selectedItem)}の時間を入力` : '業務を選択してください'}
           </div>
 
           <div className={styles.hmDisplayRow}>
@@ -219,7 +223,7 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
 
 /* ─── 日別詳細モーダル ─── */
 function fmtCopyItems(items) {
-  return Object.entries(items).map(([t, m]) => `${t} ${fmtMins(m)}`).join('・')
+  return sortByItemOrder(Object.keys(items)).map(t => `${itemLabel(t)} ${fmtMins(items[t])}`).join('・')
 }
 
 // Work prepared for an upcoming day by the weekly copy; the employee may remove it
@@ -254,7 +258,7 @@ function CopySection({ copy, onDelete }) {
 }
 
 function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onClose, onWorkSaved }) {
-  const editableItems = (user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item))
+  const editableItems = sortByItemOrder((user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item) && !isDeletedWorkItem(item)))
   const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried'
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   const dowLabel = DOW_LABELS[new Date(year, month, day).getDay()]
@@ -305,7 +309,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
               {copy && <CopySection copy={copy} onDelete={onDeleteCopy} />}
               {sessions.map((session, idx) => {
                 const workData = session.sessionId ? (sessionWorkItems[session.sessionId] || null) : null
-                const workEntries = workData ? Object.entries(workData).filter(([, m]) => m > 0) : []
+                const workEntries = workData ? sortByItemOrder(Object.keys(workData)).map(t => [t, workData[t]]).filter(([, m]) => m > 0) : []
                 const hasWork = workEntries.length > 0
                 const hasIn = !!session.in
                 const isActive = hasIn && !session.out
@@ -354,7 +358,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                           <div className={styles.workEntries}>
                             {workEntries.map(([type, mins]) => (
                               <div key={type} className={styles.workEntry}>
-                                <span className={styles.workEntryType}>{type}</span>
+                                <span className={styles.workEntryType}>{itemLabel(type)}</span>
                                 <span className={styles.workEntryTime}>{fmtMins(mins)}</span>
                               </div>
                             ))}
@@ -414,6 +418,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       getLogs({ dateFrom: from, dateTo: to, userId: user.id }),
       isSal ? Promise.resolve(null) : getSessionWorkReportsForUser(user.id),
       isSal ? Promise.resolve({}) : getWeeklyCopies(user.id, from > today ? from : today, to).catch(() => ({})),
+      loadWorkItemDefs(), // latest item names
     ]).then(([data, workData, copyData]) => {
       setLogs(data)
       setCopies(copyData || {})

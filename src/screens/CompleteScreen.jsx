@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { answerWeeklyCopy } from '../lib/db'
+import { answerWeeklyCopy, itemLabel, sortByItemOrder } from '../lib/db'
 import styles from './CompleteScreen.module.css'
 
 const DOW = ['日', '月', '火', '水', '木', '金', '土']
 
 function itemsText(items) {
-  return Object.entries(items).map(([t, m]) => `${t}${fmtMinutes(m)}`).join('・')
+  return sortByItemOrder(Object.keys(items)).map(t => `${itemLabel(t)}${fmtMinutes(items[t])}`).join('・')
 }
 
 // "先週と同じ業務内容を今週も使いますか？" shown on the first clock-in of the week
@@ -83,7 +83,7 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
   const currentTimeStr = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
 
   const workEntries = isClockOut && workItems
-    ? Object.entries(workItems).filter(([, m]) => m > 0)
+    ? sortByItemOrder(Object.keys(workItems)).map(t => [t, workItems[t]]).filter(([, m]) => m > 0)
     : []
   const workTotalMins = workEntries.reduce((s, [, m]) => s + m, 0)
 
@@ -131,7 +131,7 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
         <div className={styles.workSummary}>
           {workEntries.map(([type, mins]) => (
             <div key={type} className={styles.workSummaryRow}>
-              <span className={styles.workSummaryType}>{type}</span>
+              <span className={styles.workSummaryType}>{itemLabel(type)}</span>
               <span className={styles.workSummaryTime}>{fmtMinutes(mins)}</span>
             </div>
           ))}

@@ -3,7 +3,7 @@
 import {
   getTodayPunchState, saveLog, BREAK_START, BREAK_END, pairBreaks, breakMinutes,
   getWeeklyCopyForSlot, getWeeklyCopyOffer, getTransportDay, saveTransportDay,
-  saveSessionWorkReport, saveWorkReport, localToday, getCommute,
+  saveSessionWorkReport, saveWorkReport, localToday, getCommute, loadWorkItemDefs,
 } from './db.js'
 
 function nowHM() {
@@ -73,6 +73,7 @@ export async function handlePunch(mode, user) {
   const [prefill, savedTransport] = await Promise.all([
     getWeeklyCopyForSlot(user.id, date, slot),
     asks ? getTransportDay(user.id, date) : null,
+    loadWorkItemDefs(), // latest names / order for the work cards
   ])
   return {
     kind: 'work',
