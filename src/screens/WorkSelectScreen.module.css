@@ -539,3 +539,77 @@
   .submitButton { height: 72px; font-size: 26px; gap: 10px; }
   .submitButton svg { width: 32px; height: 32px; }
 }
+
+/* ── 週コピーの確認（その週の最初の退勤） ── */
+.weeklyWrap {
+  height: 100dvh;
+  box-sizing: border-box;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.weeklyBox {
+  background: #fff;
+  color: #1f2937;
+  border: 2px solid #d2eadf;
+  border-radius: 20px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
+  padding: 22px 24px;
+  width: min(720px, 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.weeklyName { font-size: 20px; font-weight: 700; color: #374151; text-align: center; }
+.weeklyTitle { font-size: 28px; font-weight: 900; color: #1a3f6f; text-align: center; }
+
+.weeklyList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 34vh;
+  overflow-y: auto;
+  font-size: 19px;
+  color: #374151;
+  background: #f6fbf8;
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.weeklyRow { display: flex; gap: 12px; }
+.weeklyDow { font-weight: 900; color: #1a3f6f; min-width: 1.5em; flex-shrink: 0; }
+.weeklyHint { font-size: 16px; color: #64748b; text-align: center; }
+
+.weeklyBtns { display: flex; gap: 14px; }
+
+.weeklyYes, .weeklyNo {
+  flex: 1;
+  height: 84px;
+  border-radius: 18px;
+  font-size: 30px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.weeklyYes { background: #16a34a; color: #fff; border: none; }
+.weeklyNo { background: #fff; color: #374151; border: 2px solid #d1d5db; }
+.weeklyYes:disabled, .weeklyNo:disabled { opacity: 0.5; }
+
+.weeklyWrap .backButton { height: 64px; font-size: 22px; }
+
+@media (max-width: 760px) {
+  .weeklyBox { padding: 16px; gap: 10px; }
+  .weeklyName { font-size: 16px; }
+  .weeklyTitle { font-size: 20px; }
+  .weeklyList { font-size: 15px; }
+  .weeklyHint { font-size: 13px; }
+  .weeklyYes, .weeklyNo { height: 60px; font-size: 22px; }
+  .weeklyWrap .backButton { height: 52px; font-size: 17px; }
+}

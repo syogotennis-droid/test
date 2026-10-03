@@ -247,7 +247,6 @@ export default function TabletApp() {
           user={completedInfo.user}
           clockInTime={completedInfo.clockInTime}
           breakInfo={completedInfo.breakInfo}
-          weeklyOffer={completedInfo.weeklyOffer}
           onDone={handleDone}
         />
       )}

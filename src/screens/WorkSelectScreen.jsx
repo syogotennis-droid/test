@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder } from '../lib/db'
+import { answerWeeklyCopyAtClockOut } from '../lib/punchFlow'
 import styles from './WorkSelectScreen.module.css'
 
 const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
@@ -259,19 +260,82 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
   )
 }
 
+const DOW = ['日', '月', '火', '水', '木', '金', '土']
+
+function itemsText(items) {
+  return sortByItemOrder(Object.keys(items)).map(t => `${itemLabel(t)} ${fmtMinutes(items[t])}`).join('・')
+}
+
+// "先週と同じ業務内容を今週も使いますか？" — asked before the work input on the
+// first clock-out of the week. Leaving with 戻る leaves it unanswered (asked again).
+function WeeklyCopyQuestion({ user, offer, onAnswer, onCancel }) {
+  const [busy, setBusy] = useState(false)
+  async function answer(a) {
+    if (busy) return
+    setBusy(true)
+    await onAnswer(a)
+  }
+  return (
+    <div className={styles.weeklyWrap}>
+      <div className={styles.weeklyBox}>
+        <div className={styles.weeklyName}>{user.name} さん</div>
+        <div className={styles.weeklyTitle}>先週と同じ業務内容を今週も使いますか？</div>
+        <div className={styles.weeklyList}>
+          {offer.days.map(d => {
+            const [y, m, dd] = d.date.split('-').map(Number)
+            return (
+              <div key={d.date} className={styles.weeklyRow}>
+                <span className={styles.weeklyDow}>{DOW[new Date(y, m - 1, dd).getDay()]}</span>
+                <span>{d.slots.length > 1
+                  ? d.slots.map(s => `${s.slot}回目 ${itemsText(s.items)}`).join(' ／ ')
+                  : itemsText(d.slots[0].items)}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className={styles.weeklyHint}>「使う」を押すと、今日と今週の同じ曜日の業務入力に最初から入ります</div>
+        <div className={styles.weeklyBtns}>
+          <button className={styles.weeklyNo} onClick={() => answer('skip')} disabled={busy}>使わない</button>
+          <button className={styles.weeklyYes} onClick={() => answer('use')} disabled={busy}>使う</button>
+        </div>
+      </div>
+      <button className={styles.backButton} onClick={onCancel} disabled={busy}>← 戻る</button>
+    </div>
+  )
+}
+
 export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel }) {
   const displayCards = getDisplayCards(user.workItems)
   const allFlatItems = displayCards.flatMap(c => c.type === 'single' ? [c.id] : c.members)
 
-  // pre-filled from today's plan (勤務予定); only items this user can select
-  const [workTimes, setWorkTimes] = useState(() => {
+  // pre-filled from the weekly copy; only items this user can select
+  const toWorkTimes = prefill => {
     const init = {}
-    Object.entries(ctx.prefill || {}).forEach(([t, mins]) => {
+    Object.entries(prefill || {}).forEach(([t, mins]) => {
       if (allFlatItems.includes(t) && mins > 0) init[t] = { h: Math.floor(mins / 60), m: mins % 60 }
     })
     return init
-  })
-  const prefilled = Object.keys(workTimes).length > 0 && !!ctx.prefill
+  }
+  const [workTimes, setWorkTimes] = useState(() => toWorkTimes(ctx.prefill))
+  const [prefilled, setPrefilled] = useState(() => Object.keys(toWorkTimes(ctx.prefill)).length > 0)
+  const [asking, setAsking] = useState(!!ctx.weeklyOffer)
+  const [weeklyMsg, setWeeklyMsg] = useState('')
+
+  async function handleWeeklyAnswer(answer) {
+    try {
+      const r = await answerWeeklyCopyAtClockOut(ctx, answer)
+      if (answer === 'use') {
+        const wt = toWorkTimes(r.prefill)
+        setWorkTimes(wt)
+        setPrefilled(Object.keys(wt).length > 0)
+        // nothing for today (e.g. last week only had later days): say what was prepared
+        if (Object.keys(wt).length === 0) setWeeklyMsg(`今週${r.copiedDays}日分を用意しました（今日の分はありません）`)
+      }
+    } catch {
+      setWeeklyMsg('通信できませんでした。次の退勤のときにもう一度聞きます')
+    }
+    setAsking(false)
+  }
   const [transportEligible, setTransportEligible] = useState(ctx.transportDefault ?? true)
   const [saving, setSaving] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
@@ -321,16 +385,25 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
     }
   }
 
+  if (asking) {
+    return (
+      <div className={styles.screen}>
+        <WeeklyCopyQuestion user={user} offer={ctx.weeklyOffer} onAnswer={handleWeeklyAnswer} onCancel={onCancel} />
+      </div>
+    )
+  }
+
   return (
     <div className={styles.screen}>
       <div className={styles.main}>
-        {(ctx.clockIn || prefilled) && (
+        {(ctx.clockIn || prefilled || weeklyMsg) && (
           <div className={styles.infoBar}>
             <span className={styles.infoName}>{user.name} さん</span>
             {ctx.clockIn?.time && <span>出勤 {ctx.clockIn.time.substring(0, 5)}</span>}
             {ctx.breakTotal > 0 && <span>休憩 {fmtMinutes(ctx.breakTotal)}</span>}
             {ctx.onBreak && <span className={styles.infoWarn}>休憩中のまま退勤します</span>}
             {prefilled && <span className={styles.infoPlan}>先週の内容を入れています（違うときは直してください）</span>}
+            {weeklyMsg && <span className={styles.infoPlan}>{weeklyMsg}</span>}
           </div>
         )}
         <div className={styles.workGrid}>

@@ -3,7 +3,7 @@
 import {
   getTodayPunchState, saveLog, BREAK_START, BREAK_END, pairBreaks, breakMinutes,
   getWeeklyCopyForSlot, getWeeklyCopyOffer, getTransportDay, saveTransportDay,
-  saveSessionWorkReport, saveWorkReport, localToday, getCommute, loadWorkItemDefs,
+  saveSessionWorkReport, saveWorkReport, localToday, getCommute, loadWorkItemDefs, answerWeeklyCopy,
 } from './db.js'
 
 function nowHM() {
@@ -44,9 +44,7 @@ export async function handlePunch(mode, user) {
     if (ps.state === 'break') return fail(`${user.name} さんは休憩中です。戻るときは「休憩・戻り」を押してください`)
     if (ps.state === 'working') return fail(`${user.name} さんはすでに出勤中です`)
     await saveLog({ userId: user.id, workType: '', logType: '出勤' })
-    // first clock-in of the week: offer to reuse last week's work (hourly staff only)
-    const offer = user.employeeType === 'salaried' ? null : await getWeeklyCopyOffer(user.id)
-    return done({ logType: '出勤', user, weeklyOffer: offer?.offer ? offer : null })
+    return done({ logType: '出勤', user })
   }
 
   if (mode === '休憩') {
@@ -70,19 +68,31 @@ export async function handlePunch(mode, user) {
   const asks = asksTransport(user)
   // this clock-out closes the n-th session of the day → the n-th copied slot
   const slot = ps.logs.filter(l => l.log_type === '出勤').length
-  const [prefill, savedTransport] = await Promise.all([
+  // first clock-out of the week: the work screen first asks whether to reuse
+  // last week's work (null when already answered, nothing to copy or offline)
+  const [prefill, savedTransport, offer] = await Promise.all([
     getWeeklyCopyForSlot(user.id, date, slot),
     asks ? getTransportDay(user.id, date) : null,
+    getWeeklyCopyOffer(user.id),
     loadWorkItemDefs(), // latest names / order for the work cards
   ])
   return {
     kind: 'work',
     ctx: {
       user, date, sessionId: ps.sessionId, clockIn: ps.clockIn, onBreak: ps.state === 'break',
-      breakTotal, prefill, asksTransport: asks, transportDefault: savedTransport ?? true,
+      breakTotal, prefill, slot, weeklyOffer: offer?.offer ? offer : null,
+      asksTransport: asks, transportDefault: savedTransport ?? true,
       sessionCount: ps.logs.filter(l => l.log_type === '退勤').length + 1,
     },
   }
+}
+
+// Answer to the weekly copy question on the work screen.
+// → { copiedDays, prefill } (prefill: this session's copied items, or null)
+export async function answerWeeklyCopyAtClockOut(ctx, answer) {
+  const r = await answerWeeklyCopy(ctx.user.id, answer)
+  const prefill = answer === 'use' ? await getWeeklyCopyForSlot(ctx.user.id, ctx.date, ctx.slot) : null
+  return { copiedDays: r.copiedDays || 0, prefill }
 }
 
 export async function finishClockOut(ctx, workItems, { transportEligible } = {}) {

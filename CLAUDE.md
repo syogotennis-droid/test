@@ -42,7 +42,7 @@ npx wrangler pages dev dist
 - `src/screens/AdminScreen.jsx` — 管理画面（記録一覧・出勤簿作成・ユーザー管理・QR印刷）
 - `src/screens/WorkSelectScreen.jsx` — 退勤時の業務選択
 - `src/screens/DeviceSetupScreen.jsx` — 打刻端末の初回登録
-- `src/lib/punchFlow.js` — 打刻の流れ（出勤・休憩・退勤の判定、週コピーの確認と業務の事前入力）。ブラウザ版とアプリ版で共用
+- `src/lib/punchFlow.js` — 打刻の流れ（出勤・休憩・退勤の判定、週コピーの確認と業務の事前入力）。ブラウザ版とアプリ版で共用。週コピーの質問画面は `WorkSelectScreen.jsx`
 - `src/App.jsx` / `src/tablet/TabletApp.jsx` — 打刻アプリの流れ（ブラウザ版 / Androidアプリ版）
 - `setup-new-client.js` — 案件の作成・デプロイ
 - `migrate-from-firebase.js` — Firebase → D1 のデータ移行（Firebase は読むだけ）
@@ -64,8 +64,8 @@ npx wrangler pages dev dist
 - 打刻時刻の修正は管理者のみ（記録一覧の「勤務記録の編集」で休憩も編集できる）
 
 ## 週コピー（従業員側）
-- その週の最初の出勤時に「先週と同じ業務内容を今週も使いますか？」と聞く（`weekly_copy_answers` に週ごとの回答）。先週の実績が残りの曜日にない人・社員・オフライン時は聞かない。1分答えなければ打刻画面に戻り、次の出勤で再度聞く
-- 「使う」で、先週の実績（session_work_reports）を今週の同じ曜日・同じ回（slot）に `weekly_copies` へ用意する。今日より前の日、すでに用意済みの日は書かない
+- その週の最初の退勤時、業務入力の前に「先週と同じ業務内容を今週も使いますか？」と聞く（`weekly_copy_answers` に週ごとの回答）。先週の実績が残りの曜日にない人・社員・オフライン時は聞かない。「戻る」で抜けると未回答のままで、次の退勤で再度聞く
+- 「使う」で、先週の実績（session_work_reports）を今週の同じ曜日・同じ回（slot）に `weekly_copies` へ用意し、その場の業務入力にも今日の分を入れる。今日より前の日、すでに用意済みの日は書かない
 - 退勤時の業務入力に、その日のその回の内容が最初から入る。給与は実際に登録された内容だけで計算する
 - 勤務確認のカレンダーで用意された日を確認・削除できる（休みの日など）
 - `work_plans`（以前の管理者用「勤務予定」）は使っていないがデータ保持のため残している
