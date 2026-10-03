@@ -7,45 +7,68 @@ function fmtMinutes(mins) {
   return h > 0 ? `${h}時間${m}分` : `${m}分`
 }
 
-export default function CompleteScreen({ logType, workItems, user, clockInTime, onDone }) {
+// logType: '出勤' | '退勤' | '休憩開始' | '休憩終了'
+const VIEW = {
+  '出勤': { title: '出勤しました', bg: '#2e7d32', icon: '🟢', timeLabel: '出勤時間' },
+  '退勤': { title: '退勤しました', bg: '#1a73e8', icon: '🔴', timeLabel: '退勤時間' },
+  '休憩開始': { title: '休憩に入りました', bg: '#b45309', icon: '☕', timeLabel: '休憩開始' },
+  '休憩終了': { title: '休憩から戻りました', bg: '#2e7d32', icon: '🟢', timeLabel: '戻り時間' },
+}
+
+export default function CompleteScreen({ logType, workItems, user, clockInTime, breakInfo, onDone }) {
   const [now] = useState(() => new Date())
 
   useEffect(() => {
-    const timer = setTimeout(onDone, 4000)
+    const timer = setTimeout(onDone, logType === '休憩開始' ? 5000 : 4000)
     return () => clearTimeout(timer)
-  }, [onDone])
+  }, [onDone, logType])
 
-  const isClockIn = logType === '出勤'
-  const bgColor = isClockIn ? '#2e7d32' : '#1a73e8'
-
+  const view = VIEW[logType] || VIEW['退勤']
+  const isClockOut = logType === '退勤'
   const currentTimeStr = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
 
-  const workEntries = !isClockIn && workItems
+  const workEntries = isClockOut && workItems
     ? Object.entries(workItems).filter(([, m]) => m > 0)
     : []
   const workTotalMins = workEntries.reduce((s, [, m]) => s + m, 0)
 
   return (
-    <div className={styles.screen} style={{ background: bgColor }}>
+    <div className={styles.screen} style={{ background: view.bg }}>
       <div className={styles.checkmark}>✓</div>
-      <div className={styles.workIcon}>{isClockIn ? '🟢' : '🔴'}</div>
-      <h1>{logType}しました</h1>
+      <div className={styles.workIcon}>{view.icon}</div>
+      <h1>{view.title}</h1>
       {user && (
         <p className={styles.detail}>{user.name} さん</p>
       )}
 
       <div className={styles.timeInfo}>
-        {!isClockIn && clockInTime && (
+        {isClockOut && clockInTime && (
           <div className={styles.timeRow}>
             <span className={styles.timeLabel}>出勤時間</span>
             <span className={styles.timeValue}>{clockInTime.substring(0, 5)}</span>
           </div>
         )}
+        {logType === '休憩終了' && breakInfo?.start && (
+          <div className={styles.timeRow}>
+            <span className={styles.timeLabel}>休憩開始</span>
+            <span className={styles.timeValue}>{breakInfo.start}</span>
+          </div>
+        )}
         <div className={styles.timeRow}>
-          <span className={styles.timeLabel}>{isClockIn ? '出勤時間' : '退勤時間'}</span>
+          <span className={styles.timeLabel}>{view.timeLabel}</span>
           <span className={styles.timeValue}>{currentTimeStr}</span>
         </div>
+        {breakInfo?.totalMins > 0 && (logType === '休憩終了' || isClockOut) && (
+          <div className={[styles.timeRow, styles.totalRow].join(' ')}>
+            <span className={styles.timeLabel}>本日の休憩</span>
+            <span className={styles.timeValue}>{fmtMinutes(breakInfo.totalMins)}</span>
+          </div>
+        )}
       </div>
+
+      {logType === '休憩開始' && (
+        <div className={styles.nextHint}>戻ったら「休憩・戻り」を押してください</div>
+      )}
 
       {workEntries.length > 0 && (
         <div className={styles.workSummary}>

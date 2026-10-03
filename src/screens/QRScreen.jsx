@@ -5,6 +5,9 @@ import styles from './QRScreen.module.css'
 
 const PIN_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 
+const MODE_LABEL = { '休憩': '休憩・戻り' }
+const MODE_ICON = { '出勤': '🟢', '休憩': '☕', '確認': '📅' }
+
 function PinOverlay({ mode, onSubmit, onClose }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
@@ -40,8 +43,8 @@ function PinOverlay({ mode, onSubmit, onClose }) {
     <div className={styles.pinOverlay}>
       <div className={styles.pinBox}>
         <div className={styles.pinHeader}>
-          <span className={styles.pinIcon}>{mode === '出勤' ? '🟢' : '🔴'}</span>
-          <span className={styles.pinTitle}>{mode} — PINを入力</span>
+          <span className={styles.pinIcon}>{MODE_ICON[mode] || '🔴'}</span>
+          <span className={styles.pinTitle}>{MODE_LABEL[mode] || mode} — PINを入力</span>
         </div>
 
         <div className={styles.pinDots}>
@@ -171,7 +174,7 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
     <div className={styles.screen}>
       <div className={styles.header}>
         <h1>
-          <span className={mode === '出勤' ? styles.modeIn : styles.modeOut}>{mode}</span>
+          <span className={mode === '出勤' ? styles.modeIn : mode === '休憩' ? styles.modeBreak : styles.modeOut}>{MODE_LABEL[mode] || mode}</span>
           <span className={styles.headerSub}> — QRコードを枠内に収めてください</span>
         </h1>
       </div>

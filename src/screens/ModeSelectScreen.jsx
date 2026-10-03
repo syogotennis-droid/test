@@ -90,6 +90,13 @@ export default function ModeSelectScreen({ onSelect }) {
           >
             <span className={styles.scanHintText}>勤務確認</span>
           </button>
+          <button
+            type="button"
+            className={`${styles.modeBtn} ${styles.clockBreak}`}
+            onClick={() => onSelect('休憩')}
+          >
+            <span className={styles.scanHintText}>☕ 休憩・戻り</span>
+          </button>
           <div className={styles.statusPanel}>
             <span className={styles.statusIconLarge}>👥</span>
             <div>

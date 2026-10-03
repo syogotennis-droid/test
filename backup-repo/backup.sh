@@ -9,7 +9,7 @@ WRANGLER="${WRANGLER:-npx --yes wrangler}"
 WHERE="${WRANGLER_WHERE:---remote}"
 # Business data only. Login sessions are left out so a leaked backup can't be
 # used to sign in; restore.sh recreates the empty tables from schema.sql.
-TABLES="users logs work_reports session_work_reports config overtime_apps salaried_days"
+TABLES="users logs work_reports session_work_reports config overtime_apps salaried_days work_plans transport_days"
 table_args=""
 for t in $TABLES; do table_args="$table_args --table $t"; done
 

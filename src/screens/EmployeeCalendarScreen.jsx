@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -32,8 +32,9 @@ function buildDayMap(logs, year, month) {
     if (y !== year || m !== month + 1) return
     if (log.session_id) {
       if (!byDaySession[d]) byDaySession[d] = {}
-      if (!byDaySession[d][log.session_id]) byDaySession[d][log.session_id] = { in: '', out: '', ts: '' }
+      if (!byDaySession[d][log.session_id]) byDaySession[d][log.session_id] = { in: '', out: '', ts: '', logs: [] }
       const entry = byDaySession[d][log.session_id]
+      entry.logs.push(log)
       if (log.log_type === '出勤') { entry.in = (log.time || '').substring(0, 5); entry.ts = log.timestamp || '' }
       else if (log.log_type === '退勤') entry.out = (log.time || '').substring(0, 5)
     } else {
@@ -47,7 +48,7 @@ function buildDayMap(logs, year, month) {
   allDays.forEach(d => {
     const sessions = []
     Object.entries(byDaySession[d] || {}).forEach(([sid, s]) => {
-      sessions.push({ sessionId: sid, in: s.in, out: s.out, ts: s.ts })
+      sessions.push({ sessionId: sid, in: s.in, out: s.out, ts: s.ts, breaks: pairBreaks(s.logs) })
     })
     const legacy = noSessionLogs[d]
     if (legacy) {
@@ -289,12 +290,19 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
                         }
                       </span>
                       {isActive
-                        ? <span className={styles.statusBadgeActive}>勤務中</span>
+                        ? <span className={styles.statusBadgeActive}>{(session.breaks || []).some(b => b.start && !b.end) ? '休憩中' : '勤務中'}</span>
                         : session.out
                           ? <span className={styles.statusBadgeDone}>退勤済</span>
                           : null
                       }
                     </div>
+
+                    {(session.breaks || []).map((b, bi) => (
+                      <div key={bi} className={styles.punchLine}>
+                        <span className={styles.punchLabel}>休憩</span>
+                        <span className={styles.punchTimes}>{b.start || '—'} 〜 {b.end || <span className={styles.punchActive}>休憩中</span>}</span>
+                      </div>
+                    ))}
 
                     <div className={styles.workSection}>
                       <div className={styles.workSectionHeader}>

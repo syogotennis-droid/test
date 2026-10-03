@@ -85,12 +85,21 @@
 .clockOut { background: #dc2626; }
 
 .clockCheck {
-  flex: 0 0 50%;
+  flex: 0 0 34%;
   height: 100%;
   background: #374151;
   border-radius: 10px 0 0 10px;
   border-right: 1px solid #d6d9de;
   gap: 16px;
+  touch-action: manipulation;
+}
+
+.clockBreak {
+  flex: 0 0 33%;
+  height: 100%;
+  background: #b45309;
+  border-radius: 0;
+  border-right: 1px solid #d6d9de;
   touch-action: manipulation;
 }
 
@@ -166,4 +175,28 @@
   font-weight: 900;
   color: #111827;
   line-height: 1;
+}
+
+/* ── スマホなど狭い画面 ── */
+@media (max-width: 760px) {
+  .screen { grid-template-rows: 64px 1fr; }
+  .header { padding: 0 16px; }
+  .clockTime { font-size: 36px; }
+  .dateYear { font-size: 13px; margin-bottom: 4px; }
+  .dateMonthDay { font-size: 20px; }
+  .main { grid-template-rows: minmax(0, 1fr) auto; padding: 12px 16px 20px; gap: 12px; }
+  .mainBtns { gap: 12px; }
+  .modeBtn { gap: 10px; }
+  .iconCircle { width: 84px; height: 84px; }
+  .iconCircle svg { width: 44px; height: 44px; }
+  .modeLabel { font-size: 36px; }
+  .bottomPanel { height: auto; flex-wrap: wrap; }
+  .clockCheck, .clockBreak { flex: 1 1 50%; height: 72px; border-radius: 0; }
+  .clockCheck { border-radius: 10px 0 0 0; }
+  .clockBreak { border-radius: 0 10px 0 0; border-right: none; }
+  .statusPanel { flex: 1 1 100%; padding: 10px; gap: 12px; }
+  .scanHintText { font-size: 20px; }
+  .statusIconLarge { font-size: 32px; }
+  .statusLabel { font-size: 14px; }
+  .statusValue { font-size: 26px; }
 }

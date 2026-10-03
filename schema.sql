@@ -84,3 +84,27 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   fails INTEGER NOT NULL DEFAULT 0,
   locked_until INTEGER NOT NULL DEFAULT 0
 );
+
+-- Planned work per user per day (勤務予定). Pre-fills the clock-out work input;
+-- pay is still calculated only from what is actually reported.
+-- source: 'manual' (entered/edited for that day) | 'copy' (created by week copy)
+CREATE TABLE IF NOT EXISTS work_plans (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  items TEXT NOT NULL DEFAULT '{}',
+  source TEXT NOT NULL DEFAULT 'manual',
+  updated_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_wp_user_date ON work_plans(user_id, date);
+
+-- Days excluded from transport pay ("本日の交通費: 支給なし").
+-- No row means the day is eligible, which keeps all existing data unchanged.
+CREATE TABLE IF NOT EXISTS transport_days (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  eligible INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_td_date ON transport_days(date);

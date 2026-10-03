@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 import { getUsers } from '../lib/db'
 import styles from './QRGeneratorScreen.module.css'
@@ -32,20 +32,29 @@ const CARD_CSS = `
   .name { margin-top: 1mm; font-size: 20pt; font-weight: 900; color: #1a5fa8; letter-spacing: 0.06em; }
 `
 
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 async function cardHtml(user) {
   const qrUrl = await QRCode.toDataURL(user.id, { width: 400, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
   return `<div class="card">
-  <div class="id">${user.id}</div>
+  <div class="id">${esc(user.id)}</div>
   <img class="qr" src="${qrUrl}" />
-  <div class="name">${user.name}</div>
+  <div class="name">${esc(user.name)}</div>
 </div>`
 }
 
 async function openPrintWindow(users) {
-  const cards = await Promise.all(users.map(cardHtml))
+  if (users.length === 0) return
+  // open before the async QR generation so the browser treats it as a click popup
   const win = window.open('', '_blank', 'width=700,height=500')
+  if (!win) { alert('印刷画面を開けませんでした。ブラウザのポップアップを許可してください。'); return }
+  win.document.write('<p style="font-family:sans-serif;padding:16px">印刷の準備中…</p>')
+  const cards = await Promise.all(users.map(cardHtml))
+  win.document.open()
   win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8">
+<html><head><meta charset="utf-8"><title>QRカード</title>
 <style>
   @page { margin: 8mm; }
   body { margin: 0; }
@@ -56,41 +65,104 @@ async function openPrintWindow(users) {
 <div class="wrap">${cards.join('')}</div>
 </body></html>`)
   win.document.close()
-  win.onload = () => { win.focus(); win.print(); win.close() }
-}
-
-function printOne(user) {
-  openPrintWindow([user])
+  const imgs = [...win.document.images]
+  await Promise.all(imgs.map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r })))
+  win.focus()
+  win.print()
+  win.close()
 }
 
 export default function QRGeneratorScreen({ onBack }) {
   const [users, setUsers] = useState([])
+  const [selected, setSelected] = useState(() => new Set())
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
-    getUsers().then(u => setUsers(u.sort((a, b) => a.id.localeCompare(b.id))))
+    getUsers().then(u => setUsers([...u].sort((a, b) => a.id.localeCompare(b.id))))
   }, [])
+
+  const q = query.trim().toLowerCase()
+  const visible = useMemo(
+    () => users.filter(u => !q || u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q)),
+    [users, q]
+  )
+  const selectedUsers = users.filter(u => selected.has(u.id))
+  const allVisibleSelected = visible.length > 0 && visible.every(u => selected.has(u.id))
+
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllVisible() {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (allVisibleSelected) visible.forEach(u => next.delete(u.id))
+      else visible.forEach(u => next.add(u.id))
+      return next
+    })
+  }
 
   return (
     <div className={styles.screen}>
       <div className={styles.header}>
-        <button className={styles.backBtn} onClick={onBack}>←</button>
-        <h2>QRコード一覧</h2>
-        <button className={styles.printBtn} onClick={() => openPrintWindow(users)}>🖨 一括印刷</button>
+        <button className={styles.backBtn} onClick={onBack} aria-label="戻る">←</button>
+        <h2>QRコード印刷</h2>
+        <button className={styles.allPrintBtn} onClick={() => openPrintWindow(users)} disabled={users.length === 0}>
+          全員を印刷
+        </button>
+      </div>
+
+      <div className={styles.toolbar}>
+        <input
+          className={styles.search}
+          type="search"
+          placeholder="氏名・IDで絞り込み"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+        <button className={styles.toolBtn} onClick={toggleAllVisible} disabled={visible.length === 0}>
+          {allVisibleSelected ? '表示中の選択を外す' : (q ? '表示中を全て選択' : '全員を選択')}
+        </button>
+        {selected.size > 0 && (
+          <button className={styles.toolBtn} onClick={() => setSelected(new Set())}>選択を解除</button>
+        )}
+        <button
+          className={styles.printBtn}
+          onClick={() => openPrintWindow(selectedUsers)}
+          disabled={selectedUsers.length === 0}
+        >
+          🖨 {selectedUsers.length > 0 ? `選択した${selectedUsers.length}人を印刷` : '印刷する人を選択してください'}
+        </button>
       </div>
 
       <div className={styles.grid}>
-        {users.map(user => (
-          <div key={user.id} className={styles.cardWrap}>
-            <div className={styles.card}>
-              <QRImage value={user.id} size={180} />
-              <div className={styles.name}>{user.name}</div>
-              <div className={styles.userId}>{user.id}</div>
+        {visible.length === 0 && <div className={styles.empty}>該当する従業員がいません</div>}
+        {visible.map(user => {
+          const isSel = selected.has(user.id)
+          return (
+            <div key={user.id} className={styles.cardWrap}>
+              <button
+                type="button"
+                className={[styles.card, isSel ? styles.cardSelected : ''].join(' ')}
+                onClick={() => toggle(user.id)}
+                aria-pressed={isSel}
+              >
+                <span className={[styles.check, isSel ? styles.checkOn : ''].join(' ')} aria-hidden="true">{isSel ? '✓' : ''}</span>
+                <QRImage value={user.id} size={160} />
+                <span className={styles.name}>{user.name}</span>
+                <span className={styles.userId}>{user.id}</span>
+              </button>
+              <button className={styles.singlePrintBtn} onClick={() => openPrintWindow([user])}>
+                🖨 この人だけ印刷
+              </button>
             </div>
-            <button className={styles.singlePrintBtn} onClick={() => printOne(user)}>
-              🖨 印刷
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

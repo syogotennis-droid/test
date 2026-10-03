@@ -164,6 +164,7 @@ export async function onRequest(context) {
     }
     if (route === 'logs' && method === 'POST') {
       const b = await request.json()
+      if (!LOG_TYPES.has(b.log_type)) return fail('invalid log_type', 400)
       const id = b.id || crypto.randomUUID()
       await DB.prepare(
         'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)'
@@ -418,11 +419,94 @@ export async function onRequest(context) {
       return ok({ ok: true })
     }
 
-    // ── Batch Day Edit ─────────────────────────────────────────────────────
-    if (route === 'batch/day_edit' && method === 'POST') {
-      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds } = await request.json()
+    // ── Work plans (勤務予定) ───────────────────────────────────────────────
+    if (route === 'work_plans' && method === 'GET') {
+      const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
+      const where = ['user_id = ?'], args = [userId]
+      if (date) { where.push('date = ?'); args.push(date) }
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      const { results } = await DB.prepare(`SELECT date, items, source FROM work_plans WHERE ${where.join(' AND ')}`).bind(...args).all()
+      const map = {}
+      results.forEach(r => {
+        const items = JSON.parse(r.items || '{}')
+        // an emptied row records "deleted for this day only" so a later copy keeps it empty
+        map[r.date] = { items, source: r.source, ...(Object.keys(items).length === 0 ? { cleared: true } : {}) }
+      })
+      return ok(map)
+    }
+    if (route === 'work_plans' && method === 'PUT') {
+      const b = await request.json()
+      const items = cleanItems(b.items)
+      if (Object.keys(items).length === 0) {
+        await DB.prepare("UPDATE work_plans SET items = '{}', source = 'manual', updated_at = ? WHERE id = ?")
+          .bind(new Date().toISOString(), `${b.userId}_${b.date}`).run()
+      } else {
+        await DB.prepare('INSERT OR REPLACE INTO work_plans (id, user_id, date, items, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(`${b.userId}_${b.date}`, b.userId, b.date, JSON.stringify(items), 'manual', new Date().toISOString()).run()
+      }
+      return ok({ ok: true })
+    }
+    // Copy one week's plans to the following weeks. Never touches past dates
+    // or days edited individually ('manual'); days filled by an earlier copy
+    // are replaced only when overwriteCopied is set.
+    if (route === 'work_plans/copy' && method === 'POST') {
+      const { userId, weekStart, weeks, overwriteCopied, minDate, dryRun } = await request.json()
+      const n = Math.min(Math.max(parseInt(weeks) || 0, 1), 26)
+      const srcFrom = weekStart, srcTo = addDays(weekStart, 6)
+      const lastTarget = addDays(weekStart, 7 * n + 6)
+      const { results } = await DB.prepare('SELECT date, items, source FROM work_plans WHERE user_id = ? AND date >= ? AND date <= ?')
+        .bind(userId, srcFrom, lastTarget).all()
+      const byDate = Object.fromEntries(results.map(r => [r.date, r]))
+      const res = { created: 0, overwritten: 0, skippedManual: 0, skippedCopied: 0, skippedPast: 0 }
       const now = new Date().toISOString()
       const stmts = []
+      for (let i = 0; i < 7; i++) {
+        const src = byDate[addDays(weekStart, i)]
+        if (!src || src.items === '{}') continue
+        for (let k = 1; k <= n; k++) {
+          const date = addDays(weekStart, i + 7 * k)
+          if (minDate && date < minDate) { res.skippedPast++; continue }
+          const cur = byDate[date]
+          if (cur && cur.source !== 'copy') { res.skippedManual++; continue }
+          if (cur && !overwriteCopied) { res.skippedCopied++; continue }
+          if (cur) res.overwritten++
+          else res.created++
+          stmts.push(DB.prepare('INSERT OR REPLACE INTO work_plans (id, user_id, date, items, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(`${userId}_${date}`, userId, date, src.items, 'copy', now))
+        }
+      }
+      if (!dryRun && stmts.length > 0) await DB.batch(stmts)
+      return ok(res)
+    }
+
+    // ── Transport days (本日の交通費) ───────────────────────────────────────
+    if (route === 'transport_days' && method === 'GET') {
+      const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
+      const where = [], args = []
+      if (userId) { where.push('user_id = ?'); args.push(userId) }
+      if (date) { where.push('date = ?'); args.push(date) }
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      const { results } = await DB.prepare('SELECT user_id, date, eligible FROM transport_days' + (where.length ? ' WHERE ' + where.join(' AND ') : ''))
+        .bind(...args).all()
+      const map = {}
+      results.forEach(r => { map[`${r.user_id}_${r.date}`] = !!r.eligible })
+      return ok(map)
+    }
+    if (route === 'transport_days' && method === 'PUT') {
+      const b = await request.json()
+      await transportStmt(DB, b.userId, b.date, !!b.eligible, new Date().toISOString()).run()
+      return ok({ ok: true })
+    }
+
+    // ── Batch Day Edit ─────────────────────────────────────────────────────
+    if (route === 'batch/day_edit' && method === 'POST') {
+      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible } = await request.json()
+      if ((logsToCreate || []).some(l => !LOG_TYPES.has(l.logType))) return fail('invalid log_type', 400)
+      const now = new Date().toISOString()
+      const stmts = []
+      if (typeof transportEligible === 'boolean') stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
       for (const log of (logsToDelete || []))
         stmts.push(DB.prepare('DELETE FROM logs WHERE id = ?').bind(log.id))
       for (const { id, time } of (logsToUpdate || []))
@@ -487,16 +571,50 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'users' || route.startsWith('users/')) return true
     if (route === 'logs/check_in' || route === 'logs/today_statuses') return true
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
+    // today's plan / transport choice of the employee at the clock-out screen
+    if (route === 'work_plans' || route === 'transport_days') return !!(sp.get('userId') && sp.get('date'))
     return false
   }
   if (method === 'POST') return route === 'logs'
-  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports'
+  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days'
   return false
 }
 
+const LOG_TYPES = new Set(['出勤', '退勤', '休憩開始', '休憩終了'])
+
 function publicUser(u) {
   // pin is included so the tablet can match PINs while offline
-  return { id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [] }
+  return {
+    id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
+    asksTransport: asksTransport(u),
+  }
+}
+
+// Whether the clock-out screen should ask "本日の交通費". Must match
+// getCommute() in src/lib/db.js.
+function asksTransport(u) {
+  if (u.employeeType === 'salaried') return false
+  const m = u.commuteMethod
+  if (m === 'walk' || m === 'none') return false
+  if (m === 'car') return Number(u.commuteDistanceKm) > 0
+  return Number(u.itemRates?.['交通費']?.amount) > 0
+}
+
+function transportStmt(DB, userId, date, eligible, now) {
+  // eligible is the default, so only "not eligible" needs a row
+  return eligible
+    ? DB.prepare('DELETE FROM transport_days WHERE id = ?').bind(`${userId}_${date}`)
+    : DB.prepare('INSERT OR REPLACE INTO transport_days (id, user_id, date, eligible, updated_at) VALUES (?, ?, ?, 0, ?)')
+      .bind(`${userId}_${date}`, userId, date, now)
+}
+
+function cleanItems(items) {
+  return Object.fromEntries(Object.entries(items || {}).map(([t, m]) => [t, Math.round(Number(m) || 0)]).filter(([t, m]) => t && m > 0))
+}
+
+function addDays(dateStr, n) {
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(y, mo - 1, d + n)).toISOString().slice(0, 10)
 }
 
 // Workers run in UTC; the business runs in JST (UTC+9)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { initDB, saveLog, isCheckedIn, getClockInTime, saveSessionWorkReport, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from '../lib/db'
+import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from '../lib/db'
+import { handlePunch, finishClockOut } from '../lib/punchFlow'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
 import WorkSelectScreen from '../screens/WorkSelectScreen'
@@ -75,6 +76,7 @@ export default function TabletApp() {
   const [mode, setMode] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [completedInfo, setCompletedInfo] = useState(null)
+  const [workCtx, setWorkCtx] = useState(null)
   const [flashError, setFlashError] = useState(null)
   const [networkError, setNetworkError] = useState(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
@@ -145,53 +147,25 @@ export default function TabletApp() {
         setState(STATE.CHECK)
         return
       }
-      if (mode === '出勤') {
-        const alreadyIn = await isCheckedIn(user.id)
-        if (alreadyIn) {
-          showFlash(`${user.name} さんはすでに出勤中です`)
-          setTimeout(resetToMode, 2800)
-          return
-        }
-        await saveLog({ userId: user.id, workType: '', logType: '出勤' })
-        setCompletedInfo({ logType: '出勤', workTypes: [], user })
-        setState(STATE.COMPLETE)
-      } else {
-        const checkedIn = await isCheckedIn(user.id)
-        if (!checkedIn) {
-          showFlash(`${user.name} さんはまだ出勤していません`)
-          setTimeout(resetToMode, 2800)
-          return
-        }
-        if (user.employeeType === 'salaried') {
-          const clockIn = await getClockInTime(user.id)
-          await saveLog({ userId: user.id, workType: '', logType: '退勤', sessionId: clockIn?.session_id })
-          setCompletedInfo({ logType: '退勤', workItems: {}, user, clockInTime: clockIn?.time, clockInTimestamp: clockIn?.timestamp })
-          setState(STATE.COMPLETE)
-        } else {
-          setCurrentUser(user)
-          setState(STATE.WORK)
-        }
+      const r = await handlePunch(mode, user)
+      if (r.kind === 'error') {
+        showFlash(r.message)
+        setTimeout(resetToMode, 2800)
+        return
       }
+      if (r.kind === 'complete') { setCompletedInfo(r.info); setState(STATE.COMPLETE); return }
+      setWorkCtx(r.ctx)
+      setCurrentUser(user)
+      setState(STATE.WORK)
     } catch (e) {
       setNetworkError('通信エラーが発生しました。ネットワークを確認してください。')
     }
   }
 
-  async function handleWorkComplete(workItems) {
+  async function handleWorkComplete(workItems, options) {
     try {
-      const clockIn = await getClockInTime(currentUser.id)
-      const { sessionId } = await saveLog({ userId: currentUser.id, workItems, logType: '退勤', sessionId: clockIn?.session_id })
-      const dateStr = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-      if (sessionId && Object.values(workItems).some(m => m > 0)) {
-        await saveSessionWorkReport(currentUser.id, dateStr, sessionId, workItems)
-      }
-      setCompletedInfo({
-        logType: '退勤',
-        workItems,
-        user: currentUser,
-        clockInTime: clockIn?.time,
-        clockInTimestamp: clockIn?.timestamp,
-      })
+      setCompletedInfo(await finishClockOut(workCtx, workItems, options))
+      setWorkCtx(null)
       setState(STATE.COMPLETE)
     } catch (e) {
       setNetworkError('退勤の保存に失敗しました。ネットワークを確認してください。')
@@ -199,6 +173,7 @@ export default function TabletApp() {
   }
 
   function handleDone() {
+    setWorkCtx(null)
     setCurrentUser(null)
     setCompletedInfo(null)
     setMode(null)
@@ -256,9 +231,10 @@ export default function TabletApp() {
         <QRScreen mode={mode} onUserScanned={handleUserScanned} onCancel={resetToMode} />
       )}
 
-      {state === STATE.WORK && currentUser && (
+      {state === STATE.WORK && currentUser && workCtx && (
         <WorkSelectScreen
           user={currentUser}
+          ctx={workCtx}
           onComplete={handleWorkComplete}
           onCancel={resetToMode}
         />
@@ -270,7 +246,7 @@ export default function TabletApp() {
           workItems={completedInfo.workItems}
           user={completedInfo.user}
           clockInTime={completedInfo.clockInTime}
-          clockInTimestamp={completedInfo.clockInTimestamp}
+          breakInfo={completedInfo.breakInfo}
           onDone={handleDone}
         />
       )}

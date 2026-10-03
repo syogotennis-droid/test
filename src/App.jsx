@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, saveLog, isCheckedIn, getClockInTime, getTodayUserLogs, saveWorkReport, saveSessionWorkReport, adminLogin, adminLogout, hasAdminSession, isDeviceRegistered, startOutboxSync } from './lib/db'
+import { initDB, adminLogin, adminLogout, hasAdminSession, isDeviceRegistered, startOutboxSync } from './lib/db'
+import { handlePunch, finishClockOut } from './lib/punchFlow'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
 import WorkSelectScreen from './screens/WorkSelectScreen'
@@ -81,8 +82,7 @@ export default function App() {
   const [adminTaps, setAdminTaps] = useState(0)
   const [adminPinMode, setAdminPinMode] = useState(false)
   const [deviceReady, setDeviceReady] = useState(isDeviceRegistered)
-  const [todaySessionCount, setTodaySessionCount] = useState(1)
-  const [currentSessionId, setCurrentSessionId] = useState(null)
+  const [workCtx, setWorkCtx] = useState(null)
   const adminTapTimer = React.useRef(null)
 
   useEffect(() => {
@@ -110,79 +110,43 @@ export default function App() {
     setState(STATE.QR)
   }
 
+  function showError(message) {
+    setError(message)
+    setTimeout(() => {
+      setError(null)
+      setMode(null)
+      setState(STATE.MODE)
+    }, 2500)
+  }
+
   async function handleUserScanned(user) {
     if (mode === '確認') {
       setCurrentUser(user)
       setState(STATE.CHECK)
       return
     }
-    if (mode === '出勤') {
-      const alreadyIn = await isCheckedIn(user.id)
-      if (alreadyIn) {
-        setError(`${user.name} さんは出勤中です`)
-        setTimeout(() => {
-          setError(null)
-          setMode(null)
-          setState(STATE.MODE)
-        }, 2500)
-        return
-      }
-      await saveLog({ userId: user.id, workType: '', logType: '出勤' })
-      setCompletedInfo({ logType: '出勤', workItems: {}, user })
-      setState(STATE.COMPLETE)
-    } else {
-      const checkedIn = await isCheckedIn(user.id)
-      if (!checkedIn) {
-        setError(`${user.name} さんはまだ出勤していません`)
-        setTimeout(() => {
-          setError(null)
-          setMode(null)
-          setState(STATE.MODE)
-        }, 2500)
-        return
-      }
-      if (user.employeeType === 'salaried') {
-        const clockIn = await getClockInTime(user.id)
-        await saveLog({ userId: user.id, workItems: {}, logType: '退勤', sessionId: clockIn?.session_id })
-        setCompletedInfo({ logType: '退勤', workItems: {}, user, clockInTime: clockIn?.time })
-        setState(STATE.COMPLETE)
-        return
-      }
-      // Count today's completed sessions and get current check-in session_id
-      try {
-        const userTodayLogs = await getTodayUserLogs(user.id)
-        const outs = userTodayLogs.filter(l => l.log_type === '退勤').length
-        setTodaySessionCount(outs + 1) // completed so far + this new one
-      } catch { setTodaySessionCount(1) }
-      // Read session_id from the current check-in log
-      try {
-        const clockInLog = await getClockInTime(user.id)
-        setCurrentSessionId(clockInLog?.session_id || null)
-      } catch { setCurrentSessionId(null) }
+    try {
+      const r = await handlePunch(mode, user)
+      if (r.kind === 'error') { showError(r.message); return }
+      if (r.kind === 'complete') { setCompletedInfo(r.info); setState(STATE.COMPLETE); return }
+      setWorkCtx(r.ctx)
       setCurrentUser(user)
       setState(STATE.WORK)
+    } catch (e) {
+      console.error(e)
+      showError('記録できませんでした。もう一度お試しください')
     }
   }
 
-  async function handleWorkComplete(workItems) {
-    const clockIn = await getClockInTime(currentUser.id)
-    const today = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    await saveLog({ userId: currentUser.id, logType: '退勤', sessionId: currentSessionId })
-    if (currentSessionId) {
-      await saveSessionWorkReport(currentUser.id, today, currentSessionId, workItems)
-    } else {
-      await saveWorkReport(currentUser.id, today, workItems)
-    }
-    setCompletedInfo({
-      logType: '退勤',
-      workItems,
-      user: currentUser,
-      clockInTime: clockIn?.time
-    })
+  async function handleWorkComplete(workItems, options) {
+    const info = await finishClockOut(workCtx, workItems, options)
+    setCompletedInfo(info)
+    setWorkCtx(null)
     setState(STATE.COMPLETE)
   }
 
   function handleDone() {
+    setWorkCtx(null)
     setCurrentUser(null)
     setCompletedInfo(null)
     setMode(null)
@@ -251,12 +215,12 @@ export default function App() {
         <QRScreen mode={mode} onUserScanned={handleUserScanned} onCancel={handleCancel} />
       )}
 
-      {state === STATE.WORK && currentUser && (
+      {state === STATE.WORK && currentUser && workCtx && (
         <WorkSelectScreen
           user={currentUser}
+          ctx={workCtx}
           onComplete={handleWorkComplete}
           onCancel={handleCancel}
-          sessionCount={todaySessionCount}
         />
       )}
 
@@ -266,6 +230,7 @@ export default function App() {
           workItems={completedInfo.workItems}
           user={completedInfo.user}
           clockInTime={completedInfo.clockInTime}
+          breakInfo={completedInfo.breakInfo}
           onDone={handleDone}
         />
       )}

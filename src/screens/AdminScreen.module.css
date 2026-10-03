@@ -5093,3 +5093,102 @@
     font-size: 10px;
   }
 }
+
+/* ── 勤務記録の編集：休憩 ── */
+.dayEditBreaks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.dayEditBreakRow .dayEditPunchTimeLabel { color: #b45309; }
+
+.dayEditBreakDel {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #94a3b8;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.dayEditBreakDel:hover { color: #dc2626; border-color: #fecaca; }
+
+.dayEditBreakAdd {
+  align-self: flex-start;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1.5px dashed #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── 勤務記録の編集：この日の交通費 ── */
+.dayEditTransport {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.dayEditTransportLabel { font-weight: 700; color: #334155; font-size: 0.9rem; }
+.dayEditTransportBtns { display: flex; gap: 6px; }
+
+.dayEditTransportBtn {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1.5px solid #d1d5db;
+  background: #fff;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.dayEditTransportOn { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
+.dayEditTransportOff { border-color: #64748b; background: #f1f5f9; color: #334155; }
+
+/* ── ユーザー編集：通勤・交通費 ── */
+.commuteToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.commuteBtn {
+  flex: 1 1 72px;
+  min-height: 42px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.commuteBtnActive {
+  background: #1a3f6f;
+  border-color: #1a3f6f;
+  color: #fff;
+  font-weight: 700;
+}
+
+.commuteRow { max-width: 360px; }

@@ -29,6 +29,10 @@
   color: #dc2626;
 }
 
+.modeBreak {
+  color: #b45309;
+}
+
 .headerSub {
   color: var(--color-text);
   font-weight: 600;

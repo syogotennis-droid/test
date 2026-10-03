@@ -459,3 +459,83 @@
   cursor: pointer;
   flex-shrink: 0;
 }
+
+/* ── 上部の勤務情報 ── */
+.infoBar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.infoName { color: #1a3f6f; font-weight: 900; }
+.infoWarn { color: #b45309; }
+
+.infoPlan {
+  background: #e0f2fe;
+  color: #075985;
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 17px;
+}
+
+/* ── 本日の交通費 ── */
+.transportRow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.transportLabel {
+  font-size: 24px;
+  font-weight: 800;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.transportBtn {
+  flex: 1;
+  height: 64px;
+  border-radius: 14px;
+  border: 2px solid #d6d9de;
+  background: #fff;
+  color: #6b7280;
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.transportBtnOn {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.transportBtnOff {
+  border-color: #6b7280;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+@media (max-width: 760px) {
+  .main { padding: 10px 12px 14px; }
+  .infoBar { font-size: 15px; }
+  .infoPlan { font-size: 13px; }
+  .transportRow { flex-wrap: wrap; }
+  .transportLabel { flex: 1 1 100%; font-size: 17px; }
+  .transportBtn { height: 52px; font-size: 17px; }
+  .totalPanel { height: 60px; gap: 8px; }
+  .totalPanel svg { width: 28px; height: 28px; }
+  .totalLabel { font-size: 18px; }
+  .totalNumber { font-size: 34px; }
+  .totalUnit { font-size: 16px; }
+  .backButton { height: 72px; font-size: 18px; padding: 0 14px; }
+  .submitButton { height: 72px; font-size: 26px; gap: 10px; }
+  .submitButton svg { width: 32px; height: 32px; }
+}

@@ -273,14 +273,23 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
   )
 }
 
-export default function WorkSelectScreen({ user, onComplete, onCancel }) {
-  const [workTimes, setWorkTimes] = useState({})
+export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel }) {
+  const displayCards = getDisplayCards(user.workItems)
+  const allFlatItems = displayCards.flatMap(c => c.type === 'single' ? [c.id] : c.members)
+
+  // pre-filled from today's plan (勤務予定); only items this user can select
+  const [workTimes, setWorkTimes] = useState(() => {
+    const init = {}
+    Object.entries(ctx.prefill || {}).forEach(([t, mins]) => {
+      if (allFlatItems.includes(t) && mins > 0) init[t] = { h: Math.floor(mins / 60), m: mins % 60 }
+    })
+    return init
+  })
+  const prefilled = Object.keys(workTimes).length > 0 && !!ctx.prefill
+  const [transportEligible, setTransportEligible] = useState(ctx.transportDefault ?? true)
   const [saving, setSaving] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [subPickerGroup, setSubPickerGroup] = useState(null)
-
-  const displayCards = getDisplayCards(user.workItems)
-  const allFlatItems = displayCards.flatMap(c => c.type === 'single' ? [c.id] : c.members)
 
   function isActive(id) {
     const t = workTimes[id]
@@ -319,7 +328,7 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
     })
     setSaving(true)
     try {
-      await onComplete(workItemsObj)
+      await onComplete(workItemsObj, ctx.asksTransport ? { transportEligible } : {})
     } catch (e) {
       console.error(e)
       setSaving(false)
@@ -329,6 +338,15 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
   return (
     <div className={styles.screen}>
       <div className={styles.main}>
+        {(ctx.clockIn || prefilled) && (
+          <div className={styles.infoBar}>
+            <span className={styles.infoName}>{user.name} さん</span>
+            {ctx.clockIn?.time && <span>出勤 {ctx.clockIn.time.substring(0, 5)}</span>}
+            {ctx.breakTotal > 0 && <span>休憩 {fmtMinutes(ctx.breakTotal)}</span>}
+            {ctx.onBreak && <span className={styles.infoWarn}>休憩中のまま退勤します</span>}
+            {prefilled && <span className={styles.infoPlan}>予定から入力済み（変更できます）</span>}
+          </div>
+        )}
         <div className={styles.workGrid}>
           {displayCards.map(card => {
             if (card.type === 'single') {
@@ -398,6 +416,26 @@ export default function WorkSelectScreen({ user, onComplete, onCancel }) {
 
         {activeItems.length === 0 && (
           <div className={styles.skipHint}>業務時間の入力は後で管理者が行えます</div>
+        )}
+
+        {ctx.asksTransport && (
+          <div className={styles.transportRow} role="radiogroup" aria-label="本日の交通費">
+            <span className={styles.transportLabel}>本日の交通費</span>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={transportEligible}
+              className={[styles.transportBtn, transportEligible ? styles.transportBtnOn : ''].join(' ')}
+              onClick={() => setTransportEligible(true)}
+            >{transportEligible ? '✓ ' : ''}支給対象</button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!transportEligible}
+              className={[styles.transportBtn, !transportEligible ? styles.transportBtnOff : ''].join(' ')}
+              onClick={() => setTransportEligible(false)}
+            >{!transportEligible ? '✓ ' : ''}支給なし</button>
+          </div>
         )}
 
         <div className={styles.bottomRow}>

@@ -173,7 +173,10 @@ export async function getTodayUserLogs(userId) {
 }
 
 function cacheUsers(users) {
-  writeJSON(USERS_CACHE_KEY, users.map(u => ({ id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [] })))
+  writeJSON(USERS_CACHE_KEY, users.map(u => ({
+    id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
+    asksTransport: u.asksTransport ?? getCommute(u).asks,
+  })))
 }
 
 const enc = encodeURIComponent
@@ -258,6 +261,11 @@ export async function getSalariedDaysForMonth(dateFrom, dateTo) {
   try {
     return await api('/salaried_days', { query: { dateFrom, dateTo } })
   } catch { return {} }
+}
+
+// Device-local date "YYYY-MM-DD" (the tablets run in Japan time)
+export function localToday() {
+  return getTodayDate()
 }
 
 function getTodayDate() {
@@ -472,7 +480,8 @@ export async function getTodayStatuses() {
     Object.entries(cache).forEach(([uid, c]) => {
       if (c.date !== today) return
       const ins = c.logs.filter(l => l.log_type === '出勤').length
-      statuses[uid] = ins > c.logs.length - ins
+      const outs = c.logs.filter(l => l.log_type === '退勤').length
+      statuses[uid] = ins > outs
     })
   }
   // punches still waiting in the outbox aren't known to the server yet
@@ -480,7 +489,7 @@ export async function getTodayStatuses() {
   readJSON(LOCAL_PUNCHES_KEY, [])
     .filter(l => l.date === today && pendingIds.has(l.id))
     .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
-    .forEach(l => { statuses[l.user_id] = l.log_type === '出勤' })
+    .forEach(l => { statuses[l.user_id] = l.log_type !== '退勤' })
   return statuses
 }
 
@@ -522,6 +531,172 @@ export function getRatesForDate(rateObj, dateStr) {
   let result = { normal: Number(rateObj?.normal) || 0, sunday: Number(rateObj?.sunday) || 0 }
   for (const e of sorted) { if (!e.from || e.from <= dateStr) result = { normal: Number(e.normal) || 0, sunday: Number(e.sunday) || 0 } }
   return result
+}
+
+// ─── Breaks (休憩・中抜け) ─────────────────────────────────────────────────────
+// A break is a 休憩開始 / 休憩終了 pair inside one work session (same
+// session_id), so a break doesn't start a new session (no extra 準備時間, no
+// work input when stepping out).
+
+export const BREAK_START = '休憩開始'
+export const BREAK_END = '休憩終了'
+
+// Pairs break logs of ONE session in time order → [{ start, end, startLog, endLog }]
+export function pairBreaks(sessionLogs) {
+  const sorted = [...sessionLogs]
+    .filter(l => l.log_type === BREAK_START || l.log_type === BREAK_END)
+    .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
+  const out = []
+  for (const l of sorted) {
+    const t = (l.time || '').substring(0, 5)
+    if (l.log_type === BREAK_START) out.push({ start: t, end: '', startLog: l, endLog: null })
+    else {
+      const open = [...out].reverse().find(b => !b.endLog)
+      if (open) { open.end = t; open.endLog = l } else out.push({ start: '', end: t, startLog: null, endLog: l })
+    }
+  }
+  return out
+}
+
+export function breakMinutes(breaks) {
+  return breaks.reduce((sum, b) => {
+    if (!b.start || !b.end) return sum
+    const [h1, m1] = b.start.split(':').map(Number)
+    const [h2, m2] = b.end.split(':').map(Number)
+    return sum + Math.max(0, h2 * 60 + m2 - (h1 * 60 + m1))
+  }, 0)
+}
+
+// Where the employee stands right now: 'off' | 'working' | 'break'
+export async function getTodayPunchState(userId) {
+  const logs = await getTodayUserLogs(userId)
+  const ins = logs.filter(l => l.log_type === '出勤')
+  const outs = logs.filter(l => l.log_type === '退勤').length
+  if (ins.length <= outs) return { state: 'off', logs }
+  const clockIn = ins[ins.length - 1]
+  const sessionId = clockIn.session_id || null
+  const breaks = sessionId ? pairBreaks(logs.filter(l => l.session_id === sessionId)) : []
+  const openBreak = breaks.find(b => b.startLog && !b.endLog) || null
+  return { state: openBreak ? 'break' : 'working', logs, clockIn, sessionId, breaks, openBreak }
+}
+
+// ─── Work plans (勤務予定) ────────────────────────────────────────────────────
+
+export async function getWorkPlans(userId, dateFrom, dateTo) {
+  return api('/work_plans', { query: { userId, dateFrom, dateTo } })
+}
+
+// Today's plan for the clock-out screen; null when unknown (e.g. offline)
+export async function getWorkPlanForDay(userId, date) {
+  try {
+    const r = await api('/work_plans', { query: { userId, date } })
+    const items = r[date]?.items
+    return items && Object.keys(items).length > 0 ? items : null
+  } catch { return null }
+}
+
+export async function saveWorkPlan(userId, date, items) {
+  await api('/work_plans', { method: 'PUT', body: { userId, date, items } })
+}
+
+export async function copyWorkPlans({ userId, weekStart, weeks, overwriteCopied = false, dryRun = false }) {
+  return api('/work_plans/copy', { method: 'POST', body: { userId, weekStart, weeks, overwriteCopied, dryRun, minDate: getTodayDate() } })
+}
+
+// ─── Commute / transport (通勤・交通費) ────────────────────────────────────────
+
+export const COMMUTE_METHODS = [
+  { key: 'car', label: '車' },
+  { key: 'bus', label: 'バス' },
+  { key: 'train', label: '電車' },
+  { key: 'walk', label: '徒歩' },
+  { key: 'none', label: '交通費なし' },
+]
+
+// Users saved before commute methods existed have no commuteMethod; they keep
+// the old behaviour (daily amount × days). Must match asksTransport() in the API.
+export function getCommute(user) {
+  const method = user?.commuteMethod || null
+  const amount = Number(user?.itemRates?.['交通費']?.amount) || 0
+  const distance = Number(user?.commuteDistanceKm) || 0
+  const label = COMMUTE_METHODS.find(m => m.key === method)?.label || '未設定'
+  let asks
+  if (user?.employeeType === 'salaried') asks = false
+  else if (method === 'walk' || method === 'none') asks = false
+  else if (method === 'car') asks = distance > 0
+  else asks = amount > 0
+  return { method, label, amount, distance, asks }
+}
+
+export async function getCarRates() {
+  try {
+    const cfg = await api('/config')
+    const list = JSON.parse(cfg.carRates || '[]')
+    return Array.isArray(list) ? list : []
+  } catch { return [] }
+}
+
+export async function saveCarRates(list) {
+  await api('/config/carRates', { method: 'PUT', body: { value: JSON.stringify(list) } })
+}
+
+export function carRateForDate(carRates, dateStr) {
+  const sorted = [...carRates].sort((a, b) => (a.from || '').localeCompare(b.from || ''))
+  let rate = 0
+  for (const e of sorted) if (!e.from || e.from <= dateStr) rate = Number(e.rate) || 0
+  return rate
+}
+
+// Transport pay rows for the given eligible days. Car: distance × the unit
+// price valid on each day (a new price only affects days from its start date).
+export function computeTransport(user, eligibleDates, carRates = []) {
+  const c = getCommute(user)
+  const days = [...eligibleDates].sort()
+  if (days.length === 0) return []
+  if (c.method === 'walk' || c.method === 'none') return []
+  if (c.method === 'car') {
+    if (!c.distance) return []
+    const groups = []
+    for (const d of days) {
+      const rate = carRateForDate(carRates, d)
+      const last = groups[groups.length - 1]
+      if (last && last.rate === rate) last.days++
+      else groups.push({ rate, days: 1 })
+    }
+    return groups.map(g => {
+      const daily = c.distance * g.rate
+      return {
+        label: `交通費（車 ${c.distance}km × ${g.rate}円）`,
+        excelLabel: `交通費（車 ${c.distance}km×${g.rate}円/km・${g.days}日）`,
+        days: g.days, rate: Math.round(daily * 100) / 100, pay: Math.round(g.days * daily),
+      }
+    })
+  }
+  if (!c.amount) return []
+  return [{ label: '交通費', excelLabel: `交通費（${days.length}日）`, days: days.length, rate: c.amount, pay: Math.round(days.length * c.amount) }]
+}
+
+export async function getTransportDays(dateFrom, dateTo) {
+  return api('/transport_days', { query: { dateFrom, dateTo } })
+}
+
+// The employee's choice already saved for today (true/false), or null
+export async function getTransportDay(userId, date) {
+  try {
+    const r = await api('/transport_days', { query: { userId, date } })
+    const v = r[`${userId}_${date}`]
+    return v === undefined ? null : v
+  } catch { return null }
+}
+
+export async function saveTransportDay(userId, date, eligible) {
+  enqueue({ qid: crypto.randomUUID(), key: `td:${userId}_${date}`, path: '/transport_days', method: 'PUT', body: { userId, date, eligible } })
+  await flushOutbox()
+}
+
+// Days that count as attendance: at least one session with both 出勤 and 退勤
+export function attendanceDates(byDate) {
+  return Object.keys(byDate).filter(ds => byDate[ds].sessions.some(s => s.inLog && s.outLog))
 }
 
 
@@ -716,10 +891,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const enc = new TextEncoder()
 
   // Fetch work_reports: prefer session data over legacy, merge correctly
-  const [allWorkReports, allSessionWorkBySession] = await Promise.all([
+  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates] = await Promise.all([
     getMergedWorkReportsForRange(dateFrom || '', dateTo || ''),
-    getSessionWorkReportsWithSessionsForRange(dateFrom || '', dateTo || '')
+    getSessionWorkReportsWithSessionsForRange(dateFrom || '', dateTo || ''),
+    getTransportDays(dateFrom || '', dateTo || '9999-12-31'),
+    getCarRates(),
   ])
+  const dayCountCells = (row, cells) => cells.map(([col, text]) =>
+    `<c r="${col}${row}" s="${S.username}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`).join('')
 
   const userEntries = users.filter(u =>
     logs.some(l => l.user_id === u.id) ||
@@ -821,7 +1000,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
 
       const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
-      const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
+      const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
+        dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`]]) + `</row>`
       const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}</sheetData>`
       const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="4" width="14" customWidth="1"/></cols>`
       sheetXmls.push(
@@ -865,12 +1045,16 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // workingDays = days with work report AND ≥1 completed QR session (spec 7)
     let workingDays = 0
     let totalCompletedSessions = 0
+    const workingDates = []
     Object.entries(userWorkReports).forEach(([dateStr, items]) => {
       if (!Object.values(items).some(m => m > 0)) return
       const entry = byDate[dateStr]
       const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
-      if (completedSess.length > 0) { workingDays++; totalCompletedSessions += completedSess.length }
+      if (completedSess.length > 0) { workingDays++; workingDates.push(dateStr); totalCompletedSessions += completedSess.length }
     })
+    // 交通費対象日 = 勤務日のうち、本人が「支給なし」にしていない日
+    const transportDates = workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false)
+    const commute = getCommute(user)
 
     // Accumulate global summary data from work_reports
     for (const type of workTypes) {
@@ -919,7 +1103,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const T3_HDR = T2_TOT + 2
 
     const row1 = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿')}</t></is></c></row>`
-    const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c></row>`
+    const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
+      dayCountCells(2, [
+        ['C', `出勤日数：${attendanceDates(byDate).length}日`],
+        ...(commute.asks ? [['D', `交通費対象：${transportDates.length}日`]] : []),
+      ]) + `</row>`
 
     const hdrCell = (col, rn, text) =>
       `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
@@ -1120,16 +1308,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
 
     // 交通費行
-    const transportAmount = Number(itemRates['交通費']?.amount) || 0
-    if (transportAmount > 0 && workingDays > 0) {
-      const transportTotal = Math.round(workingDays * transportAmount)
-      totalPayAmount += transportTotal
+    for (const t of computeTransport(user, transportDates, carRates)) {
+      totalPayAmount += t.pay
       payRows.push(
         `<row r="${payRowIdx}">` +
-        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc('交通費（' + workingDays + '日）')}</t></is></c>` +
+        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(t.excelLabel)}</t></is></c>` +
         `<c r="B${payRowIdx}" s="${S.pay_lbl}"/>` +
-        `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${transportAmount}</v></c>` +
-        `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${transportTotal}</v></c>` +
+        `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${t.rate}</v></c>` +
+        `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${t.pay}</v></c>` +
         `</row>`
       )
       payRowIdx++
