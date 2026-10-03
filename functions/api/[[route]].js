@@ -419,65 +419,54 @@ export async function onRequest(context) {
       return ok({ ok: true })
     }
 
-    // ── Work plans (勤務予定) ───────────────────────────────────────────────
-    if (route === 'work_plans' && method === 'GET') {
+    // ── Weekly copy (週コピー) ─────────────────────────────────────────────
+    // What last week looked like, offered at the first clock-in of the week.
+    if (route === 'weekly_copy/offer' && method === 'GET') {
+      const userId = sp.get('userId'), date = sp.get('date') || todayStr()
+      const weekStart = mondayOf(date)
+      const answered = await DB.prepare('SELECT answer FROM weekly_copy_answers WHERE id = ?').bind(`${userId}_${weekStart}`).first()
+      if (answered) return ok({ offer: false, weekStart, answer: answered.answer })
+      // only days of this week that are still ahead (today included) can be prepared
+      const days = (await lastWeekSlots(DB, userId, weekStart)).filter(d => addDays(d.date, 7) >= date)
+      return ok({ offer: days.length > 0, weekStart, days })
+    }
+    if (route === 'weekly_copy/answer' && method === 'POST') {
+      const { userId, date, answer } = await request.json()
+      if (answer !== 'use' && answer !== 'skip') return fail('invalid answer', 400)
+      const weekStart = mondayOf(date)
+      const now = new Date().toISOString()
+      const stmts = [DB.prepare('INSERT OR IGNORE INTO weekly_copy_answers (id, user_id, week_start, answer, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(`${userId}_${weekStart}`, userId, weekStart, answer, now)]
+      let copiedDays = 0
+      if (answer === 'use') {
+        for (const d of await lastWeekSlots(DB, userId, weekStart)) {
+          const target = addDays(d.date, 7)
+          if (target < date) continue // days of this week that already passed
+          copiedDays++
+          for (const { slot, items } of d.slots) {
+            // never replace what is already there for this day
+            stmts.push(DB.prepare('INSERT OR IGNORE INTO weekly_copies (id, user_id, date, slot, items, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+              .bind(`${userId}_${target}_${slot}`, userId, target, slot, JSON.stringify(items), now))
+          }
+        }
+      }
+      await DB.batch(stmts)
+      return ok({ ok: true, copiedDays })
+    }
+    if (route === 'weekly_copies' && method === 'GET') {
       const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
       const where = ['user_id = ?'], args = [userId]
       if (date) { where.push('date = ?'); args.push(date) }
       if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
       if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
-      const { results } = await DB.prepare(`SELECT date, items, source FROM work_plans WHERE ${where.join(' AND ')}`).bind(...args).all()
+      const { results } = await DB.prepare(`SELECT date, slot, items FROM weekly_copies WHERE ${where.join(' AND ')}`).bind(...args).all()
       const map = {}
-      results.forEach(r => {
-        const items = JSON.parse(r.items || '{}')
-        // an emptied row records "deleted for this day only" so a later copy keeps it empty
-        map[r.date] = { items, source: r.source, ...(Object.keys(items).length === 0 ? { cleared: true } : {}) }
-      })
+      results.forEach(r => { (map[r.date] = map[r.date] || {})[r.slot] = JSON.parse(r.items || '{}') })
       return ok(map)
     }
-    if (route === 'work_plans' && method === 'PUT') {
-      const b = await request.json()
-      const items = cleanItems(b.items)
-      if (Object.keys(items).length === 0) {
-        await DB.prepare("UPDATE work_plans SET items = '{}', source = 'manual', updated_at = ? WHERE id = ?")
-          .bind(new Date().toISOString(), `${b.userId}_${b.date}`).run()
-      } else {
-        await DB.prepare('INSERT OR REPLACE INTO work_plans (id, user_id, date, items, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(`${b.userId}_${b.date}`, b.userId, b.date, JSON.stringify(items), 'manual', new Date().toISOString()).run()
-      }
+    if (route === 'weekly_copies' && method === 'DELETE') {
+      await DB.prepare('DELETE FROM weekly_copies WHERE user_id = ? AND date = ?').bind(sp.get('userId'), sp.get('date')).run()
       return ok({ ok: true })
-    }
-    // Copy one week's plans to the following weeks. Never touches past dates
-    // or days edited individually ('manual'); days filled by an earlier copy
-    // are replaced only when overwriteCopied is set.
-    if (route === 'work_plans/copy' && method === 'POST') {
-      const { userId, weekStart, weeks, overwriteCopied, minDate, dryRun } = await request.json()
-      const n = Math.min(Math.max(parseInt(weeks) || 0, 1), 26)
-      const srcFrom = weekStart, srcTo = addDays(weekStart, 6)
-      const lastTarget = addDays(weekStart, 7 * n + 6)
-      const { results } = await DB.prepare('SELECT date, items, source FROM work_plans WHERE user_id = ? AND date >= ? AND date <= ?')
-        .bind(userId, srcFrom, lastTarget).all()
-      const byDate = Object.fromEntries(results.map(r => [r.date, r]))
-      const res = { created: 0, overwritten: 0, skippedManual: 0, skippedCopied: 0, skippedPast: 0 }
-      const now = new Date().toISOString()
-      const stmts = []
-      for (let i = 0; i < 7; i++) {
-        const src = byDate[addDays(weekStart, i)]
-        if (!src || src.items === '{}') continue
-        for (let k = 1; k <= n; k++) {
-          const date = addDays(weekStart, i + 7 * k)
-          if (minDate && date < minDate) { res.skippedPast++; continue }
-          const cur = byDate[date]
-          if (cur && cur.source !== 'copy') { res.skippedManual++; continue }
-          if (cur && !overwriteCopied) { res.skippedCopied++; continue }
-          if (cur) res.overwritten++
-          else res.created++
-          stmts.push(DB.prepare('INSERT OR REPLACE INTO work_plans (id, user_id, date, items, source, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(`${userId}_${date}`, userId, date, src.items, 'copy', now))
-        }
-      }
-      if (!dryRun && stmts.length > 0) await DB.batch(stmts)
-      return ok(res)
     }
 
     // ── Transport days (本日の交通費) ───────────────────────────────────────
@@ -571,12 +560,15 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'users' || route.startsWith('users/')) return true
     if (route === 'logs/check_in' || route === 'logs/today_statuses') return true
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
-    // today's plan / transport choice of the employee at the clock-out screen
-    if (route === 'work_plans' || route === 'transport_days') return !!(sp.get('userId') && sp.get('date'))
+    // the employee's own transport choice / weekly copy
+    if (route === 'transport_days') return !!(sp.get('userId') && sp.get('date'))
+    if (route === 'weekly_copy/offer' || route === 'weekly_copies') return !!sp.get('userId')
     return false
   }
-  if (method === 'POST') return route === 'logs'
+  if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer'
   if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days'
+  // an employee may remove a day prepared by the weekly copy (e.g. off sick); never punches
+  if (method === 'DELETE') return route === 'weekly_copies' && !!(sp.get('userId') && sp.get('date'))
   return false
 }
 
@@ -596,7 +588,7 @@ function asksTransport(u) {
   if (u.employeeType === 'salaried') return false
   const m = u.commuteMethod
   if (m === 'walk' || m === 'none') return false
-  if (m === 'car') return Number(u.commuteDistanceKm) > 0
+  if (m === 'car') return Number(u.commuteOneWayKm) > 0 || Number(u.commuteDistanceKm) > 0
   return Number(u.itemRates?.['交通費']?.amount) > 0
 }
 
@@ -606,6 +598,35 @@ function transportStmt(DB, userId, date, eligible, now) {
     ? DB.prepare('DELETE FROM transport_days WHERE id = ?').bind(`${userId}_${date}`)
     : DB.prepare('INSERT OR REPLACE INTO transport_days (id, user_id, date, eligible, updated_at) VALUES (?, ?, ?, 0, ?)')
       .bind(`${userId}_${date}`, userId, date, now)
+}
+
+function mondayOf(dateStr) {
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay()
+  return addDays(dateStr, dow === 0 ? -6 : 1 - dow)
+}
+
+// Last week's actual work per day and per session order:
+// [{ date, slots: [{ slot, items }] }]. Sessions are ordered by clock-in time.
+async function lastWeekSlots(DB, userId, weekStart) {
+  const from = addDays(weekStart, -7), to = addDays(weekStart, -1)
+  const [logsR, repR] = await Promise.all([
+    DB.prepare("SELECT date, time, session_id FROM logs WHERE user_id = ? AND date >= ? AND date <= ? AND log_type = '出勤'").bind(userId, from, to).all(),
+    DB.prepare('SELECT date, session_id, items FROM session_work_reports WHERE user_id = ? AND date >= ? AND date <= ?').bind(userId, from, to).all(),
+  ])
+  const reports = {}
+  repR.results.forEach(r => { reports[r.session_id] = cleanItems(JSON.parse(r.items || '{}')) })
+  const byDate = {}
+  logsR.results.filter(l => l.session_id).forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l) })
+  const out = []
+  Object.keys(byDate).sort().forEach(date => {
+    const slots = byDate[date]
+      .sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+      .map((l, i) => ({ slot: i + 1, items: reports[l.session_id] || {} }))
+      .filter(s => Object.keys(s.items).length > 0)
+    if (slots.length > 0) out.push({ date, slots })
+  })
+  return out
 }
 
 function cleanItems(items) {

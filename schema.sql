@@ -85,9 +85,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   locked_until INTEGER NOT NULL DEFAULT 0
 );
 
--- Planned work per user per day (勤務予定). Pre-fills the clock-out work input;
--- pay is still calculated only from what is actually reported.
--- source: 'manual' (entered/edited for that day) | 'copy' (created by week copy)
+-- No longer used (was the admin 勤務予定 screen). Kept so existing rows are not lost.
 CREATE TABLE IF NOT EXISTS work_plans (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -108,3 +106,25 @@ CREATE TABLE IF NOT EXISTS transport_days (
   updated_at TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_td_date ON transport_days(date);
+
+-- 週コピー: work items copied from last week's actual reports, per day and per
+-- work session (slot = 1st, 2nd, ... session of that day). Only pre-fills the
+-- clock-out input; pay is still calculated from what is actually reported.
+CREATE TABLE IF NOT EXISTS weekly_copies (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  items TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_wc_user_date ON weekly_copies(user_id, date);
+
+-- The employee's answer to "先週と同じ内容を今週も使いますか？" (asked once a week)
+CREATE TABLE IF NOT EXISTS weekly_copy_answers (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  week_start TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  created_at TEXT DEFAULT ''
+);

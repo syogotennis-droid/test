@@ -344,7 +344,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
             {ctx.clockIn?.time && <span>出勤 {ctx.clockIn.time.substring(0, 5)}</span>}
             {ctx.breakTotal > 0 && <span>休憩 {fmtMinutes(ctx.breakTotal)}</span>}
             {ctx.onBreak && <span className={styles.infoWarn}>休憩中のまま退勤します</span>}
-            {prefilled && <span className={styles.infoPlan}>予定から入力済み（変更できます）</span>}
+            {prefilled && <span className={styles.infoPlan}>先週の内容を入れています（違うときは直してください）</span>}
           </div>
         )}
         <div className={styles.workGrid}>

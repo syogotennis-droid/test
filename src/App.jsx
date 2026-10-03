@@ -231,6 +231,7 @@ export default function App() {
           user={completedInfo.user}
           clockInTime={completedInfo.clockInTime}
           breakInfo={completedInfo.breakInfo}
+          weeklyOffer={completedInfo.weeklyOffer}
           onDone={handleDone}
         />
       )}

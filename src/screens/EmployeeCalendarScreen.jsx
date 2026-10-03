@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, localToday } from '../lib/db'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -218,7 +218,42 @@ function WorkEditMode({ sessionLabel, editableItems, initialWork, onCancel, onSa
 }
 
 /* ─── 日別詳細モーダル ─── */
-function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose, onWorkSaved }) {
+function fmtCopyItems(items) {
+  return Object.entries(items).map(([t, m]) => `${t} ${fmtMins(m)}`).join('・')
+}
+
+// Work prepared for an upcoming day by the weekly copy; the employee may remove it
+function CopySection({ copy, onDelete }) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const slots = Object.keys(copy).map(Number).sort((a, b) => a - b)
+  return (
+    <div className={styles.copySection}>
+      <div className={styles.copyTitle}>先週からコピーした業務</div>
+      {slots.map(n => (
+        <div key={n} className={styles.copyLine}>
+          {slots.length > 1 && <span className={styles.copySlot}>{n}回目</span>}
+          <span>{fmtCopyItems(copy[n])}</span>
+        </div>
+      ))}
+      <div className={styles.copyHint}>退勤のときに、この内容が最初から入ります</div>
+      {confirming ? (
+        <div className={styles.copyConfirm}>
+          <span>この日の業務予定を削除しますか？</span>
+          <button className={styles.copyCancelBtn} onClick={() => setConfirming(false)} disabled={busy}>やめる</button>
+          <button className={styles.copyDeleteBtn} disabled={busy}
+            onClick={async () => { setBusy(true); try { await onDelete() } catch { alert('削除できませんでした'); setBusy(false) } }}>
+            削除する
+          </button>
+        </div>
+      ) : (
+        <button className={styles.copyDeleteOutline} onClick={() => setConfirming(true)}>この日の予定を削除（休みなど）</button>
+      )}
+    </div>
+  )
+}
+
+function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onClose, onWorkSaved }) {
   const editableItems = (user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item))
   const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried'
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -267,6 +302,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, onClose,
             </div>
 
             <div className={styles.modalBody}>
+              {copy && <CopySection copy={copy} onDelete={onDeleteCopy} />}
               {sessions.map((session, idx) => {
                 const workData = session.sessionId ? (sessionWorkItems[session.sessionId] || null) : null
                 const workEntries = workData ? Object.entries(workData).filter(([, m]) => m > 0) : []
@@ -366,6 +402,8 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const [sessionWorkItems, setSessionWorkItems] = useState({})   // { sessionId: items }
   const [sessionWorkStatus, setSessionWorkStatus] = useState({}) // { dateStr: Set<sessionId> }
   const [legacyWorkedDates, setLegacyWorkedDates] = useState(new Set())
+  const [copies, setCopies] = useState({}) // { dateStr: { slot: items } } from the weekly copy
+  const today = localToday()
 
   const loadLogs = useCallback(() => {
     setLoading(true)
@@ -374,9 +412,11 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
     const isSal = user?.employeeType === 'salaried'
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: user.id }),
-      isSal ? Promise.resolve(null) : getSessionWorkReportsForUser(user.id)
-    ]).then(([data, workData]) => {
+      isSal ? Promise.resolve(null) : getSessionWorkReportsForUser(user.id),
+      isSal ? Promise.resolve({}) : getWeeklyCopies(user.id, from > today ? from : today, to).catch(() => ({})),
+    ]).then(([data, workData, copyData]) => {
       setLogs(data)
+      setCopies(copyData || {})
       if (workData) {
         setSessionWorkItems(workData.bySession)
         setSessionWorkStatus(workData.sessionsByDate)
@@ -405,13 +445,14 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const days = getCalendarDays(year, month)
   const dayMap = buildDayMap(logs, year, month)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
+  const isNextMonth = (year * 12 + month) === (now.getFullYear() * 12 + now.getMonth() + 1)
 
   function prevMonth() {
     if (month === 0) { setYear(y => y - 1); setMonth(11) }
     else setMonth(m => m - 1)
   }
   function nextMonth() {
-    if (isCurrentMonth) return
+    if (isNextMonth) return
     if (month === 11) { setYear(y => y + 1); setMonth(0) }
     else setMonth(m => m + 1)
   }
@@ -427,7 +468,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       <div className={styles.monthNav}>
         <button onClick={prevMonth} className={styles.navBtn}>◀</button>
         <span className={styles.monthLabel}>{year}年{month + 1}月</span>
-        <button onClick={nextMonth} className={styles.navBtn} disabled={isCurrentMonth}>▶</button>
+        <button onClick={nextMonth} className={styles.navBtn} disabled={isNextMonth}>▶</button>
       </div>
 
       {loading ? (
@@ -453,6 +494,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const isSalaried = user?.employeeType === 'salaried'
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
             const sessionIds = sessions.map(s => s.sessionId).filter(Boolean)
+            const copy = !isSalaried && dateStr >= today ? copies[dateStr] : null
             const workedSessions = sessionWorkStatus[dateStr]
 
             let workBadgeLabel = null
@@ -485,8 +527,8 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             return (
               <div
                 key={d}
-                className={[styles.cell, inTime ? styles.worked : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
-                onClick={() => worked && setSelectedDay(d)}
+                className={[styles.cell, inTime ? styles.worked : '', copy && !worked ? styles.planned : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
+                onClick={() => (worked || copy) && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
                 {multiSession && (
@@ -511,6 +553,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                   </>
                 )}
                 {workBadgeLabel && <div className={workBadgeClass}>{workBadgeLabel}</div>}
+                {copy && !worked && <div className={styles.calCopyBadge}>業務予定あり</div>}
               </div>
             )
           })}
@@ -525,6 +568,13 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
           sessions={dayMap[selectedDay] || []}
           user={user}
           sessionWorkItems={sessionWorkItems}
+          copy={(() => { const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`; return user?.employeeType !== 'salaried' && ds >= today ? copies[ds] : null })()}
+          onDeleteCopy={async () => {
+            const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`
+            await deleteWeeklyCopy(user.id, ds)
+            setCopies(prev => { const n = { ...prev }; delete n[ds]; return n })
+            if (!(dayMap[selectedDay] || []).length) setSelectedDay(null)
+          }}
           onClose={() => setSelectedDay(null)}
           onWorkSaved={handleWorkSaved}
         />

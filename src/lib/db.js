@@ -242,6 +242,90 @@ export async function saveMinWage(wage) {
   await api('/config/minWage', { method: 'PUT', body: { value: wage } })
 }
 
+// Minimum wage with start dates, so a new wage never changes earlier days.
+// Configs saved before the history existed are read as one entry "from the start".
+export async function getMinWageHistory() {
+  try {
+    const cfg = await api('/config')
+    const list = JSON.parse(cfg.minWageHistory || '[]')
+    if (Array.isArray(list) && list.length > 0) return list
+    return [{ from: null, wage: Number(cfg.minWage) || DEFAULT_MIN_WAGE }]
+  } catch { return [{ from: null, wage: DEFAULT_MIN_WAGE }] }
+}
+
+export function minWageForDate(history, dateStr) {
+  const sorted = [...history].sort((a, b) => (a.from || '').localeCompare(b.from || ''))
+  let wage = 0
+  for (const e of sorted) if (!e.from || e.from <= dateStr) wage = Number(e.wage) || 0
+  return wage
+}
+
+export async function saveMinWageHistory(list) {
+  await api('/config/minWageHistory', { method: 'PUT', body: { value: JSON.stringify(list) } })
+  // keep the single legacy value in step with today's wage
+  await saveMinWage(minWageForDate(list, getTodayDate()))
+}
+
+export const DEFAULT_MIN_WAGE_ITEMS = ['研修会', '清掃', '事務処理']
+
+// Work items whose hourly rate follows the minimum wage
+export async function getMinWageItems() {
+  try {
+    const cfg = await api('/config')
+    const list = JSON.parse(cfg.minWageItems || 'null')
+    return Array.isArray(list) ? list : DEFAULT_MIN_WAGE_ITEMS
+  } catch { return DEFAULT_MIN_WAGE_ITEMS }
+}
+
+export async function saveMinWageItems(list) {
+  await api('/config/minWageItems', { method: 'PUT', body: { value: JSON.stringify(list) } })
+}
+
+// 準備時間 (10 min per completed session) paid at the minimum wage valid on
+// each day → [{ mins, wage, pay }], one row per wage
+export function prepTimeRows(sessionDates, history) {
+  const groups = []
+  for (const d of [...sessionDates].sort()) {
+    const wage = minWageForDate(history, d)
+    const last = groups[groups.length - 1]
+    if (last && last.wage === wage) last.mins += 10
+    else groups.push({ wage, mins: 10 })
+  }
+  return groups.filter(g => g.wage > 0).map(g => ({ ...g, pay: Math.round(g.mins / 60 * g.wage) }))
+}
+
+// Rate changes for one minimum-wage change. Only linked items whose rate on
+// `from` is below the new wage are raised; higher individual rates are left alone.
+// → [{ userId, name, item, oldNormal, oldSunday, newNormal, newSunday }]
+export function planMinWageChange(users, items, newWage, from) {
+  const out = []
+  for (const u of users) {
+    if (u.employeeType === 'salaried') continue
+    for (const item of items) {
+      if (!(u.workItems || []).includes(item)) continue
+      const cur = getRatesForDate(u.itemRates?.[item], from)
+      if (cur.normal >= newWage) continue
+      const newSunday = cur.sunday && cur.normal ? Math.round(newWage * cur.sunday / cur.normal) : 0
+      out.push({ userId: u.id, name: u.name, item, oldNormal: cur.normal, oldSunday: cur.sunday, newNormal: newWage, newSunday })
+    }
+  }
+  return out
+}
+
+// Adds a dated entry to the item's rate history (same shape the user edit
+// screen writes), so pay before `from` keeps the old rate.
+export function withRateFrom(itemRates, item, from, normal, sunday) {
+  const r = itemRates?.[item] || {}
+  let hist = Array.isArray(r.rateHistory) && r.rateHistory.length > 0
+    ? [...r.rateHistory]
+    : (r.normal != null ? [{ from: null, normal: Number(r.normal), ...(r.sunday ? { sunday: Number(r.sunday) } : {}) }] : [])
+  hist = hist.filter(e => e.from !== from)
+  hist.push({ from, normal, ...(sunday ? { sunday } : {}) })
+  hist.sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
+  const latest = hist[hist.length - 1]
+  return { ...itemRates, [item]: { ...r, normal: Number(latest.normal) || 0, sunday: Number(latest.sunday) || 0, rateHistory: hist } }
+}
+
 export async function saveOvertimeApp(userId, date, minutes) {
   await api('/overtime_apps', { method: 'PUT', body: { userId, date, minutes } })
 }
@@ -580,27 +664,36 @@ export async function getTodayPunchState(userId) {
   return { state: openBreak ? 'break' : 'working', logs, clockIn, sessionId, breaks, openBreak }
 }
 
-// ─── Work plans (勤務予定) ────────────────────────────────────────────────────
+// ─── Weekly copy (週コピー) ──────────────────────────────────────────────────
+// At the first clock-in of a week the employee is asked whether to reuse last
+// week's work. Accepted copies only pre-fill the clock-out input (per day and
+// per session order); pay is still calculated from what is actually reported.
 
-export async function getWorkPlans(userId, dateFrom, dateTo) {
-  return api('/work_plans', { query: { userId, dateFrom, dateTo } })
+// { offer, weekStart, days: [{ date, slots: [{ slot, items }] }] } or null (offline etc.)
+export async function getWeeklyCopyOffer(userId) {
+  try { return await api('/weekly_copy/offer', { query: { userId, date: getTodayDate() } }) } catch { return null }
 }
 
-// Today's plan for the clock-out screen; null when unknown (e.g. offline)
-export async function getWorkPlanForDay(userId, date) {
+export async function answerWeeklyCopy(userId, answer) {
+  return api('/weekly_copy/answer', { method: 'POST', body: { userId, date: getTodayDate(), answer } })
+}
+
+// { date: { slot: items } }
+export async function getWeeklyCopies(userId, dateFrom, dateTo) {
+  return api('/weekly_copies', { query: { userId, dateFrom, dateTo } })
+}
+
+// items prepared for this day's n-th session, or null (none / offline)
+export async function getWeeklyCopyForSlot(userId, date, slot) {
   try {
-    const r = await api('/work_plans', { query: { userId, date } })
-    const items = r[date]?.items
+    const r = await api('/weekly_copies', { query: { userId, date } })
+    const items = r[date]?.[slot]
     return items && Object.keys(items).length > 0 ? items : null
   } catch { return null }
 }
 
-export async function saveWorkPlan(userId, date, items) {
-  await api('/work_plans', { method: 'PUT', body: { userId, date, items } })
-}
-
-export async function copyWorkPlans({ userId, weekStart, weeks, overwriteCopied = false, dryRun = false }) {
-  return api('/work_plans/copy', { method: 'POST', body: { userId, weekStart, weeks, overwriteCopied, dryRun, minDate: getTodayDate() } })
+export async function deleteWeeklyCopy(userId, date) {
+  await api('/weekly_copies', { method: 'DELETE', query: { userId, date } })
 }
 
 // ─── Commute / transport (通勤・交通費) ────────────────────────────────────────
@@ -613,19 +706,42 @@ export const COMMUTE_METHODS = [
   { key: 'none', label: '交通費なし' },
 ]
 
-// Users saved before commute methods existed have no commuteMethod; they keep
-// the old behaviour (daily amount × days). Must match asksTransport() in the API.
+// Commute settings valid on a date. Changes are kept in commuteHistory with a
+// start date, so editing someone's commute never changes earlier months.
+// Without a history the current fields apply to every date; users saved before
+// commute methods existed have no commuteMethod and keep the old behaviour
+// (daily amount × days).
+//  oneWayKm: car distance one way (×2 for the day)
+//  legacyKm: car distance saved by an earlier version as "per day"
+export function commuteOn(user, dateStr) {
+  const hist = Array.isArray(user?.commuteHistory) ? user.commuteHistory : []
+  const sorted = [...hist].sort((a, b) => (a.from || '').localeCompare(b.from || ''))
+  let e = null
+  for (const h of sorted) if (!h.from || !dateStr || h.from <= dateStr) e = h
+  if (!e) {
+    e = {
+      method: user?.commuteMethod || null,
+      oneWayKm: Number(user?.commuteOneWayKm) || 0,
+      amount: Number(user?.itemRates?.['交通費']?.amount) || 0,
+      legacyKm: Number(user?.commuteDistanceKm) || 0,
+    }
+  }
+  const oneWayKm = Number(e.oneWayKm) || 0
+  const legacyKm = Number(e.legacyKm) || 0
+  return { method: e.method || null, oneWayKm, legacyKm, amount: Number(e.amount) || 0, dailyKm: oneWayKm > 0 ? oneWayKm * 2 : legacyKm }
+}
+
+// Current settings + whether the clock-out screen asks "本日の交通費".
+// Must match asksTransport() in the API.
 export function getCommute(user) {
-  const method = user?.commuteMethod || null
-  const amount = Number(user?.itemRates?.['交通費']?.amount) || 0
-  const distance = Number(user?.commuteDistanceKm) || 0
-  const label = COMMUTE_METHODS.find(m => m.key === method)?.label || '未設定'
+  const c = commuteOn(user, getTodayDate())
+  const label = COMMUTE_METHODS.find(m => m.key === c.method)?.label || '未設定'
   let asks
   if (user?.employeeType === 'salaried') asks = false
-  else if (method === 'walk' || method === 'none') asks = false
-  else if (method === 'car') asks = distance > 0
-  else asks = amount > 0
-  return { method, label, amount, distance, asks }
+  else if (c.method === 'walk' || c.method === 'none') asks = false
+  else if (c.method === 'car') asks = c.dailyKm > 0
+  else asks = c.amount > 0
+  return { ...c, label, distance: c.dailyKm, asks }
 }
 
 export async function getCarRates() {
@@ -647,33 +763,42 @@ export function carRateForDate(carRates, dateStr) {
   return rate
 }
 
-// Transport pay rows for the given eligible days. Car: distance × the unit
-// price valid on each day (a new price only affects days from its start date).
+// Transport pay rows for the given eligible days, using the commute settings
+// and the car unit price valid on each day.
 export function computeTransport(user, eligibleDates, carRates = []) {
-  const c = getCommute(user)
-  const days = [...eligibleDates].sort()
-  if (days.length === 0) return []
-  if (c.method === 'walk' || c.method === 'none') return []
-  if (c.method === 'car') {
-    if (!c.distance) return []
-    const groups = []
-    for (const d of days) {
+  const groups = []
+  for (const d of [...eligibleDates].sort()) {
+    const c = commuteOn(user, d)
+    let g
+    if (c.method === 'walk' || c.method === 'none') continue
+    if (c.method === 'car') {
+      if (!c.dailyKm) continue
       const rate = carRateForDate(carRates, d)
-      const last = groups[groups.length - 1]
-      if (last && last.rate === rate) last.days++
-      else groups.push({ rate, days: 1 })
+      g = { key: `car|${c.oneWayKm}|${c.legacyKm}|${rate}`, car: true, c, rate, daily: c.dailyKm * rate }
+    } else {
+      if (!c.amount) continue
+      g = { key: `amt|${c.amount}`, car: false, c, rate: c.amount, daily: c.amount }
     }
-    return groups.map(g => {
-      const daily = c.distance * g.rate
-      return {
-        label: `交通費（車 ${c.distance}km × ${g.rate}円）`,
-        excelLabel: `交通費（車 ${c.distance}km×${g.rate}円/km・${g.days}日）`,
-        days: g.days, rate: Math.round(daily * 100) / 100, pay: Math.round(g.days * daily),
-      }
-    })
+    const found = groups.find(x => x.key === g.key)
+    if (found) found.days++
+    else groups.push({ ...g, days: 1 })
   }
-  if (!c.amount) return []
-  return [{ label: '交通費', excelLabel: `交通費（${days.length}日）`, days: days.length, rate: c.amount, pay: Math.round(days.length * c.amount) }]
+  const amountGroups = groups.filter(g => !g.car).length
+  return groups.map(g => {
+    if (g.car) {
+      const dist = g.c.oneWayKm > 0 ? `片道${g.c.oneWayKm}km×2` : `${g.c.legacyKm}km`
+      return {
+        label: `交通費（車 ${dist} × ${g.rate}円）`,
+        excelLabel: `交通費（車 ${dist}×${g.rate}円/km・${g.days}日）`,
+        days: g.days, rate: Math.round(g.daily * 100) / 100, pay: Math.round(g.days * g.daily),
+      }
+    }
+    return {
+      label: amountGroups > 1 ? `交通費（${g.rate}円）` : '交通費',
+      excelLabel: amountGroups > 1 ? `交通費（${g.rate}円・${g.days}日）` : `交通費（${g.days}日）`,
+      days: g.days, rate: g.rate, pay: Math.round(g.days * g.rate),
+    }
+  })
 }
 
 export async function getTransportDays(dateFrom, dateTo) {
@@ -872,7 +997,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '</styleSheet>',
   ].join('')
 
-  const minWage = await getMinWage()
+  const minWageHistory = await getMinWageHistory()
 
   function roundUp15str(t) {
     if (!t) return ''
@@ -1044,17 +1169,22 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     // workingDays = days with work report AND ≥1 completed QR session (spec 7)
     let workingDays = 0
-    let totalCompletedSessions = 0
     const workingDates = []
+    const prepSessionDates = [] // one entry per completed session (準備時間 10 min each)
     Object.entries(userWorkReports).forEach(([dateStr, items]) => {
       if (!Object.values(items).some(m => m > 0)) return
       const entry = byDate[dateStr]
       const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
-      if (completedSess.length > 0) { workingDays++; workingDates.push(dateStr); totalCompletedSessions += completedSess.length }
+      if (completedSess.length > 0) {
+        workingDays++
+        workingDates.push(dateStr)
+        completedSess.forEach(() => prepSessionDates.push(dateStr))
+      }
     })
     // 交通費対象日 = 勤務日のうち、本人が「支給なし」にしていない日
     const transportDates = workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false)
     const commute = getCommute(user)
+    const transportRowsX = computeTransport(user, transportDates, carRates)
 
     // Accumulate global summary data from work_reports
     for (const type of workTypes) {
@@ -1106,7 +1236,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
       dayCountCells(2, [
         ['C', `出勤日数：${attendanceDates(byDate).length}日`],
-        ...(commute.asks ? [['D', `交通費対象：${transportDates.length}日`]] : []),
+        ...(commute.asks || transportRowsX.length > 0 ? [['D', `交通費対象：${transportDates.length}日`]] : []),
       ]) + `</row>`
 
     const hdrCell = (col, rn, text) =>
@@ -1308,7 +1438,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
 
     // 交通費行
-    for (const t of computeTransport(user, transportDates, carRates)) {
+    for (const t of transportRowsX) {
       totalPayAmount += t.pay
       payRows.push(
         `<row r="${payRowIdx}">` +
@@ -1321,16 +1451,16 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       payRowIdx++
     }
 
-    // 前後5分（最低賃金）行
-    if (totalCompletedSessions > 0 && minWage > 0) {
-      const prepHours = totalCompletedSessions * (10 / 60)
-      const prepPay = Math.round(prepHours * minWage)
-      totalPayHours += prepHours; totalPayAmount += prepPay
+    // 前後5分（最低賃金）行: 最低賃金はその日に有効な金額で計算
+    const prepGroups = prepTimeRows(prepSessionDates, minWageHistory)
+    for (const g of prepGroups) {
+      const prepHours = g.mins / 60
+      totalPayHours += prepHours; totalPayAmount += g.pay
       payRows.push(
         `<row r="${payRowIdx}">` +
-        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>準備時間</t></is></c>` +
+        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${prepGroups.length > 1 ? `準備時間（${g.wage}円）` : '準備時間'}</t></is></c>` +
         `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${prepHours / 24}</v></c>` +
-        `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${minWage}</v></c>` +
+        `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${g.wage}</v></c>` +
         `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
         `</row>`
       )

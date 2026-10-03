@@ -1467,3 +1467,70 @@
   padding: 8px 12px;
   flex-shrink: 0;
 }
+
+/* ── 週コピーで用意された日 ── */
+.cell.planned {
+  background: #f0fdf4;
+  border: 1.5px dashed #86efac;
+  cursor: pointer;
+}
+
+.calCopyBadge {
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 4px;
+  padding: 1px 4px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.copySection {
+  border: 1.5px dashed #86efac;
+  background: #f0fdf4;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.copyTitle { font-weight: 800; color: #166534; }
+.copyLine { display: flex; gap: 8px; font-size: 0.95rem; color: #1f2937; }
+.copySlot { font-weight: 700; color: #166534; }
+.copyHint { font-size: 0.8rem; color: #64748b; }
+
+.copyDeleteOutline {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1.5px solid #fca5a5;
+  background: #fff;
+  color: #dc2626;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.copyConfirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #991b1b;
+}
+
+.copyCancelBtn, .copyDeleteBtn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.copyCancelBtn { background: #fff; border: 1.5px solid #d1d5db; color: #374151; }
+.copyDeleteBtn { background: #dc2626; border: none; color: #fff; }

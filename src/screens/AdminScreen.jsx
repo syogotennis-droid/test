@@ -6,7 +6,7 @@ import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  resolveUserByPin, PAY_ITEMS, saveAdminPin, getMinWage, saveMinWage, DEFAULT_MIN_WAGE,
+  resolveUserByPin, PAY_ITEMS, saveAdminPin,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
   saveWorkReport, getWorkReport, getWorkReportsForRange,
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
@@ -16,9 +16,10 @@ import {
   pairBreaks, breakMinutes, BREAK_START, BREAK_END, getTodayPunchState,
   getCommute, getTransportDays, getCarRates, saveCarRates, computeTransport, attendanceDates,
   COMMUTE_METHODS, carRateForDate,
+  getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
+  prepTimeRows, planMinWageChange, withRateFrom,
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
-import WorkPlanTab from './WorkPlanTab'
 import styles from './AdminScreen.module.css'
 
 const LOG_TYPE_COLOR = { '出勤': '#2e7d32', '退勤': '#1a73e8' }
@@ -83,15 +84,6 @@ const SIDEBAR_ITEMS = [
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-      </svg>
-    ),
-  },
-  {
-    key: 'plans',
-    label: '勤務予定',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="8 15 11 18 16 13"/>
       </svg>
     ),
   },
@@ -179,10 +171,9 @@ export default function AdminScreen({ onBack, isTablet = false }) {
       <div className={styles.mainContent}>
         {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('calendar')} />}
         {tab === 'calendar' && <CalendarTab users={users} today={today} isTablet={isTablet} />}
-        {tab === 'plans' && <WorkPlanTab users={users} />}
         {tab === 'kinmubo' && <KinmuboTab today={today} />}
         {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} isTablet={isTablet} />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'settings' && <SettingsTab onUsersChanged={() => getUsers().then(setUsers)} />}
       </div>
     </div>
   )
@@ -1855,19 +1846,19 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWage(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates()])
-      .then(([logs, users, minWage, salDays, workReports, sessionWorkBySession, transportFlags, carRates]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates()])
+      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWage, salDays, workReports, sessionWorkBySession, transportFlags, carRates))
+        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWage, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = []) {
+  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = []) {
     const transportRows = (user, dates) =>
       computeTransport(user, dates.filter(d => transportFlags[`${user.id}_${d}`] !== false), carRates)
         .map(t => ({ label: t.label, parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: t.days, rate: t.rate, pay: t.pay }))
@@ -1948,7 +1939,8 @@ function KinmuboTab({ today }) {
         const salDates = dailySalariedRows.filter(r => r.completed).map(r => r.ds)
         rows.push(...transportRows(user, salDates))
         const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
-        return { user, workingDays: salWorkingDays, attendanceDays: salWorkingDays, transportDays: null, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows }
+        const incompleteDays = dailySalariedRows.filter(r => !r.completed).length
+        return { user, workingDays: salWorkingDays, attendanceDays: salWorkingDays, transportDays: null, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows }
       }
 
       // ─── Hourly employee handling ───
@@ -1980,11 +1972,17 @@ function KinmuboTab({ today }) {
       let totalCompletedSessions = 0
       const inconsistentDates = []
       const workingDates = []
+      const prepSessionDates = []
       Object.entries(userWorkReports).forEach(([dateStr, items]) => {
         if (!Object.values(items).some(m => m > 0)) return
         const entry = byDate[dateStr]
         const completedSess = entry ? entry.sessions.filter(s => s.inLog && s.outLog) : []
-        if (completedSess.length > 0) { workingDays++; workingDates.push(dateStr); totalCompletedSessions += completedSess.length }
+        if (completedSess.length > 0) {
+          workingDays++
+          workingDates.push(dateStr)
+          totalCompletedSessions += completedSess.length
+          completedSess.forEach(() => prepSessionDates.push(dateStr))
+        }
         else inconsistentDates.push(dateStr)
       })
       // 出勤日数: days with a completed punch (出勤＋退勤). 交通費対象日数: days that
@@ -2054,14 +2052,17 @@ function KinmuboTab({ today }) {
         }
       }
       rows.push(...transportRows(user, workingDates))
-      if (totalCompletedSessions > 0 && minWage > 0) {
-        const prepMins = totalCompletedSessions * 10
-        rows.push({ label: '準備時間', parentType: '準備時間', isMultiPeriod: false, dayType: null, mins: prepMins, days: null, rate: minWage, pay: Math.round(prepMins / 60 * minWage) })
-      }
+      const prepGroups = prepTimeRows(prepSessionDates, minWageHistory)
+      prepGroups.forEach(g => rows.push({
+        label: prepGroups.length > 1 ? `準備時間（${g.wage}円）` : '準備時間', parentType: '準備時間',
+        isMultiPeriod: false, dayType: null, mins: g.mins, days: null, rate: g.wage, pay: g.pay,
+      }))
       const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
-      const transportDays = getCommute(user).asks ? transportDates.length : null
-      return { user, workingDays, attendanceDays, transportDays, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
+      const transportDays = getCommute(user).asks || rows.some(r => r.parentType === '交通費') ? transportDates.length : null
+      // days with a clock-in but no clock-out (not counted as 出勤日数)
+      const incompleteDays = Object.values(byDate).filter(e => e.sessions.some(se => se.inLog && !se.outLog) && !e.sessions.some(se => se.inLog && se.outLog)).length
+      return { user, workingDays, attendanceDays, transportDays, incompleteDays, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
     })
   }
 
@@ -2173,7 +2174,7 @@ function KinmuboTab({ today }) {
     const typeMap = {}
     for (const { rows } of preview) {
       for (const row of rows) {
-        if (row.mins === null || row.label === '準備時間') continue
+        if (row.mins === null || row.parentType === '準備時間') continue
         if (!typeMap[row.label]) typeMap[row.label] = { mins: 0, pay: 0 }
         typeMap[row.label].mins += row.mins
         typeMap[row.label].pay += row.pay
@@ -2306,7 +2307,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当する従業員がいません。</div>
             )}
 
-            {filteredPreview.map(({ user, attendanceDays, transportDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
+            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -2317,6 +2318,8 @@ function KinmuboTab({ today }) {
                   >
                     <span className={styles.kinmuboAccordionName}>{user.name}</span>
                     <span className={styles.kinmuboAccordionMeta}>
+                      <span className={styles.kinmuboAccordionDays}>勤務申告：{workingDays}日</span>
+                      <span className={styles.kinmuboAccordionSep}> ｜ </span>
                       <span className={styles.kinmuboAccordionDays}>出勤日数：{attendanceDays}日</span>
                       {transportDays != null && (
                         <>
@@ -2329,6 +2332,9 @@ function KinmuboTab({ today }) {
                     </span>
                     {inconsistentDates?.length > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>打刻要確認 {inconsistentDates.length}件</span>
+                    )}
+                    {incompleteDays > 0 && (
+                      <span className={styles.kinmuboAccordionWarn}>打刻未完了 {incompleteDays}日</span>
                     )}
                     <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>
                     <svg
@@ -2876,7 +2882,7 @@ function AddUserModal({ onClose, onAdded }) {
         id: addId.trim(), name: addName.trim(), pin, employeeType,
         workItems: employeeType === 'salaried' ? [] : workItems,
         itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
-        ...(employeeType !== 'salaried' ? { commuteMethod, commuteDistanceKm: Number(commuteDistance) || 0 } : {}),
+        ...(employeeType !== 'salaried' ? { commuteMethod, commuteOneWayKm: Number(commuteDistance) || 0 } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
@@ -3093,6 +3099,163 @@ function AddUserModal({ onClose, onAdded }) {
 
 // ─── NumpadOverlay ────────────────────────────────────────────────────────────
 
+// ─── MinWageSettings (最低賃金・一括変更) ──────────────────────────────────────
+
+// Changing the minimum wage records it with a start date (準備時間 uses the wage
+// valid on each day) and raises the linked work items of everyone whose rate is
+// below the new wage. Higher individual rates are never touched, and the raise
+// is added to each rate history from the start date, so earlier pay is unchanged.
+function MinWageSettings({ onUsersChanged }) {
+  const today = getTodayJst()
+  const [history, setHistory] = useState(null)
+  const [items, setItems] = useState(null)
+  const [itemsMsg, setItemsMsg] = useState('')
+  const [wageStr, setWageStr] = useState('')
+  const [from, setFrom] = useState(today)
+  const [plan, setPlan] = useState(null) // { wage, from, rows, keep:Set, higher }
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => { getMinWageHistory().then(setHistory); getMinWageItems().then(setItems) }, [])
+
+  const sorted = [...(history || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''))
+  const currentIdx = sorted.findIndex(e => !e.from || e.from <= today)
+  const linkable = ASSIGNABLE_ITEMS.filter(i => i !== '交通費')
+
+  async function toggleItem(item) {
+    const next = items.includes(item) ? items.filter(i => i !== item) : [...items, item]
+    setItems(next)
+    try { await saveMinWageItems(next); setItemsMsg('保存しました'); setTimeout(() => setItemsMsg(''), 2000) }
+    catch { setItemsMsg('保存に失敗しました') }
+  }
+
+  async function preview() {
+    const wage = Number(wageStr)
+    if (!(wage > 0)) { setErr('新しい最低賃金を入力してください'); return }
+    if (!from) { setErr('適用開始日を入力してください'); return }
+    if ((history || []).some(e => e.from === from)) { setErr(`${fmtJaDate(from)}の最低賃金はすでに登録されています`); return }
+    setErr('')
+    const users = await getUsers()
+    const rows = planMinWageChange(users, items, wage, from)
+    const higher = users.filter(u => u.employeeType !== 'salaried')
+      .reduce((n, u) => n + items.filter(i => (u.workItems || []).includes(i) && getRatesForDate(u.itemRates?.[i], from).normal >= wage).length, 0)
+    setPlan({ wage, from, rows, keep: new Set(rows.map((_, k) => k)), higher, users })
+  }
+
+  async function apply() {
+    setBusy(true)
+    try {
+      const chosen = plan.rows.filter((_, k) => plan.keep.has(k))
+      const byUser = {}
+      chosen.forEach(r => { (byUser[r.userId] = byUser[r.userId] || []).push(r) })
+      for (const [userId, rs] of Object.entries(byUser)) {
+        const u = plan.users.find(x => x.id === userId)
+        let itemRates = u.itemRates || {}
+        for (const r of rs) itemRates = withRateFrom(itemRates, r.item, plan.from, r.newNormal, r.newSunday)
+        await upsertUser({ id: userId, itemRates })
+      }
+      const next = [...(history || []), { from: plan.from, wage: plan.wage }]
+      await saveMinWageHistory(next)
+      setHistory(next)
+      setMsg(`${fmtJaDate(plan.from)}から最低賃金 ${plan.wage.toLocaleString()}円。時給を${chosen.length}件更新しました`)
+      setPlan(null)
+      setWageStr('')
+      onUsersChanged?.()
+    } catch (e) {
+      setErr('保存に失敗しました: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const inputStyle = { height: 44, border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1rem', padding: '0 10px', background: '#f8fafc', color: '#1a3f6f', boxSizing: 'border-box', fontFamily: 'inherit' }
+  return (
+    <div>
+      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>最低賃金</div>
+      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>
+        準備時間の計算と、下で選んだ業務の時給に使います。変更すると、選んだ業務で時給が新しい最低賃金より低い人だけ、適用開始日から新しい時給になります。
+      </div>
+      {history === null ? <div style={{ color: '#94a3b8' }}>読込中…</div> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          {sorted.map((e, i) => {
+            const isFuture = !!(e.from && e.from > today)
+            return (
+              <div key={e.from || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: i === currentIdx ? '#eff6ff' : '#f8fafc', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}>
+                <span style={{ minWidth: 110 }}>{e.from ? `${fmtJaDate(e.from)}〜` : '以前から'}</span>
+                <strong style={{ color: '#1a3f6f' }}>{Number(e.wage).toLocaleString()}円/時</strong>
+                <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{isFuture ? '変更予定' : i === currentIdx ? '現在適用中' : '過去'}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ fontSize: '0.85rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>最低賃金に連動する業務 {itemsMsg && <span style={{ color: '#16a34a', marginLeft: 6 }}>{itemsMsg}</span>}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+        {items && linkable.map(it => (
+          <label key={it} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${items.includes(it) ? '#1a5fa8' : '#e2e8f0'}`, background: items.includes(it) ? '#eff6ff' : '#fff', fontSize: '0.88rem', cursor: 'pointer', minHeight: 32 }}>
+            <input type="checkbox" checked={items.includes(it)} onChange={() => toggleItem(it)} style={{ width: 18, height: 18 }} />
+            {it}
+          </label>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: '#555', fontWeight: 700 }}>
+          新しい最低賃金（円/時）
+          <input type="text" inputMode="numeric" value={wageStr} placeholder="例: 1180"
+            onChange={e => { if (/^\d{0,5}$/.test(e.target.value)) { setWageStr(e.target.value); setErr('') } }}
+            style={{ ...inputStyle, width: 140 }} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: '#555', fontWeight: 700 }}>
+          適用開始日
+          <input type="date" value={from} onChange={e => { setFrom(e.target.value); setErr('') }} style={inputStyle} />
+        </label>
+        <button onClick={preview} disabled={!wageStr || !items}
+          style={{ height: 44, padding: '0 18px', background: '#1a5fa8', border: 'none', borderRadius: 10, color: '#fff', fontWeight: 800, cursor: 'pointer', opacity: wageStr ? 1 : 0.4 }}>
+          変更内容を確認
+        </button>
+      </div>
+      {err && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem', marginTop: 8 }}>{err}</div>}
+      {msg && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem', marginTop: 8 }}>✓ {msg}</div>}
+
+      {plan && (
+        <div className={styles.modalOverlay} onClick={() => !busy && setPlan(null)}>
+          <div className={styles.modal} onClick={e => e.stopPropagation()}>
+            <h3>最低賃金の変更内容</h3>
+            <p className={styles.modalLabel}>{fmtJaDate(plan.from)}から {minWageForDate(history, plan.from).toLocaleString()}円 → <strong>{plan.wage.toLocaleString()}円</strong></p>
+            {plan.from < today && <p className={styles.confirmWarn}>過去の日付です。{fmtJaDate(plan.from)}以降の給与計算も新しい金額になります。</p>}
+            {plan.rows.length === 0 ? (
+              <p className={styles.modalLabel}>時給を変更する人はいません（連動する業務の時給がすべて新しい最低賃金以上です）。</p>
+            ) : (
+              <div style={{ maxHeight: '45vh', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 10 }}>
+                {plan.rows.map((r, k) => (
+                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid #f1f5f9', fontSize: '0.88rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={plan.keep.has(k)} style={{ width: 18, height: 18 }}
+                      onChange={() => setPlan(p => { const keep = new Set(p.keep); keep.has(k) ? keep.delete(k) : keep.add(k); return { ...p, keep } })} />
+                    <span style={{ minWidth: 90, fontWeight: 700 }}>{r.name}</span>
+                    <span style={{ minWidth: 70 }}>{r.item}</span>
+                    <span style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                      {r.oldNormal ? `${r.oldNormal.toLocaleString()}円` : '未設定'} → <strong>{r.newNormal.toLocaleString()}円</strong>
+                      {r.newSunday ? <span style={{ color: '#64748b' }}>（日曜 {r.newSunday.toLocaleString()}円）</span> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {plan.higher > 0 && <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>新しい最低賃金以上の時給 {plan.higher}件は変更しません。</p>}
+            <div className={styles.modalActions}>
+              <button className={styles.cancelBtn} onClick={() => setPlan(null)} disabled={busy}>キャンセル</button>
+              <button className={styles.saveBtn} onClick={apply} disabled={busy}>{busy ? '保存中…' : 'この内容で変更する'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── CarRateSettings (車通勤の交通費単価) ──────────────────────────────────────
 
 // A new unit price only applies from its start date, so pay for earlier days
@@ -3181,18 +3344,11 @@ function CarRateSettings() {
 
 // ─── SettingsTab ──────────────────────────────────────────────────────────────
 
-function SettingsTab() {
+function SettingsTab({ onUsersChanged }) {
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const [minWage, setMinWage] = useState(String(DEFAULT_MIN_WAGE))
-  const [wageSaved, setWageSaved] = useState(false)
-  const [wageError, setWageError] = useState('')
-
-  useEffect(() => {
-    getMinWage().then(w => setMinWage(String(w)))
-  }, [])
 
   async function handleSave() {
     if (newPin.length !== 4) { setError('4桁のPINを入力してください'); return }
@@ -3206,19 +3362,6 @@ function SettingsTab() {
       setTimeout(() => setSaved(false), 3000)
     } catch {
       setError('保存に失敗しました')
-    }
-  }
-
-  async function handleSaveWage() {
-    const w = Number(minWage)
-    if (!Number.isInteger(w) || w < 1) { setWageError('正しい金額を入力してください'); return }
-    try {
-      await saveMinWage(w)
-      setWageSaved(true)
-      setWageError('')
-      setTimeout(() => setWageSaved(false), 3000)
-    } catch {
-      setWageError('保存に失敗しました')
     }
   }
 
@@ -3266,35 +3409,7 @@ function SettingsTab() {
         </div>
       </div>
 
-      {/* 最低賃金設定 */}
-      <div>
-        <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 16 }}>最低賃金設定</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>最低賃金（円/時）</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number"
-                inputMode="numeric"
-                value={minWage}
-                onChange={e => { setMinWage(e.target.value.replace(/[^\d]/g, '')); setWageError('') }}
-                style={{ height: 52, flex: 1, border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.3rem', textAlign: 'center', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f', boxSizing: 'border-box' }}
-              />
-              <span style={{ color: '#555', fontWeight: 700, whiteSpace: 'nowrap' }}>円/時</span>
-            </div>
-          </div>
-          {wageError && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem' }}>{wageError}</div>}
-          {wageSaved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem' }}>✓ 最低賃金を保存しました</div>}
-          <button
-            onClick={handleSaveWage}
-            disabled={!minWage || Number(minWage) < 1}
-            style={{ height: 52, background: '#1a5fa8', border: 'none', borderRadius: 12, color: '#fff', fontSize: '1.05rem', fontWeight: 800, cursor: 'pointer', opacity: (!minWage || Number(minWage) < 1) ? 0.4 : 1 }}
-          >
-            最低賃金を保存する
-          </button>
-          <div style={{ fontSize: '0.8rem', color: '#9baab8' }}>出勤日の前後5分分の給与計算に使用されます（出勤簿Excel）</div>
-        </div>
-      </div>
+      <MinWageSettings onUsersChanged={onUsersChanged} />
 
       <CarRateSettings />
     </div>
@@ -3710,9 +3825,9 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
 // ─── CommuteSection (通勤・交通費) ────────────────────────────────────────────
 
 // method '' = saved before commute methods existed: keeps the old daily amount
-function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistance, carRates, isTablet, onNumpad }) {
+function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistance, carRates, isTablet, onNumpad, legacyKm, changed, from, onFrom }) {
   const todayRate = carRateForDate(carRates || [], getTodayJst())
-  const dist = Number(distance) || 0
+  const dist = (Number(distance) || 0) * 2
   const usesAmount = method === 'bus' || method === 'train' || method === ''
   return (
     <div className={styles.userEditSection}>
@@ -3744,7 +3859,7 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
       )}
       {method === 'car' && (
         <div className={styles.commuteRow}>
-          <label className={styles.userEditLabel}>通勤距離（1日あたり）</label>
+          <label className={styles.userEditLabel}>通勤距離（片道）</label>
           <div className={styles.workItemInputWrap}>
             {isTablet ? (
               <button className={styles.numpadTriggerSm} onClick={() => onNumpad('distance')}>{distance || '0'}</button>
@@ -3756,16 +3871,45 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
           </div>
           <div className={styles.userEditHintText}>
             {todayRate > 0
-              ? `現在の単価 ${todayRate}円/km → 1日 ${Math.round(dist * todayRate).toLocaleString()}円（単価は「設定」で変更できます）`
+              ? `1日の交通費 ＝ 片道 × 2 × 単価${todayRate}円 ＝ ${Math.round(dist * todayRate).toLocaleString()}円（単価は「設定」で変更できます）`
               : '車通勤の単価が未設定です。「設定」で登録してください'}
           </div>
+          {legacyKm > 0 && !(Number(distance) > 0) && (
+            <div className={styles.userEditHintText} style={{ color: '#b45309' }}>
+              以前は「1日分の距離 {legacyKm}km」で登録されています。片道の距離を入れ直してください（入れ直すまでは以前の距離で計算します）
+            </div>
+          )}
         </div>
       )}
       {(method === 'walk' || method === 'none') && (
         <div className={styles.userEditHintText}>交通費は支給されません。退勤時の「本日の交通費」も表示されません。</div>
       )}
+      {changed && onFrom && (
+        <div className={styles.commuteRow}>
+          <label className={styles.userEditLabel}>この変更の適用開始日</label>
+          <input type="date" className={styles.userEditInput} value={from} onChange={e => onFrom(e.target.value)} />
+          <div className={styles.userEditHintText}>この日より前の交通費は、以前の設定のまま計算します</div>
+        </div>
+      )}
     </div>
   )
+}
+
+// Commute history with one more dated entry. The first change also records the
+// settings used until then (from = null), so earlier months keep them.
+function commuteHistoryWith(user, entry) {
+  let hist = Array.isArray(user.commuteHistory) && user.commuteHistory.length > 0
+    ? [...user.commuteHistory]
+    : [{
+        from: null,
+        method: user.commuteMethod || null,
+        oneWayKm: Number(user.commuteOneWayKm) || 0,
+        amount: Number(user.itemRates?.['交通費']?.amount) || 0,
+        legacyKm: Number(user.commuteDistanceKm) || 0,
+      }]
+  hist = hist.filter(e => e.from !== entry.from)
+  hist.push(entry)
+  return hist.sort((a, b) => (a.from || '').localeCompare(b.from || ''))
 }
 
 // ─── UserEditModal ────────────────────────────────────────────────────────────
@@ -3796,7 +3940,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     user.itemRates?.['交通費']?.amount != null ? String(user.itemRates['交通費'].amount) : ''
   )
   const [commuteMethod, setCommuteMethod] = useState(user.commuteMethod || '')
-  const [commuteDistance, setCommuteDistance] = useState(user.commuteDistanceKm ? String(user.commuteDistanceKm) : '')
+  const [commuteDistance, setCommuteDistance] = useState(user.commuteOneWayKm ? String(user.commuteOneWayKm) : '')
+  const [commuteFrom, setCommuteFrom] = useState(getTodayJst())
+  const commuteChanged = (commuteMethod || '') !== (user.commuteMethod || '')
+    || (Number(commuteDistance) || 0) !== (Number(user.commuteOneWayKm) || 0)
+    || (Number(transportAmount) || 0) !== (Number(user.itemRates?.['交通費']?.amount) || 0)
   const [carRates, setCarRates] = useState([])
   useEffect(() => { getCarRates().then(setCarRates) }, [])
   const [historyModalItem, setHistoryModalItem] = useState(null)
@@ -3931,7 +4079,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
         id: saveId, name: name.trim(), pin, employeeType,
         workItems: employeeType === 'salaried' ? [] : workItems,
         itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
-        ...(employeeType !== 'salaried' && commuteMethod ? { commuteMethod, commuteDistanceKm: Number(commuteDistance) || 0 } : {}),
+        ...(employeeType !== 'salaried' && commuteChanged ? {
+          commuteMethod: commuteMethod || null,
+          commuteOneWayKm: Number(commuteDistance) || 0,
+          commuteHistory: commuteHistoryWith(user, { from: commuteFrom, method: commuteMethod || null, oneWayKm: Number(commuteDistance) || 0, amount: Number(transportAmount) || 0 }),
+        } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
@@ -4219,9 +4371,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
               amount={transportAmount} onAmount={setTransportAmount}
               distance={commuteDistance} onDistance={setCommuteDistance}
               carRates={carRates} isTablet={isTablet}
+              legacyKm={Number(user.commuteDistanceKm) || 0}
+              changed={commuteChanged} from={commuteFrom} onFrom={setCommuteFrom}
               onNumpad={field => setNumpad(field === 'amount'
                 ? { title: '1日あたりの交通費（円）', field: 'amount', maxLength: 6 }
-                : { title: '通勤距離（km）', field: 'distance', maxLength: 6, decimal: true })}
+                : { title: '通勤距離・片道（km）', field: 'distance', maxLength: 6, decimal: true })}
             />
           )}
 

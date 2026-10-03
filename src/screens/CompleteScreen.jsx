@@ -1,5 +1,56 @@
 import React, { useEffect, useState } from 'react'
+import { answerWeeklyCopy } from '../lib/db'
 import styles from './CompleteScreen.module.css'
+
+const DOW = ['日', '月', '火', '水', '木', '金', '土']
+
+function itemsText(items) {
+  return Object.entries(items).map(([t, m]) => `${t}${fmtMinutes(m)}`).join('・')
+}
+
+// "先週と同じ業務内容を今週も使いますか？" shown on the first clock-in of the week
+function WeeklyCopyQuestion({ offer, user, onAnswered }) {
+  const [state, setState] = useState('ask') // ask | saving | done | error
+  const [message, setMessage] = useState('')
+
+  async function answer(a) {
+    setState('saving')
+    try {
+      const r = await answerWeeklyCopy(user.id, a)
+      setMessage(a === 'use' ? `今週の${r.copiedDays}日分を用意しました。退勤のときに確認してください` : '今週は使いません')
+      setState('done')
+    } catch {
+      setMessage('通信できませんでした。次の出勤のときにもう一度聞きます')
+      setState('error')
+    }
+    onAnswered()
+  }
+
+  if (state === 'done' || state === 'error') return <div className={styles.weeklyBox}><div className={styles.weeklyResult}>{message}</div></div>
+  return (
+    <div className={styles.weeklyBox}>
+      <div className={styles.weeklyTitle}>先週と同じ業務内容を今週も使いますか？</div>
+      <div className={styles.weeklyList}>
+        {offer.days.map(d => {
+          const [y, m, dd] = d.date.split('-').map(Number)
+          const dow = DOW[new Date(y, m - 1, dd).getDay()]
+          return (
+            <div key={d.date} className={styles.weeklyRow}>
+              <span className={styles.weeklyDow}>{dow}</span>
+              <span>{d.slots.length > 1
+                ? d.slots.map(s => `${s.slot}回目 ${itemsText(s.items)}`).join(' ／ ')
+                : itemsText(d.slots[0].items)}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className={styles.weeklyBtns}>
+        <button className={styles.weeklyNo} onClick={() => answer('skip')} disabled={state === 'saving'}>使わない</button>
+        <button className={styles.weeklyYes} onClick={() => answer('use')} disabled={state === 'saving'}>使う</button>
+      </div>
+    </div>
+  )
+}
 
 function fmtMinutes(mins) {
   const h = Math.floor(mins / 60)
@@ -15,13 +66,17 @@ const VIEW = {
   '休憩終了': { title: '休憩から戻りました', bg: '#2e7d32', icon: '🟢', timeLabel: '戻り時間' },
 }
 
-export default function CompleteScreen({ logType, workItems, user, clockInTime, breakInfo, onDone }) {
+export default function CompleteScreen({ logType, workItems, user, clockInTime, breakInfo, weeklyOffer, onDone }) {
   const [now] = useState(() => new Date())
+  // wait for the weekly question to be answered before returning
+  const [waiting, setWaiting] = useState(!!weeklyOffer)
 
   useEffect(() => {
-    const timer = setTimeout(onDone, logType === '休憩開始' ? 5000 : 4000)
+    // unanswered for a minute → go back anyway; it is asked again next clock-in
+    if (waiting) { const t = setTimeout(onDone, 60000); return () => clearTimeout(t) }
+    const timer = setTimeout(onDone, weeklyOffer ? 3500 : logType === '休憩開始' ? 5000 : 4000)
     return () => clearTimeout(timer)
-  }, [onDone, logType])
+  }, [onDone, logType, waiting, weeklyOffer])
 
   const view = VIEW[logType] || VIEW['退勤']
   const isClockOut = logType === '退勤'
@@ -66,6 +121,8 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
         )}
       </div>
 
+      {weeklyOffer && <WeeklyCopyQuestion offer={weeklyOffer} user={user} onAnswered={() => setWaiting(false)} />}
+
       {logType === '休憩開始' && (
         <div className={styles.nextHint}>戻ったら「休憩・戻り」を押してください</div>
       )}
@@ -87,9 +144,11 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
         </div>
       )}
 
-      <div className={styles.countdown}>
-        <span>まもなく戻ります...</span>
-      </div>
+      {!waiting && (
+        <div className={styles.countdown}>
+          <span>まもなく戻ります...</span>
+        </div>
+      )}
     </div>
   )
 }

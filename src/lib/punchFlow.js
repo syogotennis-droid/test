@@ -2,7 +2,7 @@
 // (TabletApp.jsx): decides what a scan means from the employee's current state.
 import {
   getTodayPunchState, saveLog, BREAK_START, BREAK_END, pairBreaks, breakMinutes,
-  getWorkPlanForDay, getSessionWorkReportsForDate, getTransportDay, saveTransportDay,
+  getWeeklyCopyForSlot, getWeeklyCopyOffer, getTransportDay, saveTransportDay,
   saveSessionWorkReport, saveWorkReport, localToday, getCommute,
 } from './db.js'
 
@@ -40,11 +40,13 @@ export async function handlePunch(mode, user) {
   const ps = await getTodayPunchState(user.id)
 
   if (mode === '出勤') {
-    // coming back from a break with the 出勤 button just ends the break
-    if (ps.state === 'break') return endBreak(user, ps)
+    // 出勤 never doubles as "back from break": the button keeps one meaning
+    if (ps.state === 'break') return fail(`${user.name} さんは休憩中です。戻るときは「休憩・戻り」を押してください`)
     if (ps.state === 'working') return fail(`${user.name} さんはすでに出勤中です`)
     await saveLog({ userId: user.id, workType: '', logType: '出勤' })
-    return done({ logType: '出勤', user })
+    // first clock-in of the week: offer to reuse last week's work (hourly staff only)
+    const offer = user.employeeType === 'salaried' ? null : await getWeeklyCopyOffer(user.id)
+    return done({ logType: '出勤', user, weeklyOffer: offer?.offer ? offer : null })
   }
 
   if (mode === '休憩') {
@@ -66,22 +68,12 @@ export async function handlePunch(mode, user) {
 
   const date = localToday()
   const asks = asksTransport(user)
-  const [plan, reported, savedTransport] = await Promise.all([
-    getWorkPlanForDay(user.id, date),
-    getSessionWorkReportsForDate(user.id, date).catch(() => ({})),
+  // this clock-out closes the n-th session of the day → the n-th copied slot
+  const slot = ps.logs.filter(l => l.log_type === '出勤').length
+  const [prefill, savedTransport] = await Promise.all([
+    getWeeklyCopyForSlot(user.id, date, slot),
     asks ? getTransportDay(user.id, date) : null,
   ])
-  // Pre-fill from today's plan, minus what earlier sessions today already reported
-  let prefill = null
-  if (plan) {
-    const used = {}
-    Object.entries(reported || {}).forEach(([sid, items]) => {
-      if (sid === ps.sessionId) return
-      Object.entries(items || {}).forEach(([t, m]) => { used[t] = (used[t] || 0) + m })
-    })
-    const rest = Object.entries(plan).map(([t, m]) => [t, m - (used[t] || 0)]).filter(([, m]) => m > 0)
-    if (rest.length > 0) prefill = Object.fromEntries(rest)
-  }
   return {
     kind: 'work',
     ctx: {
