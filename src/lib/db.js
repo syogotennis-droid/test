@@ -124,6 +124,22 @@ export function getPendingCount() {
   return readJSON(OUTBOX_KEY, []).length
 }
 
+// Items the server keeps answering with an error that isn't a normal "invalid" reply (403/404/413,
+// a Wi-Fi login page ...) are set aside after many tries so they can't block the punches behind
+// them. They are kept, shown on screen, and put back in the queue when the app is opened again.
+const OUTBOX_FAILED_KEY = 'outboxFailed'
+const MAX_TRIES = 20
+export function getFailedCount() {
+  return readJSON(OUTBOX_FAILED_KEY, []).length
+}
+function requeueFailed() {
+  const failed = readJSON(OUTBOX_FAILED_KEY, [])
+  if (failed.length === 0) return
+  writeJSON(OUTBOX_KEY, [...readJSON(OUTBOX_KEY, []), ...failed.map(x => ({ ...x, tries: 0 }))])
+  writeJSON(OUTBOX_FAILED_KEY, [])
+  notifyOutbox()
+}
+
 let flushing = null
 export function flushOutbox() {
   if (!flushing) flushing = doFlush().finally(() => { flushing = null })
@@ -141,8 +157,19 @@ async function doFlush() {
       // Keep the item for anything but a clear "invalid" answer from our own server
       // (400/409/422 with a JSON body). Wi-Fi login pages, proxies and 404/403 are retried.
       const invalid = e.fromServer && (e.status === 400 || e.status === 409 || e.status === 422)
-      if (!invalid) return
-      console.error('送信できないデータを破棄しました', item, e)
+      if (!invalid) {
+        const answered = !!e.status && e.status < 500 && e.status !== 401 && !e.offline
+        if (!answered) return // offline, 401, 5xx: wait and try again later
+        const tries = (item.tries || 0) + 1
+        if (tries < MAX_TRIES) {
+          writeJSON(OUTBOX_KEY, readJSON(OUTBOX_KEY, []).map(x => (x.qid === item.qid ? { ...x, tries } : x)))
+          return
+        }
+        console.error('送信を保留にしました', item, e)
+        writeJSON(OUTBOX_FAILED_KEY, [...readJSON(OUTBOX_FAILED_KEY, []), item])
+      } else {
+        console.error('送信できないデータを破棄しました', item, e)
+      }
     }
     writeJSON(OUTBOX_KEY, readJSON(OUTBOX_KEY, []).filter(x => x.qid !== item.qid))
     notifyOutbox()
@@ -151,6 +178,7 @@ async function doFlush() {
 
 // Call once from the punch app; returns a cleanup function.
 export function startOutboxSync() {
+  requeueFailed()
   const onOnline = () => flushOutbox()
   window.addEventListener('online', onOnline)
   const t = setInterval(flushOutbox, 30000)
@@ -381,10 +409,10 @@ export function localToday() {
   return getTodayDate()
 }
 
+const p2 = n => String(n).padStart(2, '0')
+function dateOf(d) { return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}` }
 function getTodayDate() {
-  return new Date().toLocaleDateString('ja-JP', {
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  }).replace(/\//g, '-')
+  return dateOf(new Date())
 }
 
 // Pay items for the new payroll system
@@ -517,12 +545,8 @@ export async function resolveUserByPin(pin) {
 export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork, sessionId: providedSessionId, date: shiftDateStr }) {
   const now = new Date()
   // after midnight, punches that continue yesterday's shift are filed under that shift's date
-  const date = shiftDateStr || now.toLocaleDateString('ja-JP', {
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  }).replace(/\//g, '-')
-  const time = now.toLocaleTimeString('ja-JP', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  })
+  const date = shiftDateStr || dateOf(now)
+  const time = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`
   const workTypeStr = workItems
     ? Object.entries(workItems).filter(([, m]) => m > 0).map(([t, m]) => `${t}:${m}`).join(',')
     : (workType || '')

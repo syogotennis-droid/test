@@ -327,7 +327,8 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
   async function handleWeeklyAnswer(answer) {
     try {
       const r = await answerWeeklyCopyAtClockOut(ctx, answer)
-      if (answer === 'use') {
+      // what was already entered for this shift (prefillIsSaved) is left as it is
+      if (answer === 'use' && !ctx.prefillIsSaved) {
         const wt = toWorkTimes(r.prefill)
         setWorkTimes(wt)
         setPrefilled(Object.keys(wt).length > 0)

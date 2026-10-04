@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
-import { getPendingCount } from '../lib/db'
+import { getPendingCount, getFailedCount } from '../lib/db'
 
 export default function SyncStatus() {
   const [pending, setPending] = useState(getPendingCount)
+  const [failed, setFailed] = useState(getFailedCount)
   const [online, setOnline] = useState(navigator.onLine)
 
   useEffect(() => {
-    const update = () => { setPending(getPendingCount()); setOnline(navigator.onLine) }
+    const update = () => { setPending(getPendingCount()); setFailed(getFailedCount()); setOnline(navigator.onLine) }
     window.addEventListener('outbox-change', update)
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
@@ -17,9 +18,11 @@ export default function SyncStatus() {
     }
   }, [])
 
-  if (online && pending === 0) return null
+  if (online && pending === 0 && failed === 0) return null
 
-  const text = !online
+  const text = failed > 0 && online && pending === 0
+    ? `送れなかった打刻・入力が ${failed}件あります。管理者に連絡してください（この端末に保存しています）`
+    : !online
     ? `オフライン：打刻はこの端末に保存され、通信が戻ると自動で送信されます${pending ? `（未送信 ${pending}件）` : ''}`
     : `未送信の打刻 ${pending}件 — 自動で再送しています`
 

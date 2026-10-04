@@ -87,8 +87,11 @@ async function main() {
     const { id, ...rest } = u
     // Merge into an existing row instead of replacing it: settings that only exist on
     // Cloudflare (commute method, etc.) survive a second run; Firebase's values win otherwise.
-    sql.push(`INSERT INTO users (id, pin, data) VALUES (${q(id)}, ${q(rest.pin || '')}, ${json(rest)}) ` +
-      `ON CONFLICT(id) DO UPDATE SET pin = excluded.pin, data = json_patch(users.data, excluded.data);`)
+    // null values are dropped: in a JSON merge patch a null would delete the key on the Cloudflare side
+    const clean = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined))
+    sql.push(`INSERT INTO users (id, pin, data) VALUES (${q(id)}, ${q(clean.pin || '')}, ${json(clean)}) ` +
+      `ON CONFLICT(id) DO UPDATE SET pin = CASE WHEN excluded.pin != '' THEN excluded.pin ELSE users.pin END, ` +
+      `data = json_patch(users.data, excluded.data);`)
   }
   for (const l of data.logs) {
     sql.push(

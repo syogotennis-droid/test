@@ -478,10 +478,12 @@ export async function onRequest(context) {
       const weekStart = mondayOf(date)
       const now = new Date().toISOString()
       // Only the first answer of the week counts (a double tap or a second tablet changes nothing)
-      const first = await DB.prepare('INSERT OR IGNORE INTO weekly_copy_answers (id, user_id, week_start, answer, created_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(`${userId}_${weekStart}`, userId, weekStart, answer, now).run()
-      if (!first.meta?.changes) return ok({ ok: true, already: true, copiedDays: 0 })
-      const stmts = []
+      if (await DB.prepare('SELECT 1 AS x FROM weekly_copy_answers WHERE id = ?').bind(`${userId}_${weekStart}`).first()) {
+        return ok({ ok: true, already: true, copiedDays: 0 })
+      }
+      // the answer and the copies are written together (all or nothing)
+      const stmts = [DB.prepare('INSERT OR IGNORE INTO weekly_copy_answers (id, user_id, week_start, answer, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(`${userId}_${weekStart}`, userId, weekStart, answer, now)]
       let copiedDays = 0
       if (answer === 'use') {
         for (const d of await lastWeekSlots(DB, userId, weekStart)) {
@@ -495,7 +497,7 @@ export async function onRequest(context) {
           }
         }
       }
-      if (stmts.length) await DB.batch(stmts)
+      await DB.batch(stmts)
       return ok({ ok: true, copiedDays })
     }
     if (route === 'weekly_copies' && method === 'GET') {
@@ -678,7 +680,7 @@ async function lastWeekSlots(DB, userId, weekStart) {
     DB.prepare('SELECT date, session_id, items FROM session_work_reports WHERE user_id = ? AND date >= ? AND date <= ?').bind(userId, from, to).all(),
   ])
   const reports = {}
-  repR.results.forEach(r => { reports[r.session_id] = cleanItems(JSON.parse(r.items || '{}')) })
+  repR.results.forEach(r => { reports[r.session_id] = cleanItems(JSON.parse(r.items || '{}'), false) })
   const byDate = {}
   logsR.results.filter(l => l.session_id).forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l) })
   const out = []
@@ -693,12 +695,13 @@ async function lastWeekSlots(DB, userId, weekStart) {
 }
 
 // Work minutes per item: positive whole minutes, at most one day per item
-function cleanItems(items) {
+// strict=false (reading stored data): skip anything odd instead of failing the request
+function cleanItems(items, strict = true) {
   const out = {}
   for (const [t, m] of Object.entries(items || {})) {
     const n = Math.round(Number(m))
-    if (!t || t.length > 60 || !Number.isFinite(n)) throw new HttpError('bad_items', 400)
-    if (n > 1440) throw new HttpError('bad_minutes', 400)
+    if (!t || t.length > 60 || !Number.isFinite(n)) { if (strict) throw new HttpError('bad_items', 400); continue }
+    if (n > 1440) { if (strict) throw new HttpError('bad_minutes', 400); continue }
     if (n > 0) out[t] = n
   }
   return out

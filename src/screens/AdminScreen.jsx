@@ -943,6 +943,13 @@ function absMin(time, next) {
   return (next ? 1440 : 0) + h * 60 + m
 }
 
+// A break time is "after midnight" when marked so, or when the shift ends after midnight and
+// the time is earlier than the clock-in time (e.g. 23:50 in → 00:05 break end).
+function breakIsNext(flag, time, inTime, outNext) {
+  if (!time || !inTime) return !!flag
+  return outNext ? time < inTime : !!flag // within a shift of under 24h, earlier than the clock-in means after midnight
+}
+
 function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTablet }) {
   const pad = n => String(n).padStart(2, '0')
   const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
@@ -1232,8 +1239,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       breakTimes(s).forEach(({ start, end }, bi) => {
         const bp = `${pfx}休憩${(s.breaks || []).length > 1 ? bi + 1 : ''}：`
         const b = s.breaks[bi]
-        const aS = absMin(start, b.sNext), aE = absMin(end, b.eNext)
-        if ((b.sH !== '' && !start) || (b.eH !== '' && !end)) errs.push(`${bp}時刻が正しくありません`)
+        const aS = absMin(start, breakIsNext(b.sNext, start, inT, s.outNext)), aE = absMin(end, breakIsNext(b.eNext, end, inT, s.outNext))
+        if ((b.sH !== '') !== (b.sM !== '') || (b.eH !== '') !== (b.eM !== '')) errs.push(`${bp}時と分の片方が空欄です`)
+        else if ((b.sH !== '' && !start) || (b.eH !== '' && !end)) errs.push(`${bp}時刻が正しくありません`)
         else if (!start && end) errs.push(`${bp}開始時刻を入力してください`)
         else if (aS != null && aE != null && aE < aS) errs.push(`${bp}終了が開始より前になっています`)
         else if (aS != null && aIn != null && aS < aIn) errs.push(`${bp}出勤より前になっています`)
@@ -1305,11 +1313,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         const pairs = [[b.startLogId, b.origStart, start, BREAK_START], [b.endLogId, b.origEnd, end, BREAK_END]]
         for (const [logId, origT, t, type] of pairs) {
           if (logId) {
-            const nd = type === BREAK_START ? !!b.sNext : !!b.eNext
-            if (t && t !== origT) logsToUpdate.push({ id: logId, time: t, nextDay: nd })
+            const nd = breakIsNext(type === BREAK_START ? b.sNext : b.eNext, t, inTime, s.outNext)
+            if (t && (t !== origT || nd !== (type === BREAK_START ? !!b.sNext : !!b.eNext))) logsToUpdate.push({ id: logId, time: t, nextDay: nd })
             else if (!t) { logsToDelete.push({ id: logId }); cleared.push(`${si + 1}回目の休憩`) }
           } else if (t) {
-            logsToCreate.push({ logType: type, time: t, sessionId: s.sessionId, nextDay: type === BREAK_START ? !!b.sNext : !!b.eNext })
+            logsToCreate.push({ logType: type, time: t, sessionId: s.sessionId, nextDay: breakIsNext(type === BREAK_START ? b.sNext : b.eNext, t, inTime, s.outNext) })
           }
         }
       })
@@ -1354,7 +1362,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const logChanged = logsToDelete.length > 0 || logsToUpdate.length > 0 || logsToCreate.length > 0
     const workChanged = !isSalaried && hasWorkDataChanged()
     setHasChanges(logChanged || workChanged || transportChanged)
-    setClearedPunches(cleared)
+    setClearedPunches([...new Set(cleared)])
     setStep('confirm')
   }
 
@@ -1410,7 +1418,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         transportEligible: true, // removes a 支給なし mark of that day too
         deleteAllReports: true,
       })
-      if (!isSalaried) await saveWorkReport(user.id, dateStr, {})
+      if (!isSalaried) { try { await saveWorkReport(user.id, dateStr, {}) } catch {} }
       onSaved()
     } catch {
       alert('削除できませんでした。通信を確認して、もう一度お試しください。')
