@@ -5192,3 +5192,11 @@
 }
 
 .commuteRow { max-width: 360px; }
+
+/* 退勤が0時を過ぎたときの「翌日」 */
+.dayEditNextDay { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; color: #475569; margin-left: 6px; white-space: nowrap; cursor: pointer; }
+.dayEditNextDay input { width: 16px; height: 16px; }
+.confirmClearedWarn { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; font-weight: 700; }
+
+/* 勤務回が多い日でも確認画面のカードをつぶさない */
+.confirmSessionCard { flex-shrink: 0; }

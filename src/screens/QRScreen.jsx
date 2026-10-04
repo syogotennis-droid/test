@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { resolveUser, resolveUserByPin } from '../lib/db'
+import { useIdleTimeout } from '../lib/useIdleTimeout'
 import styles from './QRScreen.module.css'
 
 const PIN_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 
-const MODE_LABEL = { '休憩': '休憩・戻り' }
+const MODE_LABEL = { '休憩': '休憩・戻り', '確認': '勤務確認' }
 const MODE_ICON = { '出勤': '🟢', '休憩': '☕', '確認': '📅' }
 
 function PinOverlay({ mode, onSubmit, onClose }) {
@@ -84,6 +85,7 @@ function PinOverlay({ mode, onSubmit, onClose }) {
 }
 
 export default function QRScreen({ mode, onUserScanned, onCancel }) {
+  useIdleTimeout(onCancel) // nobody there for 2 minutes → back to the start
   const scannerRef = useRef(null)
   const instanceRef = useRef(null)
   const [error, setError] = useState(null)

@@ -85,7 +85,10 @@ async function main() {
   const sql = []
   for (const u of data.users) {
     const { id, ...rest } = u
-    sql.push(`INSERT OR REPLACE INTO users (id, pin, data) VALUES (${q(id)}, ${q(rest.pin || '')}, ${json(rest)});`)
+    // Merge into an existing row instead of replacing it: settings that only exist on
+    // Cloudflare (commute method, etc.) survive a second run; Firebase's values win otherwise.
+    sql.push(`INSERT INTO users (id, pin, data) VALUES (${q(id)}, ${q(rest.pin || '')}, ${json(rest)}) ` +
+      `ON CONFLICT(id) DO UPDATE SET pin = excluded.pin, data = json_patch(users.data, excluded.data);`)
   }
   for (const l of data.logs) {
     sql.push(
@@ -103,9 +106,9 @@ async function main() {
     sql.push(`INSERT OR REPLACE INTO session_work_reports (id, user_id, date, session_id, items, updated_at) VALUES (${[r.id, r.userId || '', r.date || '', r.sessionId || ''].map(q).join(', ')}, ${json(r.items)}, ${q(r.updatedAt || '')});`)
   }
   const system = data.config.find(c => c.id === 'system') || {}
-  const adminPin = system.adminPin || '2607'
-  sql.push(`INSERT OR REPLACE INTO config (key, value) VALUES ('adminPin', ${q(String(adminPin))});`)
-  if (system.minWage) sql.push(`INSERT OR REPLACE INTO config (key, value) VALUES ('minWage', ${q(String(system.minWage))});`)
+  // Never replace a PIN / setting that already exists in D1 (set on Cloudflare or by an earlier run)
+  if (system.adminPin) sql.push(`INSERT OR IGNORE INTO config (key, value) VALUES ('adminPin', ${q(String(system.adminPin))});`)
+  if (system.minWage) sql.push(`INSERT OR IGNORE INTO config (key, value) VALUES ('minWage', ${q(String(system.minWage))});`)
   for (const r of data.overtime_apps) {
     sql.push(`INSERT OR REPLACE INTO overtime_apps (id, user_id, date, minutes) VALUES (${[r.id, r.userId || '', r.date || '', Number(r.minutes) || 0].map(q).join(', ')});`)
   }
@@ -120,7 +123,7 @@ async function main() {
   console.log(`SQLファイルを作成しました: ${file}（${sql.length}行）`)
 
   if (!system.adminPin) {
-    console.log('※ Firebaseに管理者PINの設定がなかったため、初期PIN 2607 を設定します。移行後に管理画面の設定から必ず変更してください。')
+    console.log('※ Firebaseに管理者PINの設定がなかったため、管理者PINは設定していません（すでにあるPINはそのまま）。なければ node setup-new-client.js で設定してください。')
   }
   if (dryRun) { console.log('--dry-run のためD1には書き込みません'); return }
 

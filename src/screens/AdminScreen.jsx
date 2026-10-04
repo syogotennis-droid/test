@@ -12,12 +12,12 @@ import {
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
   deleteSessionWorkReport, deleteAllSessionWorkReportsForDate,
   getSessionWorkStatusForUserRange, getMergedWorkReportsForRange,
-  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch, deleteUserDoc,
+  getSessionWorkReportsWithSessionsForRange, saveDayEditBatch,
   pairBreaks, breakMinutes, BREAK_START, BREAK_END, getTodayPunchState,
   getCommute, getTransportDays, getCarRates, saveCarRates, computeTransport, attendanceDates,
   COMMUTE_METHODS, carRateForDate,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
-  prepTimeRows, planMinWageChange, withRateFrom,
+  prepTimeRows, planMinWageChange, withRateFrom, ratePeriods,
   getWorkItemDefs, activeWorkItemDefs, itemLabel, sortByItemOrder, isDeletedWorkItem, SYSTEM_ITEMS,
   saveWorkItemDefs, newWorkItemId,
 } from '../lib/db'
@@ -527,7 +527,7 @@ function CalendarTab({ users, today, isTablet }) {
     <div className={styles.calContent}>
       {/* 職員選択 */}
       <div className={styles.calSection}>
-        <div className={styles.calSectionLabel}>職員を選択</div>
+        <div className={styles.calSectionLabel}>従業員を選択</div>
         <div className={styles.userTabsWrap}>
           {users.map(u => (
             <button key={u.id} className={[styles.userTab, selectedUser?.id === u.id ? styles.activeUserTab : ''].join(' ')} onClick={() => setSelectedUser(u)}>
@@ -931,6 +931,18 @@ function parseWorkType(wt) {
   return result
 }
 
+// JST calendar date of an ISO timestamp (to tell whether a punch was made after midnight)
+function jstDateOf(ts) {
+  const t = Date.parse(ts)
+  return Number.isNaN(t) ? '' : new Date(t + 9 * 3600000).toISOString().slice(0, 10)
+}
+// minutes since midnight of the shift's date; next=true means "after midnight, the following day"
+function absMin(time, next) {
+  if (!time) return null
+  const [h, m] = time.split(':').map(Number)
+  return (next ? 1440 : 0) + h * 60 + m
+}
+
 function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTablet }) {
   const pad = n => String(n).padStart(2, '0')
   const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
@@ -965,15 +977,19 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     Object.entries(sessionMap).forEach(([sid, { inLog, outLog, logs }]) => {
       const inHM = initHM(inLog?.time?.substring(0, 5))
       const outHM = initHM(outLog?.time?.substring(0, 5))
+      const next = l => !!l && jstDateOf(l.timestamp) > dateStr // made after midnight of this shift's date
+      const outNext = next(outLog)
       const breaks = pairBreaks(logs).map((b, bi) => {
         const sHM = initHM(b.start), eHM = initHM(b.end)
         return {
           key: `${sid}-b${bi}`, sH: sHM.h, sM: sHM.m, eH: eHM.h, eM: eHM.m,
           origStart: b.start, origEnd: b.end, startLogId: b.startLog?.id || null, endLogId: b.endLog?.id || null,
+          sNext: next(b.startLog), eNext: next(b.endLog),
         }
       })
       result.push({
         inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
+        outNext, origOutNext: outNext,
         origInTime: inLog?.time?.substring(0, 5) || '',
         origOutTime: outLog?.time?.substring(0, 5) || '',
         inLogId: inLog?.id || null,
@@ -994,8 +1010,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       const outLog = outs[i] || null
       const inHM = initHM(inLog?.time?.substring(0, 5))
       const outHM = initHM(outLog?.time?.substring(0, 5))
+      const outNext = !!outLog && jstDateOf(outLog.timestamp) > dateStr
       result.push({
         inH: inHM.h, inM: inHM.m, outH: outHM.h, outM: outHM.m,
+        outNext, origOutNext: outNext,
         origInTime: inLog?.time?.substring(0, 5) || '',
         origOutTime: outLog?.time?.substring(0, 5) || '',
         inLogId: inLog?.id || null,
@@ -1026,6 +1044,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState(null)
   const [deletedSessionIds, setDeletedSessionIds] = useState([])
   const [pendingFocusSessionId, setPendingFocusSessionId] = useState(null)
+  const [clearedPunches, setClearedPunches] = useState([]) // punches that the save will delete because the time was cleared
   const lastWorkSelectRef = useRef(null)
   const initialWorkRowsSnapshot = useRef({})
   const asksTransport = getCommute(user).asks
@@ -1117,7 +1136,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
   function addBreak(si) {
     setSessions(prev => prev.map((s, i) => i === si
-      ? { ...s, breaks: [...(s.breaks || []), { key: `new-${generateSessionId()}`, sH: '', sM: '', eH: '', eM: '', origStart: '', origEnd: '', startLogId: null, endLogId: null }] }
+      ? { ...s, breaks: [...(s.breaks || []), { key: `new-${generateSessionId()}`, sH: '', sM: '', eH: '', eM: '', origStart: '', origEnd: '', startLogId: null, endLogId: null, sNext: false, eNext: false }] }
       : s))
   }
 
@@ -1127,7 +1146,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
   function addSession() {
     const sessionId = generateSessionId()
-    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', origInTime: '', origOutTime: '', sessionId, breaks: [] }])
+    setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', outNext: false, origOutNext: false, origInTime: '', origOutTime: '', sessionId, breaks: [] }])
     setSessionWorkRows(prev => ({ ...prev, [sessionId]: [{ type: '', h: 0, m: 0 }] }))
   }
 
@@ -1198,18 +1217,31 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       if (s.inM !== '' && parseInt(s.inM) > 59) errs.push(`${pfx}出勤「分」は0〜59で入力してください`)
       if (s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)) errs.push(`${pfx}退勤「時」が不正です（0〜23）`)
       if (s.outM !== '' && parseInt(s.outM) > 59) errs.push(`${pfx}退勤「分」は0〜59で入力してください`)
+      // an hour without minutes (or the other way round) would silently delete the punch
+      if ((s.inH !== '') !== (s.inM !== '')) errs.push(`${pfx}出勤の${s.inH !== '' ? '分' : '時'}が空欄です`)
+      if ((s.outH !== '') !== (s.outM !== '')) errs.push(`${pfx}退勤の${s.outH !== '' ? '分' : '時'}が空欄です`)
       const isNew = !s.origInTime && !s.origOutTime
       const inT = hmToTimeStr(s.inH, s.inM), outT = hmToTimeStr(s.outH, s.outM)
       if (isNew && !inT && outT) errs.push(`${pfx}出勤時刻を入力してください`)
+      const aIn = absMin(inT, false), aOut = absMin(outT, s.outNext)
+      if (aIn != null && aOut != null && aOut < aIn) {
+        errs.push(`${pfx}退勤が出勤より前になっています（0時を過ぎてからの退勤なら「翌日」にチェックしてください）`)
+      }
+      if (aIn != null && aOut != null && aOut - aIn > 24 * 60) errs.push(`${pfx}出勤から退勤まで24時間を超えています`)
+      const brs = []
       breakTimes(s).forEach(({ start, end }, bi) => {
         const bp = `${pfx}休憩${(s.breaks || []).length > 1 ? bi + 1 : ''}：`
         const b = s.breaks[bi]
+        const aS = absMin(start, b.sNext), aE = absMin(end, b.eNext)
         if ((b.sH !== '' && !start) || (b.eH !== '' && !end)) errs.push(`${bp}時刻が正しくありません`)
         else if (!start && end) errs.push(`${bp}開始時刻を入力してください`)
-        else if (start && end && end < start) errs.push(`${bp}終了が開始より前になっています`)
-        else if (start && inT && start < inT) errs.push(`${bp}出勤より前になっています`)
-        else if (end && outT && end > outT) errs.push(`${bp}退勤より後になっています`)
+        else if (aS != null && aE != null && aE < aS) errs.push(`${bp}終了が開始より前になっています`)
+        else if (aS != null && aIn != null && aS < aIn) errs.push(`${bp}出勤より前になっています`)
+        else if (aOut != null && ((aE != null && aE > aOut) || (aS != null && aS > aOut))) errs.push(`${bp}退勤より後になっています`)
+        else if (aS != null) brs.push([aS, aE ?? aS, bp])
       })
+      brs.sort((x, y) => x[0] - y[0])
+      for (let k = 1; k < brs.length; k++) if (brs[k][0] < brs[k - 1][1]) errs.push(`${pfx}休憩が重なっています`)
       if (!isSalaried) {
         const rows = sessionWorkRows[s.sessionId] || []
         const typesSeen = new Set()
@@ -1229,27 +1261,35 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         }
       }
     }
+    // two shifts can't overlap in time
+    const spans = sessions.map((x, i) => {
+      const a = absMin(sessionTimes[i].inTime, false), b2 = absMin(sessionTimes[i].outTime, x.outNext)
+      return a != null && b2 != null ? [a, b2, i + 1] : null
+    }).filter(Boolean).sort((x, y) => x[0] - y[0])
+    for (let k = 1; k < spans.length; k++) {
+      if (spans[k][0] < spans[k - 1][1]) errs.push(`${spans[k - 1][2]}回目と${spans[k][2]}回目の時間が重なっています`)
+    }
     return errs
   }
 
   function computeLogDiff() {
     const initialSessions = initialSessionsRef.current
-    const logsToDelete = [], logsToUpdate = [], logsToCreate = []
+    const logsToDelete = [], logsToUpdate = [], logsToCreate = [], cleared = []
     for (let si = 0; si < sessions.length; si++) {
       const s = sessions[si]
       const { inTime, outTime } = sessionTimes[si]
       const orig = initialSessions.find(o => o.sessionId === s.sessionId)
       if (orig?.inLogId) {
         if (inTime && inTime !== orig.origInTime) logsToUpdate.push({ id: orig.inLogId, time: inTime })
-        else if (!inTime) logsToDelete.push({ id: orig.inLogId })
+        else if (!inTime) { logsToDelete.push({ id: orig.inLogId }); cleared.push(`${si + 1}回目の出勤`) }
       } else if (inTime) {
         logsToCreate.push({ logType: '出勤', time: inTime, sessionId: s.sessionId })
       }
       if (orig?.outLogId) {
-        if (outTime && outTime !== orig.origOutTime) logsToUpdate.push({ id: orig.outLogId, time: outTime })
-        else if (!outTime) logsToDelete.push({ id: orig.outLogId })
+        if (outTime && (outTime !== orig.origOutTime || !!s.outNext !== !!orig.origOutNext)) logsToUpdate.push({ id: orig.outLogId, time: outTime, nextDay: !!s.outNext })
+        else if (!outTime) { logsToDelete.push({ id: orig.outLogId }); cleared.push(`${si + 1}回目の退勤`) }
       } else if (outTime) {
-        logsToCreate.push({ logType: '退勤', time: outTime, sessionId: s.sessionId })
+        logsToCreate.push({ logType: '退勤', time: outTime, sessionId: s.sessionId, nextDay: !!s.outNext })
       }
       // breaks of this session
       const curBreaks = s.breaks || []
@@ -1265,10 +1305,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         const pairs = [[b.startLogId, b.origStart, start, BREAK_START], [b.endLogId, b.origEnd, end, BREAK_END]]
         for (const [logId, origT, t, type] of pairs) {
           if (logId) {
-            if (t && t !== origT) logsToUpdate.push({ id: logId, time: t })
-            else if (!t) logsToDelete.push({ id: logId })
+            const nd = type === BREAK_START ? !!b.sNext : !!b.eNext
+            if (t && t !== origT) logsToUpdate.push({ id: logId, time: t, nextDay: nd })
+            else if (!t) { logsToDelete.push({ id: logId }); cleared.push(`${si + 1}回目の休憩`) }
           } else if (t) {
-            logsToCreate.push({ logType: type, time: t, sessionId: s.sessionId })
+            logsToCreate.push({ logType: type, time: t, sessionId: s.sessionId, nextDay: type === BREAK_START ? !!b.sNext : !!b.eNext })
           }
         }
       })
@@ -1282,7 +1323,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         if (ob.endLogId) logsToDelete.push({ id: ob.endLogId })
       }
     }
-    return { logsToDelete, logsToUpdate, logsToCreate }
+    return { logsToDelete, logsToUpdate, logsToCreate, cleared }
   }
 
   function hasWorkDataChanged() {
@@ -1309,10 +1350,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const errs = validate()
     if (errs.length > 0) { setValidationErrors(errs); return }
     setValidationErrors([])
-    const { logsToDelete, logsToUpdate, logsToCreate } = computeLogDiff()
+    const { logsToDelete, logsToUpdate, logsToCreate, cleared } = computeLogDiff()
     const logChanged = logsToDelete.length > 0 || logsToUpdate.length > 0 || logsToCreate.length > 0
     const workChanged = !isSalaried && hasWorkDataChanged()
     setHasChanges(logChanged || workChanged || transportChanged)
+    setClearedPunches(cleared)
     setStep('confirm')
   }
 
@@ -1322,16 +1364,25 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     setSaving(true)
     try {
       const { logsToDelete, logsToUpdate, logsToCreate } = computeLogDiff()
-      const sessionWorkData = isSalaried ? [] : sessions.map(s => {
-        const rows = sessionWorkRows[s.sessionId] || []
+      const rowsToItems = rows => {
         const items = {}
         for (const r of rows) {
           if (!r.type) continue
           const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
           if (mins > 0) items[r.type] = mins
         }
-        return { sessionId: s.sessionId, items }
-      })
+        return items
+      }
+      // Only sessions whose work rows were changed here are sent. Untouched sessions must not
+      // be overwritten (the employee may have entered work on the tablet while this was open).
+      const initialWork = initialWorkRowsSnapshot.current
+      const sameItems = (a, b) => {
+        const ak = Object.keys(a).sort(), bk = Object.keys(b).sort()
+        return ak.join() === bk.join() && ak.every(k => a[k] === b[k])
+      }
+      const sessionWorkData = isSalaried ? [] : sessions
+        .map(s => ({ sessionId: s.sessionId, items: rowsToItems(sessionWorkRows[s.sessionId] || []) }))
+        .filter(x => !sameItems(x.items, initialWork[x.sessionId] || {}))
       await saveDayEditBatch({
         userId: user.id, dateStr,
         logsToDelete, logsToCreate, logsToUpdate,
@@ -1349,12 +1400,21 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   }
 
   async function handleDelete() {
-    for (const log of dayLogs) await deleteLog(log.id)
-    if (!isSalaried) {
-      await deleteAllSessionWorkReportsForDate(user.id, dateStr)
-      await saveWorkReport(user.id, dateStr, {})
+    try {
+      // read the day again: a tablet may have added punches since this window was opened
+      const fresh = await getLogs({ userId: user.id, date: dateStr })
+      await saveDayEditBatch({
+        userId: user.id, dateStr,
+        logsToDelete: fresh.map(l => ({ id: l.id })), logsToCreate: [], logsToUpdate: [],
+        isSalaried, sessionWorkData: [], deletedSessionIds: [],
+        transportEligible: true, // removes a 支給なし mark of that day too
+        deleteAllReports: true,
+      })
+      if (!isSalaried) await saveWorkReport(user.id, dateStr, {})
+      onSaved()
+    } catch {
+      alert('削除できませんでした。通信を確認して、もう一度お試しください。')
     }
-    onSaved()
   }
 
   function renderSessionPunchInputs(s, si) {
@@ -1375,6 +1435,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             onClick={() => setEditingTimeField({ si, field: 'out' })}>
             {outTime || (isIncomplete ? '勤務中' : '──:──')}
           </button>
+          <label className={styles.dayEditNextDay} title="0時を過ぎてからの退勤のときにチェック">
+          <input type="checkbox" checked={!!s.outNext} onChange={e => updateSession(si, 'outNext', e.target.checked)} />翌日
+        </label>
         </div>
       )
     }
@@ -1403,6 +1466,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
           className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
         <span className={styles.dayEditHmUnit}>分</span>
+        <label className={styles.dayEditNextDay} title="0時を過ぎてからの退勤のときにチェック">
+          <input type="checkbox" checked={!!s.outNext} onChange={e => updateSession(si, 'outNext', e.target.checked)} />翌日
+        </label>
         {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
       </div>
     )
@@ -1698,6 +1764,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               ) : (
                 <p className={styles.confirmInfoNote}>この日の勤務記録を更新します</p>
               )}
+              {hasChanges && clearedPunches.length > 0 && (
+                <div className={styles.confirmClearedWarn}>時刻を空にしたため、次の打刻を削除します：{clearedPunches.join('、')}</div>
+              )}
               {hasChanges && sessions.map((s, si) => {
                 const { inTime, outTime } = sessionTimes[si]
                 const rows = sessionWorkRows[s.sessionId] || []
@@ -1714,7 +1783,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                       )}
                       {outTime && (
                         <div className={styles.confirmSessionRow}>
-                          <span>退勤</span><strong>{outTime}</strong>
+                          <span>退勤</span><strong>{s.outNext ? '翌日 ' : ''}{outTime}</strong>
                         </div>
                       )}
                       {inTime && !outTime && (
@@ -1827,6 +1896,7 @@ function KinmuboTab({ today }) {
   const [exporting, setExporting] = useState(false)
   const [preview, setPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [salariedDayEdits, setSalariedDayEdits] = useState({})
@@ -1852,6 +1922,7 @@ function KinmuboTab({ today }) {
     setPreview(null)
     setExpandedIds(new Set())
     setSearchQuery('')
+    setLoadError('')
     const [y, m] = selectedYM.split('-').map(Number)
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
@@ -1864,7 +1935,7 @@ function KinmuboTab({ today }) {
         setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates))
         setPreviewLoading(false)
       })
-      .catch(() => { if (!cancelled) setPreviewLoading(false) })
+      .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めませんでした。通信を確認して、月を切り替えるかページを開き直してください。') } })
     return () => { cancelled = true }
   }, [selectedYM])
 
@@ -1874,7 +1945,7 @@ function KinmuboTab({ today }) {
         .map(t => ({ label: t.label, parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: t.days, rate: t.rate, pay: t.pay }))
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
     const userEntries = users.filter(u =>
-      logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.startsWith(`${u.id}_`))
+      logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.slice(0, -11) === u.id)
     )
     return userEntries.map(user => {
       const userLogs = logs.filter(l => l.user_id === user.id)
@@ -1914,8 +1985,6 @@ function KinmuboTab({ today }) {
       if (user.employeeType === 'salaried') {
         const regularHoursMins = user.regularHours || 0
         const standardBreakMinsVal = user.standardBreakMins || 0
-        const monthlySal = user.monthlySalary || 0
-        const overtimeRate = user.overtimeRate || 0
 
         const dailySalariedRows = []
         let salWorkingDays = 0
@@ -1940,15 +2009,10 @@ function KinmuboTab({ today }) {
 
         const totalOvertimeMins = dailySalariedRows.filter(r => r.completed).reduce((s, r) => s + r.overtimeMins, 0)
         const totalWorkMins = salWorkingDays * regularHoursMins + totalOvertimeMins
+        // 社員 are only tracked for attendance here: no pay rows, so nothing of theirs
+        // is added to 給与合計 or 業務別集計
         const rows = []
-        if (monthlySal > 0) rows.push({ label: '基本給', parentType: '基本給', isMultiPeriod: false, dayType: null, mins: null, days: null, rate: 0, pay: monthlySal })
-        for (const { ds, overtimeMins } of dailySalariedRows.filter(r => r.completed && r.overtimeMins > 0)) {
-          const [, mo, dd] = ds.split('-').map(Number)
-          rows.push({ label: `残業（${mo}/${dd}）`, parentType: '残業', isMultiPeriod: false, dayType: null, mins: overtimeMins, days: null, rate: overtimeRate, pay: Math.round(overtimeMins / 60 * overtimeRate) })
-        }
-        const salDates = dailySalariedRows.filter(r => r.completed).map(r => r.ds)
-        rows.push(...transportRows(user, salDates))
-        const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
+        const totalPay = 0
         const incompleteDays = dailySalariedRows.filter(r => !r.completed).length
         return { user, workingDays: salWorkingDays, attendanceDays: salWorkingDays, transportDays: null, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows }
       }
@@ -1958,8 +2022,8 @@ function KinmuboTab({ today }) {
       // Extract work reports for this user
       const userWorkReports = {}
       Object.entries(workReports).forEach(([key, items]) => {
-        if (key.startsWith(`${user.id}_`)) {
-          const dateStr = key.slice(user.id.length + 1)
+        if (key.slice(0, -11) === user.id) {
+          const dateStr = key.slice(-10)
           if (Object.values(items).some(m => m > 0)) userWorkReports[dateStr] = items
         }
       })
@@ -2018,32 +2082,14 @@ function KinmuboTab({ today }) {
       const rows = []
       const allByDateDates = Object.keys(byDate).sort()
       const [ymY, ymM] = allByDateDates[0]?.split('-').map(Number) || [new Date().getFullYear(), new Date().getMonth() + 1]
-      for (const type of sortByItemOrder((user.workItems || []).filter(t => !EXCL.has(t)))) {
-        const rateObj = itemRates[type] || {}
-        const hasSunday = !!(rateObj.sunday)
-        const history = rateObj?.rateHistory
-        let periods
-        if (!history || history.length === 0) {
-          const fromDate = allByDateDates[0] || `${ymY}-01-01`
-          const toDate = allByDateDates[allByDateDates.length - 1] || fromDate
-          periods = [{ fromDate, toDate, normal: Number(rateObj.normal) || 0, sunday: Number(rateObj.sunday) || 0 }]
-        } else {
-          const sorted = [...history].sort((a, b) => { if (!a.from) return -1; if (!b.from) return 1; return a.from.localeCompare(b.from) })
-          const monthStart = allByDateDates[0] || `${ymY}-${String(ymM).padStart(2,'0')}-01`
-          const monthEnd = allByDateDates[allByDateDates.length - 1] || monthStart
-          const defR = { normal: Number(rateObj.normal) || 0, sunday: Number(rateObj.sunday) || 0 }
-          const base = sorted.filter(e => !e.from || e.from <= monthStart).pop() || sorted[0]
-          const inMonth = sorted.filter(e => e.from && e.from > monthStart && e.from <= monthEnd)
-          periods = []
-          let cFrom = monthStart, cN = Number(base?.normal) || defR.normal, cS = Number(base?.sunday) || defR.sunday
-          for (const e of inMonth) {
-            const prev = new Date(e.from); prev.setDate(prev.getDate() - 1)
-            const prevStr = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}-${String(prev.getDate()).padStart(2,'0')}`
-            if (prevStr >= cFrom) periods.push({ fromDate: cFrom, toDate: prevStr, normal: cN, sunday: cS })
-            cFrom = e.from; cN = Number(e.normal) || 0; cS = Number(e.sunday) || 0
-          }
-          periods.push({ fromDate: cFrom, toDate: monthEnd, normal: cN, sunday: cS })
-        }
+      // every item reported in this period, even one that was taken off the employee since
+      const reportedTypes = new Set()
+      Object.values(userWorkReports).forEach(items => Object.keys(items).forEach(t => { if (items[t] > 0 && !EXCL.has(t)) reportedTypes.add(t) }))
+      const rangeStart = allByDateDates[0] || `${ymY}-${String(ymM).padStart(2, '0')}-01`
+      const rangeEnd = allByDateDates[allByDateDates.length - 1] || rangeStart
+      for (const type of sortByItemOrder([...reportedTypes])) {
+        const periods = ratePeriods(itemRates[type], rangeStart, rangeEnd)
+        const hasSunday = periods.some(p => p.sunday > 0)
         const multiPeriod = periods.length > 1
         for (const period of periods) {
           const { fromDate, toDate, normal: normalRate, sunday: sundayRate } = period
@@ -2054,7 +2100,10 @@ function KinmuboTab({ today }) {
           const periodRangeLabel = multiPeriod ? `${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}` : ''
           if (hasSunday) {
             if (wdM > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: wdM, days: null, rate: normalRate, pay: Math.round(wdM / 60 * normalRate) })
-            if (weM > 0) rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : itemLabel(type) + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sundayRate, pay: Math.round(weM / 60 * sundayRate) })
+            if (weM > 0) {
+              const sunRate = sundayRate > 0 ? sundayRate : normalRate // no Sunday rate in this period → normal rate
+              rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : itemLabel(type) + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sunRate, pay: Math.round(weM / 60 * sunRate) })
+            }
           } else {
             const tot = wdM + weM
             if (tot > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: tot, days: null, rate: normalRate, pay: Math.round(tot / 60 * normalRate) })
@@ -2132,8 +2181,20 @@ function KinmuboTab({ today }) {
           }
         }
       }
+      // part-timers: a day with punches but no work entered is paid 0 yen (no 準備時間 / 交通費 either)
+      const noWork = [], openHourly = []
+      for (const p of preview) {
+        if (p.isSalariedUser) continue
+        Object.keys(p.byDate).sort().forEach(ds => {
+          const e = p.byDate[ds], [, mo, dd] = ds.split('-').map(Number)
+          if (e.sessions.some(x => x.inLog && x.outLog) && !Object.values(e.workReportItems || {}).some(m => m > 0)) noWork.push(`${p.user.name}（${mo}/${dd}）`)
+          if (e.sessions.some(x => x.inLog && !x.outLog)) openHourly.push(`${p.user.name}（${mo}/${dd}）`)
+        })
+      }
       const warns = []
-      if (incomplete.length > 0) warns.push(`打刻未完了（正社員）：\n${incomplete.join('\n')}`)
+      if (incomplete.length > 0) warns.push(`打刻未完了（社員）：\n${incomplete.join('\n')}`)
+      if (openHourly.length > 0) warns.push(`退勤の打刻がない日（アルバイト・パート）：\n${openHourly.join('\n')}`)
+      if (noWork.length > 0) warns.push(`打刻はあるが業務の入力がない日（給与が付きません）：\n${noWork.join('\n')}`)
       if (inconsistent.length > 0) warns.push(`業務申告あり・打刻なし：\n${inconsistent.join('\n')}`)
       if (warns.length > 0) {
         const msg = `以下の要確認データがあります：\n\n${warns.join('\n\n')}\n\n確認してから出力してください。このまま出力しますか？`
@@ -2185,13 +2246,14 @@ function KinmuboTab({ today }) {
     for (const { rows } of preview) {
       for (const row of rows) {
         if (row.mins === null || row.parentType === '準備時間') continue
-        if (!typeMap[row.label]) typeMap[row.label] = { mins: 0, pay: 0 }
-        typeMap[row.label].mins += row.mins
-        typeMap[row.label].pay += row.pay
+        // by item (not by period label), so a mid-month rate change doesn't create rows without a name
+        if (!typeMap[row.parentType]) typeMap[row.parentType] = { mins: 0, pay: 0 }
+        typeMap[row.parentType].mins += row.mins
+        typeMap[row.parentType].pay += row.pay
       }
     }
     return {
-      types: Object.entries(typeMap).map(([label, v]) => ({ label, mins: v.mins, pay: v.pay }))
+      types: sortByItemOrder(Object.keys(typeMap)).map(t => ({ label: itemLabel(t), mins: typeMap[t].mins, pay: typeMap[t].pay }))
     }
   }, [preview])
 
@@ -2203,6 +2265,7 @@ function KinmuboTab({ today }) {
         <div className={styles.kinmuboPageHeader}>
           <h2 className={styles.kinmuboPageTitle}>出勤簿作成</h2>
           <p className={styles.kinmuboPageDesc}>対象月の勤務実績と給与を確認し、Excel形式で出力できます。</p>
+          {loadError && <div className={styles.confirmClearedWarn} style={{ marginTop: 8 }}>{loadError}</div>}
         </div>
 
         {/* Operation card */}
@@ -2346,7 +2409,7 @@ function KinmuboTab({ today }) {
                     {incompleteDays > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>打刻未完了 {incompleteDays}日</span>
                     )}
-                    <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>
+                    {!isSalariedUser && <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>}
                     <svg
                       className={[styles.kinmuboAccordionChevron, isOpen ? styles.kinmuboAccordionChevronOpen : ''].join(' ')}
                       width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -2561,7 +2624,7 @@ function KinmuboTab({ today }) {
                           </table>
                         </div>
                       )}
-                      {rows.length === 0 ? (
+                      {isSalariedUser ? null : rows.length === 0 ? (
                         <div className={styles.kinmuboNoData}>業務時間の入力なし</div>
                       ) : (
                         <table className={styles.kinmuboDetailTable}>
@@ -2665,7 +2728,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
         <div className={styles.usersPageHeader}>
           <div>
             <h2 className={styles.kinmuboPageTitle}>ユーザー管理</h2>
-            <p className={styles.kinmuboPageDesc}>従業員情報、PINコード、作業項目、時給を管理します。</p>
+            <p className={styles.kinmuboPageDesc}>従業員情報、PINコード、担当業務、時給を管理します。</p>
           </div>
           <button className={styles.kinmuboExportBtn} onClick={() => setAdding(true)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2685,7 +2748,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
             onChange={e => setSearchQuery(e.target.value)}
           />
           <div className={styles.usersStatusFilter}>
-            {[['all','すべて'],['in','出勤中'],['out','退勤中']].map(([v,l]) => (
+            {[['all','すべて'],['in','出勤中'],['out','出勤していない']].map(([v,l]) => (
               <button
                 key={v}
                 className={[styles.usersFilterBtn, statusFilter === v ? styles.usersFilterBtnActive : ''].join(' ')}
@@ -2743,7 +2806,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
                       </td>
                       <td className={styles.usersTd}>
                         <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                          {isIn ? '出勤中' : '退勤中'}
+                          {isIn ? '出勤中' : '出勤していない'}
                         </span>
                       </td>
                       <td className={styles.usersTd}>
@@ -2818,7 +2881,7 @@ function AddUserModal({ onClose, onAdded }) {
   const [commuteMethod, setCommuteMethod] = useState('none')
   const [commuteDistance, setCommuteDistance] = useState('')
   const [carRates, setCarRates] = useState([])
-  useEffect(() => { getCarRates().then(setCarRates) }, [])
+  useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
   const [fixedStartTime, setFixedStartTime] = useState('09:00')
   const [fixedEndTime, setFixedEndTime] = useState('18:00')
   const [monthlySalary, setMonthlySalary] = useState('')
@@ -2877,7 +2940,10 @@ function AddUserModal({ onClose, onAdded }) {
 
   async function handleAdd() {
     if (!addId.trim() || !addName.trim() || saving) return
+    if (/[\/?#%\s]/.test(addId.trim())) { alert('ユーザーIDに、空白と / ? # % は使えません'); return }
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
+    if (employeeType !== 'salaried' && workItems.length === 0 &&
+      !window.confirm('担当する業務が1つも選ばれていません。退勤画面に業務が出ません。\nこのまま追加しますか？')) return
     setSaving(true)
     try {
       if (pin) {
@@ -2901,10 +2967,12 @@ function AddUserModal({ onClose, onAdded }) {
           standardBreakMins: parseInt(standardBreakMins) || 0,
         } : {}),
       }
-      await upsertUser(newUser)
+      await upsertUser(newUser, { create: true })
       onAdded(newUser)
     } catch(e) {
-      alert('追加に失敗しました: ' + (e?.message || e))
+      alert(e?.status === 409
+        ? `ユーザーID「${addId.trim()}」はすでに使われています。別のIDにしてください（既存の人は変更していません）。`
+        : '追加に失敗しました: ' + (e?.message || e))
       setSaving(false)
     }
   }
@@ -2987,13 +3055,13 @@ function AddUserModal({ onClose, onAdded }) {
           {/* 作業項目・時給 */}
           {employeeType !== 'salaried' && (
             <div className={styles.userEditSection}>
-              <div className={styles.userEditSectionTitle}>作業項目・時給</div>
+              <div className={styles.userEditSectionTitle}>業務・時給</div>
               <div className={styles.workItemTableWrap}>
                 <table className={styles.workItemTable}>
                   <thead>
                     <tr>
                       <th className={styles.workItemTh} style={{width:44}}>使用</th>
-                      <th className={styles.workItemTh}>作業項目</th>
+                      <th className={styles.workItemTh}>業務</th>
                       <th className={styles.workItemTh} style={{width:140}}>基本時給</th>
                       <th className={styles.workItemTh} style={{width:110}}>日曜倍率</th>
                       <th className={styles.workItemTh} style={{width:120}}>日曜時給</th>
@@ -3127,7 +3195,22 @@ function MinWageSettings({ onUsersChanged }) {
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
 
-  useEffect(() => { getMinWageHistory().then(setHistory); getMinWageItems().then(setItems) }, [])
+  const [loadErr, setLoadErr] = useState(false)
+  useEffect(() => {
+    Promise.all([getMinWageHistory(), getMinWageItems()])
+      .then(([h, it]) => { setHistory(h); setItems(it) })
+      .catch(() => setLoadErr(true)) // never fall back to empty settings: saving them would erase the real history
+  }, [])
+
+  async function removeEntry(e) {
+    if (!window.confirm(`${fmtJaDate(e.from)}からの最低賃金 ${Number(e.wage).toLocaleString()}円 を削除します。\nその日以降の準備時間の計算が前の金額に戻ります。よろしいですか？\n（担当者の時給は自動では戻りません）`)) return
+    try {
+      const next = history.filter(x => x.from !== e.from)
+      await saveMinWageHistory(next)
+      setHistory(next)
+      setMsg('削除しました')
+    } catch { setErr('削除に失敗しました') }
+  }
 
   const sorted = [...(history || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''))
   const currentIdx = sorted.findIndex(e => !e.from || e.from <= today)
@@ -3174,7 +3257,7 @@ function MinWageSettings({ onUsersChanged }) {
       setWageStr('')
       onUsersChanged?.()
     } catch (e) {
-      setErr('保存に失敗しました: ' + (e?.message || e))
+      setErr('保存に失敗しました。一部の人の時給だけ更新された可能性があります。もう一度「変更内容を確認」から同じ内容を実行してください（すでに上がった人は変わりません）。')
     } finally {
       setBusy(false)
     }
@@ -3187,7 +3270,8 @@ function MinWageSettings({ onUsersChanged }) {
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>
         準備時間の計算と、下で選んだ業務の時給に使います。変更すると、選んだ業務で時給が新しい最低賃金より低い人だけ、適用開始日から新しい時給になります。
       </div>
-      {history === null ? <div style={{ color: '#94a3b8' }}>読込中…</div> : (
+      {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めませんでした。通信を確認して、ページを開き直してください（このまま変更はできません）。</div>}
+      {history === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読込中…</div>) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
           {sorted.map((e, i) => {
             const isFuture = !!(e.from && e.from > today)
@@ -3196,6 +3280,9 @@ function MinWageSettings({ onUsersChanged }) {
                 <span style={{ minWidth: 110 }}>{e.from ? `${fmtJaDate(e.from)}〜` : '以前から'}</span>
                 <strong style={{ color: '#1a3f6f' }}>{Number(e.wage).toLocaleString()}円/時</strong>
                 <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{isFuture ? '変更予定' : i === currentIdx ? '現在適用中' : '過去'}</span>
+                {e.from && (
+                  <button onClick={() => removeEntry(e)} style={{ border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 8, padding: '4px 10px', fontWeight: 700, cursor: 'pointer' }}>削除</button>
+                )}
               </div>
             )
           })}
@@ -3279,7 +3366,8 @@ function CarRateSettings() {
   const [err, setErr] = useState('')
   const today = getTodayJst()
 
-  useEffect(() => { getCarRates().then(setRates) }, [])
+  const [loadErr, setLoadErr] = useState(false)
+  useEffect(() => { getCarRates().then(setRates).catch(() => setLoadErr(true)) }, [])
 
   const sorted = [...(rates || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''))
   const currentIdx = sorted.findIndex(e => !e.from || e.from <= today)
@@ -3311,7 +3399,8 @@ function CarRateSettings() {
     <div>
       <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>車通勤の交通費単価</div>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>車通勤の従業員の交通費は「通勤距離 × 単価」で計算します。単価を変えると、適用開始日以降の分だけが新しい単価になります。</div>
-      {rates === null ? <div style={{ color: '#94a3b8' }}>読込中…</div> : (
+      {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めませんでした。通信を確認して、ページを開き直してください（このまま変更はできません）。</div>}
+      {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読込中…</div>) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
           {sorted.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>まだ登録されていません</div>}
           {sorted.map((e, i) => {
@@ -3322,8 +3411,8 @@ function CarRateSettings() {
                 <span style={{ minWidth: 110 }}>{e.from ? `${fmtJaDate(e.from)}〜` : '最初から'}</span>
                 <strong style={{ color: '#1a3f6f' }}>{Number(e.rate).toLocaleString()}円/km</strong>
                 <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{status}</span>
-                {isFuture && (
-                  <button onClick={() => persist(rates.filter(x => x.from !== e.from), '変更予定の単価を削除しました')}
+                {e.from && (
+                  <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価 ${e.rate}円/km を削除します。\nその日以降の車の交通費が前の単価で計算されます。よろしいですか？`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
                     style={{ border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 8, padding: '4px 10px', fontWeight: 700, cursor: 'pointer' }}>削除</button>
                 )}
               </div>
@@ -3342,7 +3431,7 @@ function CarRateSettings() {
             onChange={e => { if (/^\d{0,4}(\.\d{0,2})?$/.test(e.target.value)) { setRateStr(e.target.value); setErr('') } }}
             style={{ ...inputStyle, width: 120 }} />
         </label>
-        <button onClick={add} disabled={!rateStr}
+        <button onClick={add} disabled={!rateStr || rates === null}
           style={{ height: 44, padding: '0 18px', background: '#1a5fa8', border: 'none', borderRadius: 10, color: '#fff', fontWeight: 800, cursor: 'pointer', opacity: rateStr ? 1 : 0.4 }}>
           単価を追加
         </button>
@@ -3894,7 +3983,7 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
           )}
         </div>
       )}
-      {(method === 'walk' || method === 'none') && (
+      {method === 'none' && (
         <div className={styles.userEditHintText}>交通費は支給されません。退勤時の「本日の交通費」も表示されません。</div>
       )}
       {changed && onFrom && (
@@ -3965,14 +4054,15 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [transportAmount, setTransportAmount] = useState(
     user.itemRates?.['交通費']?.amount != null ? String(user.itemRates['交通費'].amount) : ''
   )
-  const [commuteMethod, setCommuteMethod] = useState(user.commuteMethod || '')
+  const normMethod = m => (m === 'walk' ? 'none' : (m || '')) // 徒歩 (older data) = 交通費なし
+  const [commuteMethod, setCommuteMethod] = useState(normMethod(user.commuteMethod))
   const [commuteDistance, setCommuteDistance] = useState(user.commuteOneWayKm ? String(user.commuteOneWayKm) : '')
   const [commuteFrom, setCommuteFrom] = useState(getTodayJst())
-  const commuteChanged = (commuteMethod || '') !== (user.commuteMethod || '')
+  const commuteChanged = (commuteMethod || '') !== normMethod(user.commuteMethod)
     || (Number(commuteDistance) || 0) !== (Number(user.commuteOneWayKm) || 0)
     || (Number(transportAmount) || 0) !== (Number(user.itemRates?.['交通費']?.amount) || 0)
   const [carRates, setCarRates] = useState([])
-  useEffect(() => { getCarRates().then(setCarRates) }, [])
+  useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
   const [historyModalItem, setHistoryModalItem] = useState(null)
   const [addRateForm, setAddRateForm] = useState(null) // { item, date, normalStr, multiplierStr, sundayStr }
   const [employeeType, setEmployeeType] = useState(user.employeeType || 'hourly')
@@ -4041,8 +4131,9 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
 
   function getInheritedEntry(item, selectedDate) {
     const hist = rateHistory[item] || []
-    const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1; return b.from.localeCompare(a.from) })
-    if (!selectedDate) return sorted[sorted.length - 1] || null
+    // newest first, the entry without a start date (the oldest) last
+    const sorted = [...hist].sort((a, b) => { if (!a.from && !b.from) return 0; if (!a.from) return 1; if (!b.from) return -1; return b.from.localeCompare(a.from) })
+    if (!selectedDate) return sorted[0] || null
     return sorted.find(e => !e.from || e.from < selectedDate) || null
   }
 
@@ -4053,9 +4144,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     if (!date) { alert('適用開始日を入力してください'); return }
     const existing = rateHistory[item] || []
     if (existing.some(e => e.from === date)) {
-      alert(`${fmtJaDate(date)}の時給はすでに登録されています。削除してから再登録してください。`)
+      alert(`${fmtJaDate(date)}の時給はすでに登録されています。表の「削除」で消してから、入れ直してください。`)
       return
     }
+    if (date < getTodayJst() &&
+      !window.confirm(`${fmtJaDate(date)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい時給になります。よろしいですか？`)) return
     const normalVal = Number(normalStr)
     const inherited = getInheritedEntry(item, date)
     const inheritedMult = inherited && inherited.normal && inherited.sunday
@@ -4074,19 +4167,16 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   }
 
   function deleteRateHistoryEntry(item, entryFrom) {
+    if (!entryFrom) { alert('一番最初の時給は削除できません（変更するには新しい時給を追加してください）'); return }
     const todayStr = getTodayJst()
-    if (!entryFrom || entryFrom <= todayStr) {
-      alert('現在適用中・過去の時給履歴は削除できません')
-      return
-    }
+    if (entryFrom <= todayStr &&
+      !window.confirm(`${fmtJaDate(entryFrom)}からの時給を削除します。\nその日以降の給与計算（出勤簿）が前の時給に戻ります。よろしいですか？\n（「変更を保存」を押すまで確定しません）`)) return
     setRateHistory(prev => ({ ...prev, [item]: (prev[item] || []).filter(e => e.from !== entryFrom) }))
   }
 
   async function handleSaveAll() {
     if (!name.trim()) return
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
-    const trimmedId = newUserId.trim()
-    if (!trimmedId) { setUserIdError('ユーザーIDは必須です'); return }
     setSaving(true)
     setPinError('')
     setUserIdError('')
@@ -4099,12 +4189,10 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           return
         }
       }
-      const saveId = trimmedId
-      const idChanged = saveId !== user.id
       await upsertUser({
-        id: saveId, name: name.trim(), pin, employeeType,
-        workItems: employeeType === 'salaried' ? [] : workItems,
-        itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
+        id: user.id, name: name.trim(), pin, employeeType,
+        // switching to 社員 keeps the hourly items and rates, so switching back loses nothing
+        ...(employeeType === 'salaried' ? {} : { workItems, itemRates: buildItemRates() }),
         ...(employeeType !== 'salaried' && commuteChanged ? {
           commuteMethod: commuteMethod || null,
           commuteOneWayKm: Number(commuteDistance) || 0,
@@ -4118,7 +4206,6 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           standardBreakMins: parseInt(standardBreakMins) || 0,
         } : {}),
       })
-      if (idChanged) await deleteUserDoc(user.id)
       setIsDirty(false)
       onSaved()
     } catch(e) {
@@ -4187,9 +4274,9 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
         </div>
         <div className={styles.userEditBody}>
           <p className={styles.confirmMsg}>
-            <span className={styles.oldTime}>{isIn ? '出勤中' : '退勤中'}</span>
+            <span className={styles.oldTime}>{isIn ? '出勤中' : '出勤していない'}</span>
             {' → '}
-            <span className={styles.newTime}>{isIn ? '退勤中' : '出勤中'}</span>
+            <span className={styles.newTime}>{isIn ? '出勤していない' : '出勤中'}</span>
             {' に変更します'}
           </p>
           <p className={styles.confirmWarn}>この操作は元に戻せません</p>
@@ -4252,16 +4339,12 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
               <div>
                 <label className={styles.userEditLabel}>ユーザーID <span className={styles.userEditRequired}>必須</span></label>
                 <input
-                  className={[styles.userEditInput, userIdError ? styles.userEditInputErr : ''].join(' ')}
+                  className={styles.userEditInput}
                   value={newUserId}
-                  onChange={e => { setNewUserId(e.target.value); setUserIdError('') }}
+                  readOnly
+                  style={{ background: '#f1f5f9', color: '#64748b' }}
                 />
-                {userIdError
-                  ? <div className={styles.userEditErrMsg}>{userIdError}</div>
-                  : newUserId.trim() !== user.id
-                    ? <div className={styles.userEditHintText} style={{color:'#d97706'}}>⚠ IDを変更するとQRコードが変わります。旧IDの打刻記録は引き継がれません。</div>
-                    : null
-                }
+                <div className={styles.userEditHintText}>IDは変更できません（QRコードと打刻記録がIDでつながっているため）。</div>
               </div>
               <div>
                 <label className={styles.userEditLabel}>PINコード</label>
@@ -4295,13 +4378,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           {/* 作業項目・時給 */}
           {employeeType !== 'salaried' && (
             <div className={styles.userEditSection}>
-              <div className={styles.userEditSectionTitle}>作業項目・時給</div>
+              <div className={styles.userEditSectionTitle}>業務・時給</div>
               <div className={styles.workItemTableWrap}>
                 <table className={styles.workItemTable}>
                   <thead>
                     <tr>
                       <th className={styles.workItemTh} style={{width:44}}>使用</th>
-                      <th className={styles.workItemTh}>作業項目</th>
+                      <th className={styles.workItemTh}>業務</th>
                       <th className={styles.workItemTh} style={{width:170}}>基本時給（現在）</th>
                       <th className={styles.workItemTh} style={{width:110}}>日曜時給</th>
                       <th className={styles.workItemTh} style={{width:120}}></th>
@@ -4460,10 +4543,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                                   <td className={styles.rateHistoryTd}>{mult}</td>
                                   <td className={styles.rateHistoryTd}>{entry.sunday ? `${Number(entry.sunday).toLocaleString()}円` : '—'}</td>
                                   <td className={styles.rateHistoryTd}>
-                                    {isFuture
-                                      ? <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>
-                                      : <span className={isCurrent ? styles.rateHistoryCurrentBadge : styles.rateHistoryPastBadge}>{status}</span>
-                                    }
+                                    {!isFuture && <span className={isCurrent ? styles.rateHistoryCurrentBadge : styles.rateHistoryPastBadge}>{status}</span>}
+                                    {entry.from && <button className={styles.rateHistoryDelBtn} onClick={() => deleteRateHistoryEntry(historyModalItem, entry.from)}>削除</button>}
                                   </td>
                                 </tr>
                               )
@@ -4581,10 +4662,10 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             <div className={styles.userEditSectionTitle}>本日の出勤状態</div>
             <div className={styles.userEditStatusRow}>
               <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                {isIn ? '出勤中' : '退勤中'}
+                {isIn ? '出勤中' : '出勤していない'}
               </span>
               <button className={styles.userEditStatusChangeBtn} onClick={() => setStep('confirmStatus')}>
-                {isIn ? '退勤中に切り替える' : '出勤中に切り替える'}
+                {isIn ? '退勤にする' : '出勤中にする'}
               </button>
             </div>
           </div>

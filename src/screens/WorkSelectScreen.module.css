@@ -21,6 +21,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
+  grid-auto-rows: max-content; /* cards keep their height; the grid scrolls instead of squashing them */
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
   align-content: start;
@@ -613,3 +614,5 @@
   .weeklyYes, .weeklyNo { height: 60px; font-size: 22px; }
   .weeklyWrap .backButton { height: 52px; font-size: 17px; }
 }
+
+.backButton:disabled { opacity: 0.4; cursor: default; }

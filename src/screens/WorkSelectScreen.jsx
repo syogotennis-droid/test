@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder } from '../lib/db'
 import { answerWeeklyCopyAtClockOut } from '../lib/punchFlow'
+import { useIdleTimeout } from '../lib/useIdleTimeout'
 import styles from './WorkSelectScreen.module.css'
 
 const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
-const LEGACY_ITEMS = ['現場', '清掃', '事務']
 const DEFAULT_BAR = '#9baab8'
 
 const ITEM_META = {
@@ -39,7 +39,7 @@ function variantLabel(member) {
 // Cards in the order set on the 業務の管理 screen. Items of the same group
 // share one card when the user has two or more of them.
 function getDisplayCards(userWorkItems) {
-  const base = (userWorkItems && userWorkItems.length > 0) ? userWorkItems : LEGACY_ITEMS
+  const base = userWorkItems || []
   const filtered = sortByItemOrder(base.filter(item => !CLOCK_OUT_HIDDEN.has(item) && !isDeletedWorkItem(item)))
   const groupOf = id => workItemDef(id)?.group || null
 
@@ -306,6 +306,9 @@ function WeeklyCopyQuestion({ user, offer, onAnswer, onCancel }) {
 
 export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel }) {
   const displayCards = getDisplayCards(user.workItems)
+  const [saving, setSaving] = useState(false)
+  // left alone for 2 minutes → back to the start; nothing is clocked out (asked again next time)
+  useIdleTimeout(onCancel, { enabled: !saving })
   const allFlatItems = displayCards.flatMap(c => c.type === 'single' ? [c.id] : c.members)
 
   // pre-filled from the weekly copy; only items this user can select
@@ -337,7 +340,6 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
     setAsking(false)
   }
   const [transportEligible, setTransportEligible] = useState(ctx.transportDefault ?? true)
-  const [saving, setSaving] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [subPickerGroup, setSubPickerGroup] = useState(null)
 
@@ -402,7 +404,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
             {ctx.clockIn?.time && <span>出勤 {ctx.clockIn.time.substring(0, 5)}</span>}
             {ctx.breakTotal > 0 && <span>休憩 {fmtMinutes(ctx.breakTotal)}</span>}
             {ctx.onBreak && <span className={styles.infoWarn}>休憩中のまま退勤します</span>}
-            {prefilled && <span className={styles.infoPlan}>先週の内容を入れています（違うときは直してください）</span>}
+            {prefilled && <span className={styles.infoPlan}>{ctx.prefillIsSaved ? '入力済みの内容を入れています（違うときは直してください）' : '先週の内容を入れています（違うときは直してください）'}</span>}
             {weeklyMsg && <span className={styles.infoPlan}>{weeklyMsg}</span>}
           </div>
         )}
@@ -471,8 +473,11 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
           <span className={styles.totalUnit}>分</span>
         </div>
 
-        {activeItems.length === 0 && (
-          <div className={styles.skipHint}>業務時間の入力は後で管理者が行えます</div>
+        {displayCards.length === 0 && (
+          <div className={styles.skipHint}>業務が設定されていません。このまま退勤できます。管理者に業務の設定を伝えてください</div>
+        )}
+        {displayCards.length > 0 && activeItems.length === 0 && (
+          <div className={styles.skipHint}>業務の時間は入力しなくても退勤できます（あとで「勤務確認」から入力できます）</div>
         )}
 
         {ctx.asksTransport && (
@@ -496,7 +501,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         )}
 
         <div className={styles.bottomRow}>
-          <button className={styles.backButton} onClick={onCancel}>← 戻る</button>
+          <button className={styles.backButton} onClick={onCancel} disabled={saving}>← 戻る</button>
           <button
             className={[styles.submitButton, saving ? styles.submitDisabled : ''].join(' ')}
             onClick={handleConfirm}

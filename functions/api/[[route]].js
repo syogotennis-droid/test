@@ -1,6 +1,8 @@
 // Cloudflare Pages Function — handles all /api/* requests
 // D1 binding: DB (configure in Cloudflare Pages dashboard or wrangler.toml)
 
+class HttpError extends Error { constructor(msg, status = 400) { super(msg); this.status = status } }
+
 export async function onRequest(context) {
   const { request, env, params } = context
   const DB = env.DB
@@ -17,6 +19,12 @@ export async function onRequest(context) {
 
   if (method === 'OPTIONS') return new Response(null, { headers: cors })
 
+  async function readBody() {
+    try { return await request.json() } catch { throw new HttpError('bad_request', 400) }
+  }
+  const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+  const isTime = v => typeof v === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(v)
+  const needStr = (v, what) => { if (typeof v !== 'string' || !v) throw new HttpError('bad_' + what, 400); return v }
   function ok(data) {
     return new Response(JSON.stringify(data), {
       headers: { ...cors, 'Content-Type': 'application/json' },
@@ -34,22 +42,27 @@ export async function onRequest(context) {
     if (route === 'auth/login' && method === 'POST') {
       const ip = request.headers.get('CF-Connecting-IP') || 'local'
       const now = Date.now()
-      const att = await DB.prepare('SELECT fails, locked_until FROM login_attempts WHERE ip = ?').bind(ip).first()
-      if (att && att.locked_until > now) {
-        return fail('locked', 429, { retryAfterSec: Math.ceil((att.locked_until - now) / 1000) })
+      // Count this attempt first, in one statement, so parallel guesses can't share a count
+      const att = await DB.prepare(
+        `INSERT INTO login_attempts (ip, fails, locked_until) VALUES (?1, 1, 0)
+         ON CONFLICT(ip) DO UPDATE SET
+           fails = CASE WHEN login_attempts.locked_until > 0 AND login_attempts.locked_until <= ?2 THEN 1 ELSE login_attempts.fails + 1 END,
+           locked_until = CASE WHEN login_attempts.locked_until > 0 AND login_attempts.locked_until <= ?2 THEN 0 ELSE login_attempts.locked_until END
+         RETURNING fails, locked_until`
+      ).bind(ip, now).first()
+      const lockNow = async () => {
+        await DB.prepare('INSERT OR REPLACE INTO login_attempts (ip, fails, locked_until) VALUES (?, 0, ?)').bind(ip, now + LOCK_MS).run()
+        return fail('locked', 429, { retryAfterSec: LOCK_MS / 1000 })
       }
-      const { pin, device } = await request.json()
+      if (att.locked_until > now) return fail('locked', 429, { retryAfterSec: Math.ceil((att.locked_until - now) / 1000) })
+      if (att.fails > MAX_LOGIN_FAILS) return lockNow()
+      const { pin, device } = await readBody()
       const cfg = await DB.prepare("SELECT value FROM config WHERE key = 'adminPin'").first()
       const adminPin = cfg?.value || env.ADMIN_PIN
       if (!adminPin) return fail('admin_pin_not_configured', 503)
       if (String(pin) !== String(adminPin)) {
-        const fails = (att && att.locked_until === 0 ? att.fails : 0) + 1
-        if (fails >= MAX_LOGIN_FAILS) {
-          await DB.prepare('INSERT OR REPLACE INTO login_attempts (ip, fails, locked_until) VALUES (?, 0, ?)').bind(ip, now + LOCK_MS).run()
-          return fail('locked', 429, { retryAfterSec: LOCK_MS / 1000 })
-        }
-        await DB.prepare('INSERT OR REPLACE INTO login_attempts (ip, fails, locked_until) VALUES (?, ?, 0)').bind(ip, fails).run()
-        return fail('wrong_pin', 403, { remaining: MAX_LOGIN_FAILS - fails })
+        if (att.fails >= MAX_LOGIN_FAILS) return lockNow()
+        return fail('wrong_pin', 403, { remaining: MAX_LOGIN_FAILS - att.fails })
       }
       const role = device ? 'device' : 'admin'
       const token = newToken()
@@ -90,7 +103,7 @@ export async function onRequest(context) {
     }
     if (route.startsWith('config/') && method === 'PUT') {
       const key = route.slice(7)
-      const body = await request.json()
+      const body = await readBody()
       await DB.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').bind(key, String(body.value)).run()
       return ok({ ok: true })
     }
@@ -113,8 +126,9 @@ export async function onRequest(context) {
     if (route.startsWith('users/') && method === 'PUT') {
       // merge semantics, same as Firestore setDoc(..., { merge: true })
       const id = route.slice(6)
-      const { id: _ignored, ...b } = await request.json()
+      const { id: _ignored, ...b } = await readBody()
       const cur = await DB.prepare('SELECT data FROM users WHERE id = ?').bind(id).first()
+      if (sp.get('new') === '1' && cur) throw new HttpError('user_exists', 409)
       const merged = { ...(cur ? JSON.parse(cur.data || '{}') : {}), ...b }
       await DB.prepare('INSERT OR REPLACE INTO users (id, pin, data) VALUES (?, ?, ?)')
         .bind(id, merged.pin || '', JSON.stringify(merged)).run()
@@ -125,10 +139,10 @@ export async function onRequest(context) {
       if (sp.get('docOnly') === 'true') {
         await DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run()
       } else {
-        await DB.batch([
-          DB.prepare('DELETE FROM users WHERE id = ?').bind(id),
-          DB.prepare('DELETE FROM logs WHERE user_id = ?').bind(id),
-        ])
+        // everything that belongs to the user, so a later user with the same ID starts clean
+        await DB.batch(['users WHERE id', ...['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days',
+          'transport_days', 'weekly_copies', 'weekly_copy_answers', 'work_plans'].map(t => `${t} WHERE user_id`)]
+          .map(t => DB.prepare(`DELETE FROM ${t} = ?`).bind(id)))
       }
       return ok({ ok: true })
     }
@@ -144,17 +158,21 @@ export async function onRequest(context) {
     }
     if (route === 'logs/today_statuses' && method === 'GET') {
       const date = sp.get('date') || todayStr()
+      // between 0:00 and 3:00 a shift that started yesterday is still running
+      const dates = [date]
+      if (date === todayStr() && jstHour() < OVERNIGHT_UNTIL_HOUR) dates.push(addDays(date, -1))
       const { results } = await DB.prepare(
-        'SELECT user_id, log_type FROM logs WHERE date = ?'
-      ).bind(date).all()
+        `SELECT user_id, date, log_type FROM logs WHERE date IN (${dates.map(() => '?').join(',')})`
+      ).bind(...dates).all()
       const groups = {}
       results.forEach(l => {
-        if (!groups[l.user_id]) groups[l.user_id] = { ins: 0, outs: 0 }
-        if (l.log_type === '出勤') groups[l.user_id].ins++
-        else if (l.log_type === '退勤') groups[l.user_id].outs++
+        const k = l.user_id + '|' + l.date
+        if (!groups[k]) groups[k] = { uid: l.user_id, ins: 0, outs: 0 }
+        if (l.log_type === '出勤') groups[k].ins++
+        else if (l.log_type === '退勤') groups[k].outs++
       })
       const map = {}
-      Object.entries(groups).forEach(([uid, g]) => { map[uid] = g.ins > g.outs })
+      Object.values(groups).forEach(g => { map[g.uid] = map[g.uid] || g.ins > g.outs })
       return ok(map)
     }
 
@@ -171,13 +189,16 @@ export async function onRequest(context) {
       return ok(results.map(parseLog))
     }
     if (route === 'logs' && method === 'POST') {
-      const b = await request.json()
+      const b = await readBody()
       if (!LOG_TYPES.has(b.log_type)) return fail('invalid log_type', 400)
-      const id = b.id || crypto.randomUUID()
+      needStr(b.user_id, 'user_id')
+      if (!isDate(b.date) || !isTime(b.time) || Number.isNaN(Date.parse(b.timestamp))) throw new HttpError('bad_datetime', 400)
+      if (!(await DB.prepare('SELECT 1 AS x FROM users WHERE id = ?').bind(b.user_id).first())) throw new HttpError('unknown_user', 400)
+      const id = typeof b.id === 'string' && b.id ? b.id : crypto.randomUUID()
       await DB.prepare(
         'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)'
       ).bind(
-        id, b.user_id, b.log_type || '', b.date || '', b.time || '', b.timestamp || '',
+        id, b.user_id, b.log_type, b.date, b.time, b.timestamp,
         b.work_type || '', b.session_id || null,
         b.first_work || null, b.last_work || null,
         b.transport_count || null,
@@ -187,7 +208,7 @@ export async function onRequest(context) {
     }
     if (route.startsWith('logs/') && method === 'PATCH') {
       const id = route.slice(5)
-      const b = await request.json()
+      const b = await readBody()
       const sets = [], args = []
       if ('first_work' in b) { sets.push('first_work = ?'); args.push(b.first_work) }
       if ('last_work' in b) { sets.push('last_work = ?'); args.push(b.last_work) }
@@ -259,10 +280,12 @@ export async function onRequest(context) {
       return ok(map)
     }
     if (route === 'work_reports' && method === 'PUT') {
-      const b = await request.json()
+      const b = await readBody()
+      needStr(b.userId, 'userId')
+      if (!isDate(b.date)) throw new HttpError('bad_date', 400)
       await DB.prepare(
         'INSERT OR REPLACE INTO work_reports (id, user_id, date, items, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(`${b.userId}_${b.date}`, b.userId, b.date, JSON.stringify(b.items || {}), new Date().toISOString()).run()
+      ).bind(`${b.userId}_${b.date}`, b.userId, b.date, JSON.stringify(cleanItems(b.items)), new Date().toISOString()).run()
       return ok({ ok: true })
     }
 
@@ -361,13 +384,22 @@ export async function onRequest(context) {
       return ok({})
     }
     if (route === 'session_work_reports' && method === 'PUT') {
-      const b = await request.json()
+      const b = await readBody()
+      needStr(b.userId, 'userId'); needStr(b.sessionId, 'sessionId')
+      if (!isDate(b.date)) throw new HttpError('bad_date', 400)
       const id = `${b.userId}_${b.date}_${b.sessionId}`
-      const filtered = Object.fromEntries(Object.entries(b.items || {}).filter(([, m]) => m > 0))
+      const filtered = cleanItems(b.items)
+      // A tablet that was offline sends what the employee entered at clientTs. If an admin
+      // changed this session after that moment, the older entry must not overwrite it.
+      const at = typeof b.clientTs === 'string' && !Number.isNaN(Date.parse(b.clientTs)) ? b.clientTs : null
+      if (at) {
+        const cur = await DB.prepare('SELECT updated_at FROM session_work_reports WHERE id = ?').bind(id).first()
+        if (cur?.updated_at && cur.updated_at > at) return ok({ ok: true, skipped: true })
+      }
       if (Object.keys(filtered).length > 0) {
         await DB.prepare(
           'INSERT OR REPLACE INTO session_work_reports (id, user_id, date, session_id, items, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-        ).bind(id, b.userId, b.date, b.sessionId, JSON.stringify(filtered), new Date().toISOString()).run()
+        ).bind(id, b.userId, b.date, b.sessionId, JSON.stringify(filtered), at || new Date().toISOString()).run()
       } else {
         await DB.prepare('DELETE FROM session_work_reports WHERE id = ?').bind(id).run()
       }
@@ -396,7 +428,7 @@ export async function onRequest(context) {
       return ok(results)
     }
     if (route === 'overtime_apps' && method === 'PUT') {
-      const b = await request.json()
+      const b = await readBody()
       const id = `${b.userId}_${b.date}`
       if (!b.minutes || b.minutes <= 0) {
         await DB.prepare('DELETE FROM overtime_apps WHERE id = ?').bind(id).run()
@@ -420,7 +452,7 @@ export async function onRequest(context) {
       return ok(map)
     }
     if (route === 'salaried_days' && method === 'PUT') {
-      const b = await request.json()
+      const b = await readBody()
       await DB.prepare(
         'INSERT OR REPLACE INTO salaried_days (id, user_id, date, break_mins, overtime_mins) VALUES (?, ?, ?, ?, ?)'
       ).bind(`${b.userId}_${b.date}`, b.userId, b.date, b.breakMins ?? 0, b.overtimeMins ?? 0).run()
@@ -428,7 +460,7 @@ export async function onRequest(context) {
     }
 
     // ── Weekly copy (週コピー) ─────────────────────────────────────────────
-    // What last week looked like, offered at the first clock-in of the week.
+    // What last week looked like, offered at the first clock-out of the week.
     if (route === 'weekly_copy/offer' && method === 'GET') {
       const userId = sp.get('userId'), date = sp.get('date') || todayStr()
       const weekStart = mondayOf(date)
@@ -439,12 +471,17 @@ export async function onRequest(context) {
       return ok({ offer: days.length > 0, weekStart, days })
     }
     if (route === 'weekly_copy/answer' && method === 'POST') {
-      const { userId, date, answer } = await request.json()
+      const { userId, date, answer } = await readBody()
       if (answer !== 'use' && answer !== 'skip') return fail('invalid answer', 400)
+      needStr(userId, 'userId')
+      if (!isDate(date)) throw new HttpError('bad_date', 400)
       const weekStart = mondayOf(date)
       const now = new Date().toISOString()
-      const stmts = [DB.prepare('INSERT OR IGNORE INTO weekly_copy_answers (id, user_id, week_start, answer, created_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(`${userId}_${weekStart}`, userId, weekStart, answer, now)]
+      // Only the first answer of the week counts (a double tap or a second tablet changes nothing)
+      const first = await DB.prepare('INSERT OR IGNORE INTO weekly_copy_answers (id, user_id, week_start, answer, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(`${userId}_${weekStart}`, userId, weekStart, answer, now).run()
+      if (!first.meta?.changes) return ok({ ok: true, already: true, copiedDays: 0 })
+      const stmts = []
       let copiedDays = 0
       if (answer === 'use') {
         for (const d of await lastWeekSlots(DB, userId, weekStart)) {
@@ -458,7 +495,7 @@ export async function onRequest(context) {
           }
         }
       }
-      await DB.batch(stmts)
+      if (stmts.length) await DB.batch(stmts)
       return ok({ ok: true, copiedDays })
     }
     if (route === 'weekly_copies' && method === 'GET') {
@@ -492,35 +529,44 @@ export async function onRequest(context) {
       return ok(map)
     }
     if (route === 'transport_days' && method === 'PUT') {
-      const b = await request.json()
+      const b = await readBody()
+      needStr(b.userId, 'userId')
+      if (!isDate(b.date)) throw new HttpError('bad_date', 400)
       await transportStmt(DB, b.userId, b.date, !!b.eligible, new Date().toISOString()).run()
       return ok({ ok: true })
     }
 
     // ── Batch Day Edit ─────────────────────────────────────────────────────
     if (route === 'batch/day_edit' && method === 'POST') {
-      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible } = await request.json()
+      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports } = await readBody()
+      needStr(userId, 'userId')
+      if (!isDate(dateStr)) throw new HttpError('bad_date', 400)
       if ((logsToCreate || []).some(l => !LOG_TYPES.has(l.logType))) return fail('invalid log_type', 400)
+      if ([...(logsToUpdate || []), ...(logsToCreate || [])].some(l => !isTime(l.time))) throw new HttpError('bad_time', 400)
+      // a time after midnight of a shift that started on dateStr (nextDay) belongs to the following calendar day
+      const stamp = (time, nextDay) => jstIso(nextDay ? addDays(dateStr, 1) : dateStr, time)
       const now = new Date().toISOString()
       const stmts = []
       if (typeof transportEligible === 'boolean') stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
       for (const log of (logsToDelete || []))
         stmts.push(DB.prepare('DELETE FROM logs WHERE id = ?').bind(log.id))
-      for (const { id, time } of (logsToUpdate || []))
-        stmts.push(DB.prepare('UPDATE logs SET time = ?, timestamp = ? WHERE id = ?').bind(time + ':00', jstIso(dateStr, time), id))
-      for (const { logType, time, sessionId } of (logsToCreate || [])) {
+      for (const { id, time, nextDay } of (logsToUpdate || []))
+        stmts.push(DB.prepare('UPDATE logs SET time = ?, timestamp = ? WHERE id = ?').bind(time.slice(0, 5) + ':00', stamp(time, nextDay), id))
+      for (const { logType, time, sessionId, nextDay } of (logsToCreate || [])) {
         const logId = crypto.randomUUID()
         stmts.push(DB.prepare(
           "INSERT INTO logs (id, user_id, log_type, date, time, work_type, session_id, timestamp, synced) VALUES (?, ?, ?, ?, ?, '', ?, ?, 0)"
-        ).bind(logId, userId, logType, dateStr, time + ':00', sessionId, jstIso(dateStr, time)))
+        ).bind(logId, userId, logType, dateStr, time.slice(0, 5) + ':00', sessionId, stamp(time, nextDay)))
       }
+      if (deleteAllReports) stmts.push(DB.prepare('DELETE FROM session_work_reports WHERE user_id = ? AND date = ?').bind(userId, dateStr))
       if (!isSalaried) {
         for (const { sessionId, items } of (sessionWorkData || [])) {
           const rid = `${userId}_${dateStr}_${sessionId}`
-          if (Object.values(items || {}).some(m => m > 0)) {
+          const clean = cleanItems(items)
+          if (Object.keys(clean).length > 0) {
             stmts.push(DB.prepare(
               'INSERT OR REPLACE INTO session_work_reports (id, user_id, date, session_id, items, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-            ).bind(rid, userId, dateStr, sessionId, JSON.stringify(items), now))
+            ).bind(rid, userId, dateStr, sessionId, JSON.stringify(clean), now))
           } else {
             stmts.push(DB.prepare('DELETE FROM session_work_reports WHERE id = ?').bind(rid))
           }
@@ -534,7 +580,9 @@ export async function onRequest(context) {
 
     return fail('Not found', 404)
   } catch (e) {
-    return fail(e?.message || 'Internal server error')
+    if (e instanceof HttpError) return fail(e.message, e.status)
+    console.error(e)
+    return fail('server_error', 500)
   }
 }
 
@@ -595,10 +643,16 @@ function publicUser(u) {
 // getCommute() in src/lib/db.js.
 function asksTransport(u) {
   if (u.employeeType === 'salaried') return false
-  const m = u.commuteMethod
+  // the settings valid today (a change saved in advance with a later start date doesn't count yet)
+  const date = todayStr()
+  const hist = Array.isArray(u.commuteHistory) ? [...u.commuteHistory].sort((a, b) => (a.from || '').localeCompare(b.from || '')) : []
+  let e = null
+  for (const h of hist) if (!h.from || h.from <= date) e = h
+  if (!e) e = { method: u.commuteMethod, oneWayKm: u.commuteOneWayKm, legacyKm: u.commuteDistanceKm, amount: u.itemRates?.['交通費']?.amount }
+  const m = e.method
   if (m === 'walk' || m === 'none') return false
-  if (m === 'car') return Number(u.commuteOneWayKm) > 0 || Number(u.commuteDistanceKm) > 0
-  return Number(u.itemRates?.['交通費']?.amount) > 0
+  if (m === 'car') return Number(e.oneWayKm) > 0 || Number(e.legacyKm) > 0
+  return Number(e.amount) > 0
 }
 
 function transportStmt(DB, userId, date, eligible, now) {
@@ -638,8 +692,16 @@ async function lastWeekSlots(DB, userId, weekStart) {
   return out
 }
 
+// Work minutes per item: positive whole minutes, at most one day per item
 function cleanItems(items) {
-  return Object.fromEntries(Object.entries(items || {}).map(([t, m]) => [t, Math.round(Number(m) || 0)]).filter(([t, m]) => t && m > 0))
+  const out = {}
+  for (const [t, m] of Object.entries(items || {})) {
+    const n = Math.round(Number(m))
+    if (!t || t.length > 60 || !Number.isFinite(n)) throw new HttpError('bad_items', 400)
+    if (n > 1440) throw new HttpError('bad_minutes', 400)
+    if (n > 0) out[t] = n
+  }
+  return out
 }
 
 function addDays(dateStr, n) {
@@ -649,6 +711,12 @@ function addDays(dateStr, n) {
 
 // Workers run in UTC; the business runs in JST (UTC+9)
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000
+
+// A punch made from 0:00 up to this hour (JST) can still finish yesterday's shift
+const OVERNIGHT_UNTIL_HOUR = 3
+function jstHour() {
+  return new Date(Date.now() + JST_OFFSET_MS).getUTCHours()
+}
 
 function todayStr() {
   return new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 10)

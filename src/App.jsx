@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import { initDB, adminLogin, adminLogout, hasAdminSession, isDeviceRegistered, startOutboxSync } from './lib/db'
+import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from './lib/db'
 import { handlePunch, finishClockOut } from './lib/punchFlow'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
@@ -164,14 +164,8 @@ export default function App() {
     const newCount = adminTaps + 1
     setAdminTaps(newCount)
     if (newCount >= ADMIN_TAP_COUNT) {
+      // always ask for the PIN: an earlier admin login in this browser must not open it for an employee
       setAdminTaps(0)
-      try {
-        const expiry = localStorage.getItem(ADMIN_SESSION_KEY)
-        if (expiry && Date.now() < Number(expiry) && hasAdminSession()) {
-          setState(STATE.ADMIN)
-          return
-        }
-      } catch {}
       setAdminPinMode(true)
       return
     }

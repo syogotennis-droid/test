@@ -78,9 +78,19 @@ async function api(path, { method = 'GET', query, body } = {}) {
   if (!res.ok) {
     const e = new Error(`API ${method} ${path} failed (${res.status})`)
     e.status = res.status
+    // a JSON error body means our own server answered (not a Wi-Fi login page or proxy)
+    e.fromServer = (res.headers.get('content-type') || '').includes('application/json')
     throw e
   }
-  return res.json()
+  try {
+    return await res.json()
+  } catch {
+    // e.g. a captive-portal page answered 200 with HTML
+    const e = new Error(`API ${method} ${path}: unexpected response`)
+    e.status = res.status
+    e.badResponse = true
+    throw e
+  }
 }
 
 // ─── Offline support for punching ─────────────────────────────────────────────
@@ -128,7 +138,10 @@ async function doFlush() {
     try {
       await api(item.path, { method: item.method, body: item.body })
     } catch (e) {
-      if (e.offline || e.message === '認証が必要です' || (e.status && e.status >= 500)) return
+      // Keep the item for anything but a clear "invalid" answer from our own server
+      // (400/409/422 with a JSON body). Wi-Fi login pages, proxies and 404/403 are retried.
+      const invalid = e.fromServer && (e.status === 400 || e.status === 409 || e.status === 422)
+      if (!invalid) return
       console.error('送信できないデータを破棄しました', item, e)
     }
     writeJSON(OUTBOX_KEY, readJSON(OUTBOX_KEY, []).filter(x => x.qid !== item.qid))
@@ -145,37 +158,46 @@ export function startOutboxSync() {
   return () => { window.removeEventListener('online', onOnline); clearInterval(t) }
 }
 
+// A shift that started before midnight can still get its punches until OVERNIGHT_UNTIL_HOUR
+export const OVERNIGHT_UNTIL_HOUR = 3
+
+export function shiftDate(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
 function rememberLocalPunch(log) {
-  const today = getTodayDate()
-  const list = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.date === today)
+  const today = getTodayDate(), yesterday = shiftDate(today, -1)
+  const list = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.date === today || l.date === yesterday)
   list.push(log)
   writeJSON(LOCAL_PUNCHES_KEY, list)
 }
 
-// Today's logs for one user: server copy (or last cached copy when offline)
-// plus punches made on this device that the server may not have yet.
-export async function getTodayUserLogs(userId) {
-  const today = getTodayDate()
+// Logs of one user on one day (default: today): server copy (or last cached copy when
+// offline) plus punches made on this device that the server may not have yet.
+export async function getTodayUserLogs(userId, date = getTodayDate()) {
+  const today = getTodayDate(), yesterday = shiftDate(today, -1)
   const cache = readJSON(TODAY_LOGS_CACHE_KEY, {})
+  const ckey = `${userId}|${date}`
   // read before asking the server: a punch sent meanwhile is still counted
   const pendingIds = new Set(readJSON(OUTBOX_KEY, []).map(x => x.qid))
   let serverLogs, online = true
   try {
-    serverLogs = await api('/logs', { query: { userId, date: today } })
-    cache[userId] = { date: today, logs: serverLogs }
-    Object.keys(cache).forEach(k => { if (cache[k].date !== today) delete cache[k] })
+    serverLogs = await api('/logs', { query: { userId, date } })
+    cache[ckey] = { userId, date, logs: serverLogs }
+    Object.keys(cache).forEach(k => { if (cache[k].date !== today && cache[k].date !== yesterday) delete cache[k] })
     writeJSON(TODAY_LOGS_CACHE_KEY, cache)
   } catch (e) {
     if (!e.offline) throw e
     online = false
-    serverLogs = cache[userId]?.date === today ? cache[userId].logs : []
+    serverLogs = cache[ckey]?.logs || []
   }
   const ids = new Set(serverLogs.map(l => l.id))
   // Online, the server is the truth: only punches still waiting to be sent are
   // added, so a punch an admin deleted doesn't come back from this device.
   // Offline, the cached copy may be older than punches already sent, so all
   // of this device's punches are added.
-  const local = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.user_id === userId && l.date === today && !ids.has(l.id)
+  const local = readJSON(LOCAL_PUNCHES_KEY, []).filter(l => l.user_id === userId && l.date === date && !ids.has(l.id)
     && (!online || pendingIds.has(l.id)))
   return [...serverLogs, ...local].sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
 }
@@ -252,13 +274,13 @@ export async function saveMinWage(wage) {
 
 // Minimum wage with start dates, so a new wage never changes earlier days.
 // Configs saved before the history existed are read as one entry "from the start".
+// Throws when the settings can't be read (callers must not treat that as "no history")
 export async function getMinWageHistory() {
-  try {
-    const cfg = await api('/config')
-    const list = JSON.parse(cfg.minWageHistory || '[]')
-    if (Array.isArray(list) && list.length > 0) return list
-    return [{ from: null, wage: Number(cfg.minWage) || DEFAULT_MIN_WAGE }]
-  } catch { return [{ from: null, wage: DEFAULT_MIN_WAGE }] }
+  const cfg = await api('/config')
+  let list = []
+  try { list = JSON.parse(cfg.minWageHistory || '[]') } catch {}
+  if (Array.isArray(list) && list.length > 0) return list
+  return [{ from: null, wage: Number(cfg.minWage) || DEFAULT_MIN_WAGE }]
 }
 
 export function minWageForDate(history, dateStr) {
@@ -278,11 +300,10 @@ export const DEFAULT_MIN_WAGE_ITEMS = ['研修会', '清掃', '事務処理']
 
 // Work items whose hourly rate follows the minimum wage
 export async function getMinWageItems() {
-  try {
-    const cfg = await api('/config')
-    const list = JSON.parse(cfg.minWageItems || 'null')
-    return Array.isArray(list) ? list : DEFAULT_MIN_WAGE_ITEMS
-  } catch { return DEFAULT_MIN_WAGE_ITEMS }
+  const cfg = await api('/config')
+  let list = null
+  try { list = JSON.parse(cfg.minWageItems || 'null') } catch {}
+  return Array.isArray(list) ? list : DEFAULT_MIN_WAGE_ITEMS
 }
 
 export async function saveMinWageItems(list) {
@@ -493,9 +514,10 @@ export async function resolveUserByPin(pin) {
   }
 }
 
-export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork, sessionId: providedSessionId }) {
+export async function saveLog({ userId, workType, workItems, logType, transportCount, firstWork, lastWork, sessionId: providedSessionId, date: shiftDateStr }) {
   const now = new Date()
-  const date = now.toLocaleDateString('ja-JP', {
+  // after midnight, punches that continue yesterday's shift are filed under that shift's date
+  const date = shiftDateStr || now.toLocaleDateString('ja-JP', {
     year: 'numeric', month: '2-digit', day: '2-digit'
   }).replace(/\//g, '-')
   const time = now.toLocaleTimeString('ja-JP', {
@@ -570,7 +592,8 @@ export function generateSessionId() {
 
 export async function saveSessionWorkReport(userId, dateStr, sessionId, items) {
   const key = `swr:${userId}_${dateStr}_${sessionId}`
-  enqueue({ qid: crypto.randomUUID(), key, path: '/session_work_reports', method: 'PUT', body: { userId, date: dateStr, sessionId, items } })
+  // clientTs: when the employee entered it, so an older queued entry can't overwrite a later admin fix
+  enqueue({ qid: crypto.randomUUID(), key, path: '/session_work_reports', method: 'PUT', body: { userId, date: dateStr, sessionId, items, clientTs: new Date().toISOString() } })
   await flushOutbox()
 }
 
@@ -618,10 +641,7 @@ export async function saveDayEditBatch(payload) {
 }
 
 export async function isCheckedIn(userId) {
-  const logs = await getTodayUserLogs(userId)
-  const ins = logs.filter(l => l.log_type === '出勤').length
-  const outs = logs.filter(l => l.log_type === '退勤').length
-  return ins > outs
+  return (await getTodayPunchState(userId)).state !== 'off'
 }
 
 export async function getLogs({ date, dateFrom, dateTo, userId } = {}) {
@@ -639,8 +659,9 @@ export async function getUsers() {
   }
 }
 
-export async function upsertUser(user) {
-  await api(`/users/${enc(user.id)}`, { method: 'PUT', body: user })
+// create: true refuses (409 user_exists) when the ID is already taken instead of overwriting that person
+export async function upsertUser(user, { create = false } = {}) {
+  await api(`/users/${enc(user.id)}`, { method: 'PUT', query: create ? { new: '1' } : undefined, body: user })
 }
 
 export async function deleteUserDoc(id) {
@@ -663,17 +684,18 @@ export async function getTodayStatuses() {
   } catch (e) {
     if (!e.offline) throw e
     const cache = readJSON(TODAY_LOGS_CACHE_KEY, {})
-    Object.entries(cache).forEach(([uid, c]) => {
-      if (c.date !== today) return
+    const dates = [today, ...(new Date().getHours() < OVERNIGHT_UNTIL_HOUR ? [shiftDate(today, -1)] : [])]
+    Object.values(cache).forEach(c => {
+      if (!dates.includes(c.date)) return
       const ins = c.logs.filter(l => l.log_type === '出勤').length
       const outs = c.logs.filter(l => l.log_type === '退勤').length
-      statuses[uid] = ins > outs
+      statuses[c.userId] = statuses[c.userId] || ins > outs
     })
   }
   // punches still waiting in the outbox aren't known to the server yet
   const pendingIds = new Set(readJSON(OUTBOX_KEY, []).map(x => x.qid))
   readJSON(LOCAL_PUNCHES_KEY, [])
-    .filter(l => l.date === today && pendingIds.has(l.id))
+    .filter(l => pendingIds.has(l.id))
     .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
     .forEach(l => { statuses[l.user_id] = l.log_type !== '退勤' })
   return statuses
@@ -719,6 +741,29 @@ export function getRatesForDate(rateObj, dateStr) {
   return result
 }
 
+// Rate periods of one item inside [monthStart, monthEnd] → [{ fromDate, toDate, normal, sunday }]
+// Each period carries the rates written in that history entry (no borrowing from the latest one).
+export function ratePeriods(rateObj, monthStart, monthEnd) {
+  const prevDay = d => shiftDate(d, -1)
+  const cur = { normal: Number(rateObj?.normal) || 0, sunday: Number(rateObj?.sunday) || 0 }
+  const history = rateObj?.rateHistory
+  if (!history || history.length === 0) return [{ fromDate: monthStart, toDate: monthEnd, ...cur }]
+  const byFrom = (a, b) => (!a.from && !b.from ? 0 : !a.from ? -1 : !b.from ? 1 : a.from.localeCompare(b.from))
+  const sorted = [...history].filter(e => !e.from || e.from <= monthEnd).sort(byFrom)
+  if (sorted.length === 0) return [{ fromDate: monthStart, toDate: monthEnd, ...cur }]
+  const baseCandidates = sorted.filter(e => !e.from || e.from <= monthStart)
+  const base = baseCandidates.length > 0 ? baseCandidates[baseCandidates.length - 1] : sorted[0]
+  const periods = []
+  let curFrom = monthStart, curNormal = Number(base?.normal) || 0, curSunday = Number(base?.sunday) || 0
+  for (const e of sorted.filter(e => e.from && e.from > monthStart)) {
+    const prev = prevDay(e.from)
+    if (prev >= curFrom) periods.push({ fromDate: curFrom, toDate: prev, normal: curNormal, sunday: curSunday })
+    curFrom = e.from; curNormal = Number(e.normal) || 0; curSunday = Number(e.sunday) || 0
+  }
+  periods.push({ fromDate: curFrom, toDate: monthEnd, normal: curNormal, sunday: curSunday })
+  return periods
+}
+
 // ─── Breaks (休憩・中抜け) ─────────────────────────────────────────────────────
 // A break is a 休憩開始 / 休憩終了 pair inside one work session (same
 // session_id), so a break doesn't start a new session (no extra 準備時間, no
@@ -754,30 +799,42 @@ export function breakMinutes(breaks) {
 }
 
 // Where the employee stands right now: 'off' | 'working' | 'break'
+// `date` is the day the current shift started on. Between 0:00 and 3:00 a shift
+// that began yesterday and has no 退勤 yet is still the current one.
 export async function getTodayPunchState(userId) {
-  const logs = await getTodayUserLogs(userId)
-  const ins = logs.filter(l => l.log_type === '出勤')
-  const outs = logs.filter(l => l.log_type === '退勤').length
-  if (ins.length <= outs) return { state: 'off', logs }
+  const today = getTodayDate()
+  let date = today
+  let logs = await getTodayUserLogs(userId, today)
+  let ins = logs.filter(l => l.log_type === '出勤')
+  let outs = logs.filter(l => l.log_type === '退勤').length
+  if (ins.length <= outs && new Date().getHours() < OVERNIGHT_UNTIL_HOUR) {
+    const y = shiftDate(today, -1)
+    const yLogs = await getTodayUserLogs(userId, y)
+    const yIns = yLogs.filter(l => l.log_type === '出勤')
+    if (yIns.length > yLogs.filter(l => l.log_type === '退勤').length) {
+      date = y; logs = yLogs; ins = yIns; outs = yLogs.filter(l => l.log_type === '退勤').length
+    }
+  }
+  if (ins.length <= outs) return { state: 'off', logs, date }
   const clockIn = ins[ins.length - 1]
   const sessionId = clockIn.session_id || null
   const breaks = sessionId ? pairBreaks(logs.filter(l => l.session_id === sessionId)) : []
   const openBreak = breaks.find(b => b.startLog && !b.endLog) || null
-  return { state: openBreak ? 'break' : 'working', logs, clockIn, sessionId, breaks, openBreak }
+  return { state: openBreak ? 'break' : 'working', logs, date, clockIn, sessionId, breaks, openBreak }
 }
 
 // ─── Weekly copy (週コピー) ──────────────────────────────────────────────────
-// At the first clock-in of a week the employee is asked whether to reuse last
+// At the first clock-out of a week the employee is asked whether to reuse last
 // week's work. Accepted copies only pre-fill the clock-out input (per day and
 // per session order); pay is still calculated from what is actually reported.
 
 // { offer, weekStart, days: [{ date, slots: [{ slot, items }] }] } or null (offline etc.)
-export async function getWeeklyCopyOffer(userId) {
-  try { return await api('/weekly_copy/offer', { query: { userId, date: getTodayDate() } }) } catch { return null }
+export async function getWeeklyCopyOffer(userId, date = getTodayDate()) {
+  try { return await api('/weekly_copy/offer', { query: { userId, date } }) } catch { return null }
 }
 
-export async function answerWeeklyCopy(userId, answer) {
-  return api('/weekly_copy/answer', { method: 'POST', body: { userId, date: getTodayDate(), answer } })
+export async function answerWeeklyCopy(userId, answer, date = getTodayDate()) {
+  return api('/weekly_copy/answer', { method: 'POST', body: { userId, date, answer } })
 }
 
 // { date: { slot: items } }
@@ -804,7 +861,6 @@ export const COMMUTE_METHODS = [
   { key: 'car', label: '車' },
   { key: 'bus', label: 'バス' },
   { key: 'train', label: '電車' },
-  { key: 'walk', label: '徒歩' },
   { key: 'none', label: '交通費なし' },
 ]
 
@@ -830,7 +886,8 @@ export function commuteOn(user, dateStr) {
   }
   const oneWayKm = Number(e.oneWayKm) || 0
   const legacyKm = Number(e.legacyKm) || 0
-  return { method: e.method || null, oneWayKm, legacyKm, amount: Number(e.amount) || 0, dailyKm: oneWayKm > 0 ? oneWayKm * 2 : legacyKm }
+  // 徒歩 (older data) is the same as 交通費なし
+  return { method: e.method === 'walk' ? 'none' : (e.method || null), oneWayKm, legacyKm, amount: Number(e.amount) || 0, dailyKm: oneWayKm > 0 ? oneWayKm * 2 : legacyKm }
 }
 
 // Current settings + whether the clock-out screen asks "本日の交通費".
@@ -840,18 +897,17 @@ export function getCommute(user) {
   const label = COMMUTE_METHODS.find(m => m.key === c.method)?.label || '未設定'
   let asks
   if (user?.employeeType === 'salaried') asks = false
-  else if (c.method === 'walk' || c.method === 'none') asks = false
+  else if (c.method === 'none') asks = false
   else if (c.method === 'car') asks = c.dailyKm > 0
   else asks = c.amount > 0
   return { ...c, label, distance: c.dailyKm, asks }
 }
 
 export async function getCarRates() {
-  try {
-    const cfg = await api('/config')
-    const list = JSON.parse(cfg.carRates || '[]')
-    return Array.isArray(list) ? list : []
-  } catch { return [] }
+  const cfg = await api('/config')
+  let list = []
+  try { list = JSON.parse(cfg.carRates || '[]') } catch {}
+  return Array.isArray(list) ? list : []
 }
 
 export async function saveCarRates(list) {
@@ -872,7 +928,7 @@ export function computeTransport(user, eligibleDates, carRates = []) {
   for (const d of [...eligibleDates].sort()) {
     const c = commuteOn(user, d)
     let g
-    if (c.method === 'walk' || c.method === 'none') continue
+    if (c.method === 'none') continue
     if (c.method === 'car') {
       if (!c.dailyKm) continue
       const rate = carRateForDate(carRates, d)
@@ -907,16 +963,28 @@ export async function getTransportDays(dateFrom, dateTo) {
   return api('/transport_days', { query: { dateFrom, dateTo } })
 }
 
-// The employee's choice already saved for today (true/false), or null
+// The employee's choice already saved for the day (true/false), or null. A choice still
+// waiting in the outbox, or remembered on this device while offline, counts too.
+const TRANSPORT_LOCAL_KEY = 'transportChoices'
 export async function getTransportDay(userId, date) {
+  const key = `${userId}_${date}`
+  const pending = readJSON(OUTBOX_KEY, []).find(x => x.key === `td:${key}`)
+  if (pending) return !!pending.body.eligible
   try {
     const r = await api('/transport_days', { query: { userId, date } })
-    const v = r[`${userId}_${date}`]
+    return r[key] === undefined ? null : r[key]
+  } catch {
+    const v = readJSON(TRANSPORT_LOCAL_KEY, {})[key]
     return v === undefined ? null : v
-  } catch { return null }
+  }
 }
 
 export async function saveTransportDay(userId, date, eligible) {
+  const m = readJSON(TRANSPORT_LOCAL_KEY, {})
+  m[`${userId}_${date}`] = eligible
+  const keys = Object.keys(m)
+  if (keys.length > 60) keys.slice(0, keys.length - 60).forEach(k => delete m[k])
+  writeJSON(TRANSPORT_LOCAL_KEY, m)
   enqueue({ qid: crypto.randomUUID(), key: `td:${userId}_${date}`, path: '/transport_days', method: 'PUT', body: { userId, date, eligible } })
   await flushOutbox()
 }
@@ -931,7 +999,8 @@ export function attendanceDates(byDate) {
 // Fully dynamic columns: one sheet per user, time and pay sections separated
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
-  const users = await getUsers()
+  // straight from the server: the offline copy of the roster has no rates (pay would be 0)
+  const users = await api('/users')
   await loadWorkItemDefs() // latest names / order for the columns
 
   const [ym_y_str, ym_m_str] = (dateFrom || '').split('-')
@@ -968,32 +1037,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     return result
   }
 
-  // Returns array of rate periods [{ fromDate, toDate, normal, sunday }] covering the month
+  // Rate periods covering the month
   function getMonthRatePeriods(rateObj, y, m) {
     const pad2 = n => String(n).padStart(2, '0')
-    const monthStart = `${y}-${pad2(m)}-01`
     const lastD = new Date(y, m, 0).getDate()
-    const monthEnd = `${y}-${pad2(m)}-${pad2(lastD)}`
-    const defR = { normal: Number(rateObj?.normal) || 0, sunday: Number(rateObj?.sunday) || 0 }
-    const history = rateObj?.rateHistory
-    if (!history || history.length === 0) return [{ fromDate: monthStart, toDate: monthEnd, ...defR }]
-    const sorted = [...history].filter(e => !e.from || e.from <= monthEnd).sort((a, b) => {
-      if (!a.from && !b.from) return 0; if (!a.from) return -1; if (!b.from) return 1
-      return a.from.localeCompare(b.from)
-    })
-    if (sorted.length === 0) return [{ fromDate: monthStart, toDate: monthEnd, ...defR }]
-    const baseCandidates = sorted.filter(e => !e.from || e.from <= monthStart)
-    const base = baseCandidates.length > 0 ? baseCandidates[baseCandidates.length - 1] : sorted[0]
-    const inMonthEntries = sorted.filter(e => e.from && e.from > monthStart && e.from <= monthEnd)
-    const periods = []
-    let curFrom = monthStart, curNormal = Number(base?.normal) || defR.normal, curSunday = Number(base?.sunday) || defR.sunday
-    for (const e of inMonthEntries) {
-      const prev = prevDateStr(e.from)
-      if (prev >= curFrom) periods.push({ fromDate: curFrom, toDate: prev, normal: curNormal, sunday: curSunday })
-      curFrom = e.from; curNormal = Number(e.normal) || 0; curSunday = Number(e.sunday) || 0
-    }
-    periods.push({ fromDate: curFrom, toDate: monthEnd, normal: curNormal, sunday: curSunday })
-    return periods
+    return ratePeriods(rateObj, `${y}-${pad2(m)}-01`, `${y}-${pad2(m)}-${pad2(lastD)}`)
   }
   // Convert 0-based column index to Excel letter(s): 0→A, 25→Z, 26→AA …
   function colLetter(n) {
@@ -1092,7 +1140,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // 23 pay row label: bordered, left aligned text
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left"/></xf>',
     // 24 pay row hourly rate: bordered, #,##0 format, center
-    '<xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center"/></xf>',
     // 25 multi-session text cell: bordered, center, wrapText
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>',
     '</cellXfs>',
@@ -1130,7 +1178,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
   const userEntries = users.filter(u =>
     logs.some(l => l.user_id === u.id) ||
-    Object.keys(allWorkReports).some(k => k.startsWith(`${u.id}_`))
+    Object.keys(allWorkReports).some(k => k.slice(0, -11) === u.id)
   )
   const sheetXmls = []
   const summaryData = { types: {} }
@@ -1244,8 +1292,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // Extract work reports for this user (pay calculation source)
     const userWorkReports = {}
     Object.entries(allWorkReports).forEach(([key, items]) => {
-      if (key.startsWith(`${user.id}_`)) {
-        const dateStr = key.slice(user.id.length + 1)
+      if (key.slice(0, -11) === user.id) {
+        const dateStr = key.slice(-10)
         if (Object.values(items).some(m => m > 0)) userWorkReports[dateStr] = items
       }
     })
@@ -1268,7 +1316,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const workReportTypeSet = new Set(
       Object.values(userWorkReports).flatMap(items => Object.keys(items).filter(t => !EXCL.has(t)))
     )
-    const workTypes = sortByItemOrder((user.workItems || []).filter(t => !EXCL.has(t) && workReportTypeSet.has(t)))
+    // every item that was reported this month, even if it was taken off the employee since
+    const workTypes = sortByItemOrder([...workReportTypeSet])
+    const periodsOf = {}
+    workTypes.forEach(t => { periodsOf[t] = getMonthRatePeriods(itemRates[t], ym_y, ym_m) })
 
     // workingDays = days with work report AND ≥1 completed QR session (spec 7)
     let workingDays = 0
@@ -1289,23 +1340,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const commute = getCommute(user)
     const transportRowsX = computeTransport(user, transportDates, carRates)
 
-    // Accumulate global summary data from work_reports
-    for (const type of workTypes) {
-      if (!summaryData.types[type]) summaryData.types[type] = { mins: 0, pay: 0 }
-      Object.entries(dailyTypeMinsSplit).forEach(([dateStr, typeMap]) => {
-        const dm = typeMap[type]; if (!dm) return
-        const { wd, we } = dm
-        const r = getRatesForDateLocal(itemRates[type], dateStr)
-        summaryData.types[type].mins += wd + we
-        summaryData.types[type].pay += Math.round(wd / 60 * r.normal) + (r.sunday ? Math.round(we / 60 * r.sunday) : Math.round(we / 60 * r.normal))
-      })
-    }
-
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
     let ci = 2
     const typeColMap = {}
     for (const type of workTypes) {
-      const hasSunday = !!(itemRates[type]?.sunday)
+      const hasSunday = periodsOf[type].some(p => p.sunday > 0)
       const wdCol = colLetter(ci++)
       const suCol = hasSunday ? colLetter(ci++) : null
       typeColMap[type] = { wd: wdCol, su: suCol, hasSunday }
@@ -1482,10 +1521,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
 
     for (const type of workTypes) {
-      const rateObj = itemRates[type] || {}
-      const hasSunday = !!(rateObj.sunday)
-      const periods = getMonthRatePeriods(rateObj, ym_y, ym_m)
+      const periods = periodsOf[type]
+      const hasSunday = periods.some(p => p.sunday > 0)
       const multiPeriod = periods.length > 1
+      if (!summaryData.types[type]) summaryData.types[type] = { mins: 0, pay: 0 }
+      const sum = summaryData.types[type]
 
       for (const period of periods) {
         const { fromDate, toDate, normal: normalRate, sunday: sundayRate } = period
@@ -1499,6 +1539,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         if (hasSunday) {
           if (mins.wd > 0) {
             const pay = Math.round(mins.wd / 60 * normalRate)
+            sum.mins += mins.wd; sum.pay += pay
             totalPayHours += mins.wd / 60; totalPayAmount += pay
             payRows.push(
               `<row r="${payRowIdx}">` +
@@ -1510,14 +1551,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             ); payRowIdx++
           }
           if (mins.we > 0) {
-            const pay = Math.round(mins.we / 60 * sundayRate)
+            // a period without a Sunday rate pays Sundays at the normal rate
+            const sunRate = sundayRate > 0 ? sundayRate : normalRate
+            const pay = Math.round(mins.we / 60 * sunRate)
+            sum.mins += mins.we; sum.pay += pay
             totalPayHours += mins.we / 60; totalPayAmount += pay
             const suLabel = itemLabel(type) + rangeLabel + '（日曜）'
             payRows.push(
               `<row r="${payRowIdx}">` +
               `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(suLabel)}</t></is></c>` +
               `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${mins.we / 60 / 24}</v></c>` +
-              (sundayRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sundayRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
+              (sunRate > 0 ? `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${sunRate}</v></c>` : `<c r="C${payRowIdx}" s="${S.pay_rate}"/>`) +
               `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${pay}</v></c>` +
               `</row>`
             ); payRowIdx++
@@ -1526,6 +1570,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           const total = mins.wd + mins.we
           if (total > 0) {
             const pay = Math.round(total / 60 * normalRate)
+            sum.mins += total; sum.pay += pay
             totalPayHours += total / 60; totalPayAmount += pay
             payRows.push(
               `<row r="${payRowIdx}">` +
@@ -1641,10 +1686,19 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const N = userEntries.length
 
   // sheet1 = 集計, sheet2..N+1 = user sheets
+  // Excel sheet names: no : \ / ? * [ ], at most 31 characters, unique ignoring case
+  const usedNames = new Set(['集計'])
+  const sheetName = raw => {
+    const base = (String(raw).replace(/[:\\/?*[\]]/g, '_').replace(/^'+|'+$/g, '').trim() || 'シート').substring(0, 31)
+    let name = base, n = 2
+    while (usedNames.has(name.toLowerCase())) { const suffix = `(${n++})`; name = base.substring(0, 31 - suffix.length) + suffix }
+    usedNames.add(name.toLowerCase())
+    return name
+  }
   const sheetEls =
     `<sheet name="集計" sheetId="1" r:id="rId1"/>` +
     userEntries.map((u, i) =>
-      `<sheet name="${esc(u.name.substring(0, 31))}" sheetId="${i + 2}" r:id="rId${i + 2}"/>`
+      `<sheet name="${esc(sheetName(u.name))}" sheetId="${i + 2}" r:id="rId${i + 2}"/>`
     ).join('')
   const wbXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +

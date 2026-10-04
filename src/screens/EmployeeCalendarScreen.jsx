@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs } from '../lib/db'
+import { useIdleTimeout } from '../lib/useIdleTimeout'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -257,10 +258,19 @@ function CopySection({ copy, onDelete }) {
   )
 }
 
+// Employees can fix their own work entries for this month and last month only
+function editableFrom() {
+  const t = localToday()
+  const [y, m] = t.split('-').map(Number)
+  const d = new Date(y, m - 2, 1) // first day of last month
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
 function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onClose, onWorkSaved }) {
-  const editableItems = sortByItemOrder((user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item) && !isDeletedWorkItem(item)))
-  const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried'
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const tooOld = dateStr < editableFrom()
+  const editableItems = sortByItemOrder((user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item) && !isDeletedWorkItem(item)))
+  const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried' && !tooOld
   const dowLabel = DOW_LABELS[new Date(year, month, day).getDay()]
   const isMulti = sessions.length > 1
 
@@ -284,7 +294,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
 
   const editingSession = editingSessionIdx !== null ? sessions[editingSessionIdx] : null
   const editingWork = editingSession?.sessionId ? (sessionWorkItems[editingSession.sessionId] || {}) : {}
-  const sessionLabel = '業務を入力'
+  const sessionLabel = `${month + 1}月${day}日（${dowLabel}）の業務を入力`
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
@@ -381,6 +391,8 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                         </button>
                       ) : !session.sessionId ? (
                         <span className={styles.legacyHint}>旧データ形式（管理者が入力）</span>
+                      ) : tooOld && user?.employeeType !== 'salaried' ? (
+                        <span className={styles.legacyHint}>先々月より前の業務は、管理者に連絡して直してもらってください</span>
                       ) : null}
                     </div>
                   </div>
@@ -396,6 +408,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
 
 /* ─── カレンダー画面（メイン） ─── */
 export default function EmployeeCalendarScreen({ user, onBack }) {
+  useIdleTimeout(onBack) // left open for 2 minutes → back to the start (the next person must not see this month)
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
