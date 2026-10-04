@@ -155,9 +155,9 @@
 }
 
 .check {
-  position: absolute;
-  top: 10px;
-  left: 10px;
+  /* QRに重ならないよう、QRの上の行に置く（スマホでQRを撮影して使うため） */
+  align-self: flex-start;
+  flex-shrink: 0;
   width: 28px;
   height: 28px;
   border-radius: 6px;
