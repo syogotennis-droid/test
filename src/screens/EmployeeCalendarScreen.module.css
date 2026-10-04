@@ -77,7 +77,9 @@
 .calGrid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  grid-auto-rows: minmax(70px, 1fr);
+  grid-template-rows: 30px;
+  grid-auto-rows: minmax(76px, 140px);
+  align-content: start;
   gap: 2px;
   padding: 0 6px 6px;
   flex: 1;
@@ -163,7 +165,7 @@
 
 /* 複数回勤務インジケーター */
 .multiCountBadge {
-  font-size: 0.55rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: #1d4ed8;
   background: #dbeafe;
@@ -194,7 +196,7 @@
 
 .multiArrow {
   color: #94a3b8;
-  font-size: 0.6rem;
+  font-size: 0.72rem;
 }
 
 .activeInline {
@@ -202,7 +204,7 @@
 }
 
 .multiMore {
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   color: #64748b;
   text-align: center;
 }
@@ -220,7 +222,7 @@
 
 /* work status badges on calendar cells */
 .calWorkBadgeTeal {
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: #15803d;
   background: #dcfce7;
@@ -232,7 +234,7 @@
 }
 
 .calWorkBadgeOrange {
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: #92400e;
   background: #fef3c7;
@@ -244,7 +246,7 @@
 }
 
 .calWorkBadgeBlue {
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: #1d4ed8;
   background: #dbeafe;
@@ -256,7 +258,7 @@
 }
 
 .calWorkBadgeRed {
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: #dc2626;
   background: #fee2e2;
@@ -1476,7 +1478,7 @@
 }
 
 .calCopyBadge {
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: #166534;
   background: #dcfce7;

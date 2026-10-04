@@ -9,7 +9,7 @@
 /* ── メインエリア ── */
 .main {
   height: 100dvh;
-  padding: 14px 60px 18px;
+  padding: 22px 60px 18px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -160,8 +160,8 @@
 /* ── スキップヒント ── */
 .skipHint {
   flex-shrink: 0;
-  color: #888;
-  font-size: 0.95rem;
+  color: #4b5563;
+  font-size: 1.05rem;
   text-align: center;
   padding: 6px 16px;
 }
@@ -525,7 +525,7 @@
 }
 
 @media (max-width: 760px) {
-  .main { padding: 10px 12px 14px; }
+  .main { padding: 14px 12px 14px; }
   .infoBar { font-size: 15px; }
   .infoPlan { font-size: 13px; }
   .transportRow { flex-wrap: wrap; }

@@ -10,10 +10,10 @@ function fmtMinutes(mins) {
 
 // logType: '出勤' | '退勤' | '休憩開始' | '休憩終了'
 const VIEW = {
-  '出勤': { title: '出勤しました', bg: '#2e7d32', icon: '🟢', timeLabel: '出勤時間' },
-  '退勤': { title: '退勤しました', bg: '#1a73e8', icon: '🔴', timeLabel: '退勤時間' },
+  '出勤': { title: '出勤しました', bg: '#2e7d32', icon: '', timeLabel: '出勤時間' },
+  '退勤': { title: '退勤しました', bg: '#1a73e8', icon: '', timeLabel: '退勤時間' },
   '休憩開始': { title: '休憩に入りました', bg: '#b45309', icon: '☕', timeLabel: '休憩開始' },
-  '休憩終了': { title: '休憩から戻りました', bg: '#2e7d32', icon: '🟢', timeLabel: '戻り時間' },
+  '休憩終了': { title: '休憩から戻りました', bg: '#2e7d32', icon: '', timeLabel: '戻り時間' },
 }
 
 export default function CompleteScreen({ logType, workItems, user, clockInTime, breakInfo, onDone }) {
@@ -36,7 +36,7 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
   return (
     <div className={styles.screen} style={{ background: view.bg }}>
       <div className={styles.checkmark}>✓</div>
-      <div className={styles.workIcon}>{view.icon}</div>
+      {view.icon && <div className={styles.workIcon}>{view.icon}</div>}
       <h1>{view.title}</h1>
       {user && (
         <p className={styles.detail}>{user.name} さん</p>

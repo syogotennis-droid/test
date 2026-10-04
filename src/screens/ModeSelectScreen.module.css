@@ -156,11 +156,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: clamp(10px, 2vw, 24px);
+  min-width: 0;
 }
 
 .statusIconLarge {
-  font-size: 54px;
+  font-size: clamp(36px, 6vw, 54px);
   line-height: 1;
 }
 
@@ -171,7 +172,8 @@
 }
 
 .statusValue {
-  font-size: 38px;
+  white-space: nowrap;
+  font-size: clamp(24px, 4vw, 38px);
   font-weight: 900;
   color: #111827;
   line-height: 1;

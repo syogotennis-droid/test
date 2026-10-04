@@ -3475,9 +3475,9 @@ function SettingsTab({ users, onUsersChanged }) {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px' }}>
-    <div style={{ maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
       {/* PIN変更 */}
-      <div>
+      <div style={{ maxWidth: 400 }}>
         <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 16 }}>管理者PIN変更</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>

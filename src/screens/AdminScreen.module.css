@@ -286,8 +286,8 @@
   scrollbar-color: #c8d5e4 transparent;
 }
 
-.userTabsWrap::-webkit-scrollbar { height: 3px; }
-.userTabsWrap::-webkit-scrollbar-thumb { background: #c8d5e4; border-radius: 2px; }
+.userTabsWrap::-webkit-scrollbar { height: 8px; }
+.userTabsWrap::-webkit-scrollbar-thumb { background: #9fb3cc; border-radius: 4px; }
 .userTabsWrap::-webkit-scrollbar-track { background: transparent; }
 
 /* ─── User tabs (LogsTab / legacy CalendarTab) ─── */
@@ -2188,7 +2188,7 @@
   box-sizing: border-box;
 }
 
-.kinmuboPageHeader { margin-bottom: 20px; }
+.kinmuboPageHeader { margin-bottom: 20px; text-align: left; }
 
 .kinmuboPageTitle {
   font-size: 1.35rem;
@@ -2404,13 +2404,16 @@
   font-size: 0.95rem;
   color: #1a3f6f;
   min-width: 100px;
+  flex-shrink: 0;
 }
 
 .kinmuboAccordionMeta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   flex: 1;
+  min-width: 0;
 }
 
 .kinmuboAccordionDays {
@@ -2425,6 +2428,7 @@
 .kinmuboAccordionTime {
   font-size: 0.875rem;
   color: #374151;
+  white-space: nowrap;
 }
 
 .kinmuboAccordionPay {
@@ -2434,6 +2438,8 @@
   text-align: right;
   min-width: 100px;
   margin-right: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .kinmuboAccordionChevron {
