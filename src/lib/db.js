@@ -1650,6 +1650,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
+    const sheetDataCached = withCachedValues(sheetData)
     const maxColIdx = Math.max(4, ci) // 4 = col D (last T1 column)
     // bestFit="1" lets Excel auto-size columns to content on open (no ####### ever)
     const colsXml =
@@ -1663,7 +1664,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<worksheet xmlns="${WB_NS}" xmlns:r="${WB_REL_NS}">` +
       `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
-      `${colsXml}${sheetData}</worksheet>`
+      `${colsXml}${sheetDataCached}</worksheet>`
     )
   }
 
@@ -1690,15 +1691,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
     sumRows += `<row r="${sr}">` +
       `<c r="A${sr}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      `<c r="B${sr}" s="${S.tot_hrs}"><f>SUM(B3:B${sr - 1})</f><v>0</v></c>` +
-      `<c r="C${sr}" s="${S.tot_pay}"><f>SUM(C3:C${sr - 1})</f><v>0</v></c>` +
+      `<c r="B${sr}" s="${S.tot_hrs}"><f>SUM(B3:B${sr - 1})</f></c>` +
+      `<c r="C${sr}" s="${S.tot_pay}"><f>SUM(C3:C${sr - 1})</f></c>` +
       `</row>`
     const summarySheetXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<worksheet xmlns="${WB_NS_S}" xmlns:r="${WB_REL_S}">` +
       `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
       `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="3" width="20" bestFit="1"/></cols>` +
-      `<sheetData>${sumRows}</sheetData></worksheet>`
+      `${withCachedValues(`<sheetData>${sumRows}</sheetData>`)}</worksheet>`
     sheetXmls.unshift(summarySheetXml)
   }
 
@@ -1776,4 +1777,40 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   sheetXmls.forEach((xml, i) => { out[`xl/worksheets/sheet${i + 1}.xml`] = enc.encode(xml) })
 
   return zipSync(out, { level: 6 })
+}
+
+// Excel の保護ビュー（ダウンロード直後）は数式を再計算しない。数式セルに計算済みの値も書いておき、
+// 合計が 0 に見えないようにする。使う数式は SUM(範囲/セル) と ROUND(Bn*24*Cn,0) だけ。
+// 数式は上から順に並んでいて、参照先は必ず手前の行にある。
+function withCachedValues(sheetData) {
+  const colNum = s => s.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0)
+  const vals = new Map()
+  const val = ref => vals.get(ref) || 0
+  const sumArgs = args => args.split(',').reduce((total, part) => {
+    const m = part.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/)
+    if (!m) return total
+    const [, c1, r1, c2 = m[1], r2 = m[2]] = m
+    for (let c = colNum(c1); c <= colNum(c2); c++) {
+      const col = [...Array(26)].map((_, i) => String.fromCharCode(65 + i))[c - 1]
+      for (let r = Number(r1); r <= Number(r2); r++) total += val(col + r)
+    }
+    return total
+  }, 0)
+  return sheetData.replace(/<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>(.*?)<\/c>)/g, (whole, ref, attrs, inner) => {
+    if (inner === undefined) return whole
+    const f = inner.match(/<f>(.*?)<\/f>/)
+    if (!f) {
+      const v = inner.match(/<v>(.*?)<\/v>/)
+      if (v && !/t="/.test(attrs)) vals.set(ref, Number(v[1]) || 0)
+      return whole
+    }
+    let result = 0
+    const sum = f[1].match(/^SUM\((.*)\)$/)
+    const round = f[1].match(/^ROUND\(([A-Z]+\d+)\*24\*([A-Z]+\d+),0\)$/)
+    if (sum) result = sumArgs(sum[1])
+    else if (round) result = Math.round(val(round[1]) * 24 * val(round[2]))
+    else return whole
+    vals.set(ref, result)
+    return `<c r="${ref}"${attrs}><f>${f[1]}</f><v>${result}</v></c>`
+  })
 }
