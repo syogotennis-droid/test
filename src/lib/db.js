@@ -252,14 +252,14 @@ export async function adminLogin(pin, { device = false } = {}) {
     })
     j = await res.json().catch(() => ({}))
   } catch {
-    return { ok: false, message: '通信できません。ネット接続を確認してください' }
+    return { ok: false, message: '通信エラー。ネット接続を確認してください' }
   }
   if (res.ok) {
     setToken(device ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, j.token)
     return { ok: true }
   }
   if (res.status === 429) {
-    return { ok: false, message: `PINを続けて間違えたため、${Math.ceil(j.retryAfterSec / 60)}分間ロックされています` }
+    return { ok: false, message: `PINを連続で間違えたため、${Math.ceil(j.retryAfterSec / 60)}分間ロックされています` }
   }
   if (res.status === 403) {
     return { ok: false, message: j.remaining <= 2 ? `PINが違います（あと${j.remaining}回でロック）` : 'PINが違います' }
@@ -625,7 +625,7 @@ export async function getSessionWorkReportsForDate(userId, dateStr) {
   return api('/session_work_reports', { query: { userId, date: dateStr } })
 }
 
-// 従業員カレンダー用: ユーザーの全session_work_reportsとwork_reports
+// 従業員カレンダー用: 従業員の全session_work_reportsとwork_reports
 export async function getSessionWorkReportsForUser(userId) {
   const r = await api('/session_work_reports', { query: { userId } })
   const sessionsByDate = {}

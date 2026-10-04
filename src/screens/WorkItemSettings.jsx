@@ -19,7 +19,7 @@ function groupsOf(defs) {
 }
 
 function nameError(name, defs, selfId) {
-  if (!name) return '名前を入力してください'
+  if (!name) return '氏名を入力'
   if (name.length > MAX_NAME) return `名前は${MAX_NAME}文字以内にしてください`
   if (SYSTEM_ITEMS.has(name)) return `「${name}」は計算用の項目のため使えません`
   const same = defs.find(d => d.id !== selfId && d.name === name)
@@ -45,7 +45,7 @@ function ItemForm({ title, initial, defs, onSave, onClose, onRestore }) {
     const e = nameError(trimmed, defs, initial?.id)
     if (e) { setErr(e); return }
     const g = group === NEW_GROUP ? newGroup.trim() : group
-    if (group === NEW_GROUP && !g) { setErr('新しいグループの名前を入力してください'); return }
+    if (group === NEW_GROUP && !g) { setErr('新しいグループの氏名を入力'); return }
     if (g && SYSTEM_ITEMS.has(g)) { setErr(`「${g}」はグループ名に使えません`); return }
     setBusy(true)
     try { await onSave({ name: trimmed, group: g || undefined, variant: g ? (variant.trim() || undefined) : undefined }) }
@@ -105,7 +105,7 @@ function ItemForm({ title, initial, defs, onSave, onClose, onRestore }) {
         {err && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem' }}>{err}</div>}
         <div className={styles.modalActions}>
           <button className={styles.cancelBtn} onClick={onClose} disabled={busy}>キャンセル</button>
-          {!deletedSame && <button className={styles.saveBtn} onClick={submit} disabled={busy || !trimmed}>{busy ? '保存中…' : '保存する'}</button>}
+          {!deletedSame && <button className={styles.saveBtn} onClick={submit} disabled={busy || !trimmed}>{busy ? '保存中' : '保存する'}</button>}
         </div>
       </div>
     </div>
@@ -120,7 +120,7 @@ function ConfirmDelete({ def, users, onDelete, onClose }) {
       <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ width: 'min(440px, 96vw)' }}>
         <h3>「{def.name}」を削除しますか？</h3>
         <div style={{ fontSize: '0.88rem', color: '#374151', lineHeight: 1.6 }}>
-          退勤画面・ユーザー管理に出なくなります。<br />
+          退勤画面・従業員管理に出なくなります。<br />
           過去の記録・給与・出勤簿にはそのまま残ります。あとで戻すこともできます。
         </div>
         {holders.length > 0 && (
@@ -132,7 +132,7 @@ function ConfirmDelete({ def, users, onDelete, onClose }) {
           <button className={styles.cancelBtn} onClick={onClose} disabled={busy}>キャンセル</button>
           <button className={styles.realDeleteBtn} disabled={busy}
             onClick={async () => { setBusy(true); try { await onDelete() } catch { alert('保存に失敗しました'); setBusy(false) } }}>
-            {busy ? '保存中…' : '削除する'}
+            {busy ? '保存中' : '削除する'}
           </button>
         </div>
       </div>
@@ -146,7 +146,7 @@ function RenameGroup({ group, defs, onSave, onClose }) {
   const [busy, setBusy] = useState(false)
   async function submit() {
     const n = name.trim()
-    if (!n) { setErr('名前を入力してください'); return }
+    if (!n) { setErr('氏名を入力'); return }
     if (SYSTEM_ITEMS.has(n)) { setErr(`「${n}」はグループ名に使えません`); return }
     if (n !== group && groupsOf(defs).includes(n)) { setErr('同じ名前のグループがあります'); return }
     setBusy(true)
@@ -163,7 +163,7 @@ function RenameGroup({ group, defs, onSave, onClose }) {
         {err && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem' }}>{err}</div>}
         <div className={styles.modalActions}>
           <button className={styles.cancelBtn} onClick={onClose} disabled={busy}>キャンセル</button>
-          <button className={styles.saveBtn} onClick={submit} disabled={busy || !name.trim()}>{busy ? '保存中…' : '保存する'}</button>
+          <button className={styles.saveBtn} onClick={submit} disabled={busy || !name.trim()}>{busy ? '保存中' : '保存する'}</button>
         </div>
       </div>
     </div>

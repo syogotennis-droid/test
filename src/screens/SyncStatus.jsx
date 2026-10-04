@@ -21,10 +21,10 @@ export default function SyncStatus() {
   if (online && pending === 0 && failed === 0) return null
 
   const text = failed > 0 && online && pending === 0
-    ? `送れなかった打刻・入力が ${failed}件あります。管理者に連絡してください（この端末に保存しています）`
+    ? `未送信の打刻・入力が${failed}件あります。管理者に連絡（端末に保存済み）`
     : !online
-    ? `オフライン：打刻はこの端末に保存され、通信が戻ると自動で送信されます${pending ? `（未送信 ${pending}件）` : ''}`
-    : `未送信の打刻 ${pending}件 — 自動で再送しています`
+    ? `オフライン：打刻は端末に保存し、接続回復後に自動送信${pending ? `（未送信 ${pending}件）` : ''}`
+    : `未送信 ${pending}件 — 自動再送中`
 
   return (
     <div role="status" style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 150, maxWidth: 'calc(100vw - 80px)', background: online ? '#fef3c7' : '#fee2e2', color: online ? '#92400e' : '#991b1b', border: `1px solid ${online ? '#fcd34d' : '#fca5a5'}`, borderRadius: 10, padding: '8px 12px', fontSize: '0.85rem', fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>

@@ -34,7 +34,7 @@ function PinOverlay({ mode, onSubmit, onClose }) {
         setPin('')
       }
     } catch {
-      setError('通信エラーが発生しました')
+      setError('通信エラー')
     } finally {
       setLoading(false)
     }
@@ -76,7 +76,7 @@ function PinOverlay({ mode, onSubmit, onClose }) {
             onClick={handleSubmit}
             disabled={!pin || loading}
           >
-            {loading ? '確認中...' : '確認'}
+            {loading ? '確認中' : '確認'}
           </button>
         </div>
       </div>
@@ -99,7 +99,7 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
     try {
       qr = new Html5Qrcode(qrId)
     } catch (err) {
-      setError('カメラを初期化できませんでした。\nPINで入力してください。\n(' + (err?.message || String(err)) + ')')
+      setError('カメラを初期化できません。\nPIN入力を使ってください。\n(' + (err?.message || String(err)) + ')')
       return
     }
     instanceRef.current = qr
@@ -115,9 +115,9 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       console.error(err)
       const msg = err?.message || ''
       if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
-        setError('カメラへのアクセスが許可されていません。\nPINで入力するか、ブラウザのカメラ権限を確認してください。')
+        setError('カメラの使用が許可されていません。\nPIN入力、またはブラウザのカメラ権限を確認してください。')
       } else {
-        setError(`カメラを起動できませんでした。\nPINで入力するか、ページを再読み込みしてください。\n(${msg})`)
+        setError(`カメラを起動できません。\nPIN入力、または再読み込みしてください。\n(${msg})`)
       }
     }
 
@@ -177,7 +177,7 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       <div className={styles.header}>
         <h1>
           <span className={mode === '出勤' ? styles.modeIn : mode === '休憩' ? styles.modeBreak : styles.modeOut}>{MODE_LABEL[mode] || mode}</span>
-          <span className={styles.headerSub}> — QRコードを枠内に収めてください</span>
+          <span className={styles.headerSub}> — QRコードを枠内に合わせる</span>
         </h1>
       </div>
 
@@ -193,7 +193,7 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
         {!scanning && !error && (
           <div className={styles.loading}>
             <div className={styles.spinner} />
-            <span>カメラを起動中...</span>
+            <span>カメラを起動中</span>
           </div>
         )}
         {error && (
@@ -211,8 +211,8 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       </div>
 
       <div className={styles.bottomBtns}>
-        <button className={styles.backBtn} onClick={onCancel}>← 戻る</button>
-        <button className={styles.pinBtn} onClick={() => setPinMode(true)}>🔢 PINで入力</button>
+        <button className={styles.backBtn} onClick={onCancel}>戻る</button>
+        <button className={styles.pinBtn} onClick={() => setPinMode(true)}>PIN入力</button>
       </div>
 
       {pinMode && (

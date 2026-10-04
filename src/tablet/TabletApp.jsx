@@ -37,7 +37,7 @@ function AdminPinOverlay({ onSuccess, onClose }) {
     setError('')
   }
   async function confirm() {
-    if (pin.length !== 4) { setError('4桁で入力してください'); return }
+    if (pin.length !== 4) { setError('4桁で入力'); return }
     if (checking) return
     setChecking(true)
     const r = await adminLogin(pin)
@@ -48,7 +48,7 @@ function AdminPinOverlay({ onSuccess, onClose }) {
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
       <div style={{background:'#fff',borderRadius:20,padding:'28px 24px 24px',width:'min(340px,92vw)',display:'flex',flexDirection:'column',gap:16}}>
-        <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理画面 — PINを入力</div>
+        <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理者ログイン</div>
         <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
           {Array.from({length:4}).map((_,i) => (
             <span key={i} style={{width:12,height:12,borderRadius:'50%',border:'2px solid #9baab8',background:i<pin.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
@@ -87,7 +87,7 @@ export default function TabletApp() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setNetworkError('接続タイムアウト。ネットワークを確認してください。')
+      setNetworkError('接続タイムアウト。接続を確認してください')
       setState(STATE.MODE)
     }, 10000)
     initDB()
@@ -158,7 +158,7 @@ export default function TabletApp() {
       setCurrentUser(user)
       setState(STATE.WORK)
     } catch (e) {
-      setNetworkError('通信エラーが発生しました。ネットワークを確認してください。')
+      setNetworkError('通信エラー。接続を確認してください')
     }
   }
 
@@ -168,7 +168,7 @@ export default function TabletApp() {
       setWorkCtx(null)
       setState(STATE.COMPLETE)
     } catch (e) {
-      setNetworkError('退勤の保存に失敗しました。ネットワークを確認してください。')
+      setNetworkError('退勤を保存できません。接続を確認してください')
     }
   }
 
@@ -185,7 +185,7 @@ export default function TabletApp() {
     return (
       <div className={styles.loading}>
         <div className={styles.spinner} />
-        <span>起動中...</span>
+        <span>起動中</span>
         {networkError && (
           <div className={styles.loadingError}>
             <p>{networkError}</p>
@@ -215,7 +215,7 @@ export default function TabletApp() {
         <div className={styles.networkBanner}>
           <span className={styles.bannerIcon}>{!isOnline ? '📡' : '⚠️'}</span>
           <span className={styles.bannerText}>
-            {!isOnline ? 'オフライン — 打刻は端末に保存され、接続が戻ると自動で送信されます' : networkError}
+            {!isOnline ? 'オフライン — 打刻は端末に保存し、接続回復後に自動送信' : networkError}
           </span>
           {networkError && (
             <button className={styles.bannerClose} onClick={() => setNetworkError(null)}>✕</button>

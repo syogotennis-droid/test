@@ -28,7 +28,7 @@ function AdminRoute() {
     const onAuthRequired = () => {
       try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
       setUnlocked(false)
-      setError('ログインの有効期限が切れました。もう一度PINを入力してください。')
+      setError('ログインの有効期限が切れました。もう一度PINを入力。')
     }
     window.addEventListener('auth-required', onAuthRequired)
     return () => window.removeEventListener('auth-required', onAuthRequired)
@@ -111,7 +111,7 @@ function AdminRoute() {
           管理画面ログイン
         </div>
         <div style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 24 }}>
-          管理用PINを入力してください
+          管理用PINを入力
         </div>
 
         {/* Label */}
@@ -215,7 +215,7 @@ function AdminRoute() {
           onFocus={e => { e.currentTarget.style.outline = '2px solid #2563eb'; e.currentTarget.style.outlineOffset = '2px' }}
           onBlur={e => { e.currentTarget.style.outline = 'none' }}
         >
-          {checking ? '確認中…' : 'ログイン'}
+          {checking ? '確認中' : 'ログイン'}
         </button>
       </div>
     </div>

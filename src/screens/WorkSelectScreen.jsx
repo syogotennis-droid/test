@@ -299,7 +299,7 @@ function WeeklyCopyQuestion({ user, offer, onAnswer, onCancel }) {
           <button className={styles.weeklyYes} onClick={() => answer('use')} disabled={busy}>使う</button>
         </div>
       </div>
-      <button className={styles.backButton} onClick={onCancel} disabled={busy}>← 戻る</button>
+      <button className={styles.backButton} onClick={onCancel} disabled={busy}>戻る</button>
     </div>
   )
 }
@@ -333,10 +333,10 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         setWorkTimes(wt)
         setPrefilled(Object.keys(wt).length > 0)
         // nothing for today (e.g. last week only had later days): say what was prepared
-        if (Object.keys(wt).length === 0) setWeeklyMsg(`今週${r.copiedDays}日分を用意しました（今日の分はありません）`)
+        if (Object.keys(wt).length === 0) setWeeklyMsg(`今週${r.copiedDays}日分を用意（今日の分なし）`)
       }
     } catch {
-      setWeeklyMsg('通信できませんでした。次の退勤のときにもう一度聞きます')
+      setWeeklyMsg('通信エラーでした。次の退勤のときにもう一度聞きます')
     }
     setAsking(false)
   }
@@ -405,7 +405,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
             {ctx.clockIn?.time && <span>出勤 {ctx.clockIn.time.substring(0, 5)}</span>}
             {ctx.breakTotal > 0 && <span>休憩 {fmtMinutes(ctx.breakTotal)}</span>}
             {ctx.onBreak && <span className={styles.infoWarn}>休憩中のまま退勤します</span>}
-            {prefilled && <span className={styles.infoPlan}>{ctx.prefillIsSaved ? '入力済みの内容を入れています（違うときは直してください）' : '先週の内容を入れています（違うときは直してください）'}</span>}
+            {prefilled && <span className={styles.infoPlan}>{ctx.prefillIsSaved ? '入力済みの内容を表示（違う場合は修正）' : '先週の内容を入力済み（違う場合は修正）'}</span>}
             {weeklyMsg && <span className={styles.infoPlan}>{weeklyMsg}</span>}
           </div>
         )}
@@ -475,10 +475,10 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         </div>
 
         {displayCards.length === 0 && (
-          <div className={styles.skipHint}>業務が設定されていません。このまま退勤できます。管理者に業務の設定を伝えてください</div>
+          <div className={styles.skipHint}>業務が未設定です。そのまま退勤できます（管理者に連絡）</div>
         )}
         {displayCards.length > 0 && activeItems.length === 0 && (
-          <div className={styles.skipHint}>業務の時間は入力しなくても退勤できます（あとで「勤務確認」から入力できます）</div>
+          <div className={styles.skipHint}>業務時間は後から「勤務確認」で入力できます</div>
         )}
 
         {ctx.asksTransport && (
@@ -502,14 +502,14 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         )}
 
         <div className={styles.bottomRow}>
-          <button className={styles.backButton} onClick={onCancel} disabled={saving}>← 戻る</button>
+          <button className={styles.backButton} onClick={onCancel} disabled={saving}>戻る</button>
           <button
             className={[styles.submitButton, saving ? styles.submitDisabled : ''].join(' ')}
             onClick={handleConfirm}
             disabled={saving}
           >
             <ExitIcon size={54} color="#fff" />
-            <span>{saving ? '記録中...' : '退勤を登録'}</span>
+            <span>{saving ? '記録中' : '退勤登録'}</span>
           </button>
         </div>
       </div>

@@ -51,7 +51,7 @@ function AdminPinOverlay({ onSuccess, onClose }) {
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
       <div style={{background:'#fff',borderRadius:20,padding:'28px 24px 24px',width:'min(320px,88vw)',display:'flex',flexDirection:'column',gap:16}}>
-        <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理画面 — PINを入力</div>
+        <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理者ログイン</div>
         <input
           ref={inputRef}
           type="password"
@@ -134,7 +134,7 @@ export default function App() {
       setState(STATE.WORK)
     } catch (e) {
       console.error(e)
-      showError('記録できませんでした。もう一度お試しください')
+      showError('記録できません。再度実行してください')
     }
   }
 
@@ -178,7 +178,7 @@ export default function App() {
     return (
       <div className={styles.loading}>
         <div className={styles.spinner} />
-        <span>起動中...</span>
+        <span>起動中</span>
       </div>
     )
   }

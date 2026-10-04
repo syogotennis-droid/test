@@ -126,22 +126,22 @@ export default function QRGeneratorScreen({ onBack }) {
           onChange={e => setQuery(e.target.value)}
         />
         <button className={styles.toolBtn} onClick={toggleAllVisible} disabled={visible.length === 0}>
-          {allVisibleSelected ? '表示中の選択を外す' : (q ? '表示中を全て選択' : '全員を選択')}
+          {allVisibleSelected ? '表示中の選択を外す' : (q ? '表示中を全て選択' : '全選択')}
         </button>
         {selected.size > 0 && (
-          <button className={styles.toolBtn} onClick={() => setSelected(new Set())}>選択を解除</button>
+          <button className={styles.toolBtn} onClick={() => setSelected(new Set())}>選択解除</button>
         )}
         <button
           className={styles.printBtn}
           onClick={() => openPrintWindow(selectedUsers)}
           disabled={selectedUsers.length === 0}
         >
-          🖨 {selectedUsers.length > 0 ? `選択した${selectedUsers.length}人を印刷` : '印刷する人を選択してください'}
+          {selectedUsers.length > 0 ? `${selectedUsers.length}名を印刷` : '印刷'}
         </button>
       </div>
 
       <div className={styles.grid}>
-        {visible.length === 0 && <div className={styles.empty}>該当する従業員がいません</div>}
+        {visible.length === 0 && <div className={styles.empty}>該当なし</div>}
         {visible.map(user => {
           const isSel = selected.has(user.id)
           return (
@@ -158,7 +158,7 @@ export default function QRGeneratorScreen({ onBack }) {
                 <span className={styles.userId}>{user.id}</span>
               </button>
               <button className={styles.singlePrintBtn} onClick={() => openPrintWindow([user])}>
-                🖨 この人だけ印刷
+                印刷
               </button>
             </div>
           )

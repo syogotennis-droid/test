@@ -171,14 +171,14 @@ function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, on
               onClick={() => canSave && !saving && onSave(currentObj)}
               disabled={!canSave || saving}
             >
-              {saving ? '保存中…' : '保存する'}
+              {saving ? '保存中' : '保存する'}
             </button>
           </div>
         </div>
 
         <div className={styles.editRightCol}>
           <div className={styles.editInputTitle}>
-            {selectedItem ? `${itemLabel(selectedItem)}の時間を入力` : '業務を選択してください'}
+            {selectedItem ? `${itemLabel(selectedItem)}の時間を入力` : '業務を選択'}
           </div>
 
           <div className={styles.hmDisplayRow}>
@@ -247,7 +247,7 @@ function CopySection({ copy, onDelete }) {
           <span>この日の業務予定を削除しますか？</span>
           <button className={styles.copyCancelBtn} onClick={() => setConfirming(false)} disabled={busy}>やめる</button>
           <button className={styles.copyDeleteBtn} disabled={busy}
-            onClick={async () => { setBusy(true); try { await onDelete() } catch { alert('削除できませんでした'); setBusy(false) } }}>
+            onClick={async () => { setBusy(true); try { await onDelete() } catch { alert('削除できません'); setBusy(false) } }}>
             削除する
           </button>
         </div>
@@ -392,7 +392,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                       ) : !session.sessionId ? (
                         <span className={styles.legacyHint}>旧データ形式（管理者が入力）</span>
                       ) : tooOld && user?.employeeType !== 'salaried' ? (
-                        <span className={styles.legacyHint}>先々月より前の業務は、管理者に連絡して直してもらってください</span>
+                        <span className={styles.legacyHint}>先々月より前の業務は管理者に連絡</span>
                       ) : null}
                     </div>
                   </div>
@@ -490,7 +490,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       </div>
 
       {loading ? (
-        <div className={styles.loading}>読込中...</div>
+        <div className={styles.loading}>読み込み中</div>
       ) : loadError ? (
         <div className={styles.loadError}>
           <div>読み込みに失敗しました</div>

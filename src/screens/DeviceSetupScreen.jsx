@@ -20,13 +20,13 @@ export default function DeviceSetupScreen({ onDone }) {
 
   async function confirm() {
     if (pin.length !== 4 || checking) return
-    if (askUrl && !url.trim()) { setError('サーバーのURLを入力してください'); return }
+    if (askUrl && !url.trim()) { setError('サーバーのURLを入力'); return }
     if (askUrl) setUrl(setServerOrigin(url))
     setChecking(true)
     const r = await adminLogin(pin, { device: true })
     setChecking(false)
     if (r.ok) onDone()
-    else { setError(askUrl && r.message.startsWith('通信できません') ? 'サーバーに接続できません。URLとネット接続を確認してください' : r.message); setPin('') }
+    else { setError(askUrl && r.message.startsWith('通信エラー') ? 'サーバーに接続できません。URLとネット接続を確認してください' : r.message); setPin('') }
   }
 
   return (
@@ -65,7 +65,7 @@ export default function DeviceSetupScreen({ onDone }) {
           ))}
         </div>
         <button onClick={confirm} disabled={pin.length !== 4 || checking} style={{ height: 48, border: 'none', borderRadius: 10, background: '#1a5fa8', color: '#fff', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', opacity: pin.length !== 4 || checking ? 0.4 : 1 }}>
-          {checking ? '確認中…' : '登録する'}
+          {checking ? '確認中' : '登録する'}
         </button>
       </div>
     </div>

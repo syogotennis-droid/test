@@ -103,7 +103,7 @@ const SIDEBAR_ITEMS = [
   },
   {
     key: 'users',
-    label: 'ユーザー管理',
+    label: '従業員管理',
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -301,8 +301,8 @@ function LogsTab({
 
       {/* Log list */}
       <div className={styles.list}>
-        {loading && <div className={styles.empty}>読込中...</div>}
-        {!loading && logs.length === 0 && <div className={styles.empty}>記録がありません</div>}
+        {loading && <div className={styles.empty}>読み込み中</div>}
+        {!loading && logs.length === 0 && <div className={styles.empty}>記録なし</div>}
         {!loading && logs.map(log => (
           <div key={log.id} className={styles.logItem} onClick={() => openModal(log)}>
             <div className={styles.workBadge} style={{ background: LOG_TYPE_COLOR[log.log_type] || '#888' }}>
@@ -351,7 +351,7 @@ function LogsTab({
                   <span className={styles.newTime}>{editTime}</span>
                   {' に変更します'}
                 </p>
-                <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+                <p className={styles.confirmWarn}>元に戻せません</p>
                 <div className={styles.modalActions}>
                   <button className={styles.saveBtn} onClick={handleConfirmSave}>確定する</button>
                   <button className={styles.cancelBtn} onClick={() => setModalStep('edit')}>戻る</button>
@@ -363,7 +363,7 @@ function LogsTab({
                 <h3>削除の確認</h3>
                 <p className={styles.modalLabel}>{userMap[editingLog.user_id] || editingLog.user_id} — {editingLog.log_type}</p>
                 <p className={styles.modalLabel}>{editingLog.date} {editingLog.time}</p>
-                <p className={styles.confirmWarn}>この記録を完全に削除します。<br />この操作は元に戻せません。</p>
+                <p className={styles.confirmWarn}>この記録を完全に削除します。<br />元に戻せません。</p>
                 <div className={styles.modalActions}>
                   <button className={styles.realDeleteBtn} onClick={handleConfirmDelete}>削除する</button>
                   <button className={styles.cancelBtn} onClick={() => setModalStep('edit')}>戻る</button>
@@ -548,7 +548,7 @@ function CalendarTab({ users, today, isTablet }) {
         </div>
 
         {loading ? (
-          <div className={styles.empty}>読込中...</div>
+          <div className={styles.empty}>読み込み中</div>
         ) : (
           <div className={styles.calGrid} style={{ gridTemplateRows: `auto repeat(${weekCount}, minmax(84px, auto))` }}>
             {CAL_DAY_LABELS.map((d, i) => (
@@ -1187,7 +1187,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
   function getWorkRowError(row) {
     if (row.type && (parseInt(row.h) || 0) === 0 && (parseInt(row.m) || 0) === 0) {
-      return '業務時間を入力してください'
+      return '業務時間を入力'
     }
     return null
   }
@@ -1221,15 +1221,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       const s = sessions[si]
       const pfx = sessions.length > 1 ? `${si + 1}回目：` : ''
       if (s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)) errs.push(`${pfx}出勤「時」が不正です（0〜23）`)
-      if (s.inM !== '' && parseInt(s.inM) > 59) errs.push(`${pfx}出勤「分」は0〜59で入力してください`)
+      if (s.inM !== '' && parseInt(s.inM) > 59) errs.push(`${pfx}出勤「分」は0〜59`)
       if (s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)) errs.push(`${pfx}退勤「時」が不正です（0〜23）`)
-      if (s.outM !== '' && parseInt(s.outM) > 59) errs.push(`${pfx}退勤「分」は0〜59で入力してください`)
+      if (s.outM !== '' && parseInt(s.outM) > 59) errs.push(`${pfx}退勤「分」は0〜59`)
       // an hour without minutes (or the other way round) would silently delete the punch
       if ((s.inH !== '') !== (s.inM !== '')) errs.push(`${pfx}出勤の${s.inH !== '' ? '分' : '時'}が空欄です`)
       if ((s.outH !== '') !== (s.outM !== '')) errs.push(`${pfx}退勤の${s.outH !== '' ? '分' : '時'}が空欄です`)
       const isNew = !s.origInTime && !s.origOutTime
       const inT = hmToTimeStr(s.inH, s.inM), outT = hmToTimeStr(s.outH, s.outM)
-      if (isNew && !inT && outT) errs.push(`${pfx}出勤時刻を入力してください`)
+      if (isNew && !inT && outT) errs.push(`${pfx}出勤時刻を入力`)
       const aIn = absMin(inT, false), aOut = absMin(outT, s.outNext)
       if (aIn != null && aOut != null && aOut < aIn) {
         errs.push(`${pfx}退勤が出勤より前になっています（0時を過ぎてからの退勤なら「翌日」にチェックしてください）`)
@@ -1242,7 +1242,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         const aS = absMin(start, breakIsNext(b.sNext, start, inT, s.outNext)), aE = absMin(end, breakIsNext(b.eNext, end, inT, s.outNext))
         if ((b.sH !== '') !== (b.sM !== '') || (b.eH !== '') !== (b.eM !== '')) errs.push(`${bp}時と分の片方が空欄です`)
         else if ((b.sH !== '' && !start) || (b.eH !== '' && !end)) errs.push(`${bp}時刻が正しくありません`)
-        else if (!start && end) errs.push(`${bp}開始時刻を入力してください`)
+        else if (!start && end) errs.push(`${bp}開始時刻を入力`)
         else if (aS != null && aE != null && aE < aS) errs.push(`${bp}終了が開始より前になっています`)
         else if (aS != null && aIn != null && aS < aIn) errs.push(`${bp}出勤より前になっています`)
         else if (aOut != null && ((aE != null && aE > aOut) || (aS != null && aS > aOut))) errs.push(`${bp}退勤より後になっています`)
@@ -1257,11 +1257,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         for (let ri = 0; ri < rows.length; ri++) {
           const r = rows[ri]
           const rpfx = `${sessionPfx}${ri + 1}行目：`
-          if (r.h !== '' && r.h !== 0 && isNaN(parseInt(r.h))) errs.push(`${rpfx}時間に数値を入力してください`)
+          if (r.h !== '' && r.h !== 0 && isNaN(parseInt(r.h))) errs.push(`${rpfx}時間に数値を入力`)
           const mv = parseInt(r.m)
-          if (r.m !== '' && r.m !== 0 && !isNaN(mv) && (mv < 0 || mv > 59)) errs.push(`${rpfx}分は0〜59で入力してください`)
-          if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${rpfx}業務種別を選択してください`)
-          if (r.type && (parseInt(r.h) || 0) === 0 && (parseInt(r.m) || 0) === 0) errs.push(`${rpfx}業務時間を入力してください`)
+          if (r.m !== '' && r.m !== 0 && !isNaN(mv) && (mv < 0 || mv > 59)) errs.push(`${rpfx}分は0〜59`)
+          if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${rpfx}業務種別を選択`)
+          if (r.type && (parseInt(r.h) || 0) === 0 && (parseInt(r.m) || 0) === 0) errs.push(`${rpfx}業務時間を入力`)
           if (r.type) {
             if (typesSeen.has(r.type)) errs.push(`${sessionPfx}：「${itemLabel(r.type)}」が複数行に登録されています`)
             typesSeen.add(r.type)
@@ -1402,7 +1402,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       onSaved()
     } catch (err) {
       setSaving(false)
-      setValidationErrors(['保存に失敗しました。もう一度お試しください。'])
+      setValidationErrors(['保存できません。再度実行してください'])
       setStep('form')
     }
   }
@@ -1421,7 +1421,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       if (!isSalaried) { try { await saveWorkReport(user.id, dateStr, {}) } catch {} }
       onSaved()
     } catch {
-      alert('削除できませんでした。通信を確認して、もう一度お試しください。')
+      alert('削除できません。通信を確認して再度実行してください')
     }
   }
 
@@ -1546,7 +1546,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               {sessions.length === 0 ? (
                 <div className={styles.dayEditEmptyState}>
                   <span className={styles.dayEditEmptyIcon}>🕐</span>
-                  <div className={styles.dayEditEmptyText}>打刻記録はありません</div>
+                  <div className={styles.dayEditEmptyText}>打刻記録なし</div>
                   <button className={styles.dayEditAddPrimaryBtn} onClick={addSession}>＋ 打刻を追加</button>
                 </div>
               ) : (
@@ -1591,7 +1591,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                           )}
                           {!isSalaried && inTime && (
                             !workItemsLoaded ? (
-                              <div className={styles.dayEditSectionLoading}>読込中...</div>
+                              <div className={styles.dayEditSectionLoading}>読み込み中</div>
                             ) : (
                               <>
                                 <div className={styles.dayEditWorkRows}>
@@ -1645,7 +1645,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                 </div>
                                 <div className={styles.dayEditWorkFooter}>
                                   {hasMoreSessionTypes && (
-                                    <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 別の業務を追加</button>
+                                    <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 業務を追加</button>
                                   )}
                                   <div className={styles.dayEditSessionTotal}>
                                     <span>今回の合計</span>
@@ -1768,7 +1768,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             </div>
             <div className={styles.modalBody}>
               {!hasChanges ? (
-                <div className={styles.confirmNoChanges}>変更内容はありません</div>
+                <div className={styles.confirmNoChanges}>変更なし</div>
               ) : (
                 <p className={styles.confirmInfoNote}>この日の勤務記録を更新します</p>
               )}
@@ -1836,7 +1836,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               <div className={styles.dayEditFooterBtns}>
                 <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻って修正</button>
                 {hasChanges
-                  ? <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中...' : 'この内容で保存'}</button>
+                  ? <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中' : '保存'}</button>
                   : <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>
                 }
               </div>
@@ -1854,7 +1854,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.confirmRow}><span>対象従業員</span><strong>{user.name}</strong></div>
                 <div className={styles.confirmRow}><span>削除する日付</span><strong>{dateLabel}</strong></div>
               </div>
-              <p className={styles.confirmWarn}>この日の打刻と業務時間をすべて削除します。この操作は元に戻せません。削除してよろしいですか？</p>
+              <p className={styles.confirmWarn}>この日の打刻と業務時間をすべて削除します。元に戻せません。</p>
             </div>
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻る</button>
@@ -1873,14 +1873,14 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           return (
             <>
               <div className={styles.modalHeader}>
-                <div className={styles.modalHeaderTitle}>この打刻を削除しますか？</div>
+                <div className={styles.modalHeaderTitle}>打刻を削除</div>
               </div>
               <div className={styles.modalBody}>
                 <p className={styles.confirmPunchTimeInfo}>出勤 {inLabel} → 退勤 {outLabel}</p>
                 <p className={styles.confirmWarn}>
                   {hasWorkInSession
                     ? '業務時間も登録されています。打刻と業務時間の両方を削除します。'
-                    : '削除すると元に戻せません。'}
+                    : '元に戻せません。'}
                 </p>
               </div>
               <div className={styles.modalFooter}>
@@ -1943,7 +1943,7 @@ function KinmuboTab({ today }) {
         setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates))
         setPreviewLoading(false)
       })
-      .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めませんでした。通信を確認して、月を切り替えるかページを開き直してください。') } })
+      .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めません。通信を確認し、再読み込みしてください') } })
     return () => { cancelled = true }
   }, [selectedYM])
 
@@ -2272,7 +2272,7 @@ function KinmuboTab({ today }) {
         {/* Page header */}
         <div className={styles.kinmuboPageHeader}>
           <h2 className={styles.kinmuboPageTitle}>出勤簿作成</h2>
-          <p className={styles.kinmuboPageDesc}>対象月の勤務実績と給与を確認し、Excel形式で出力できます。</p>
+          <p className={styles.kinmuboPageDesc}>勤務実績・給与の確認とExcel出力</p>
           {loadError && <div className={styles.confirmClearedWarn} style={{ marginTop: 8 }}>{loadError}</div>}
         </div>
 
@@ -2296,7 +2296,7 @@ function KinmuboTab({ today }) {
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            {exporting ? '出力中…' : 'Excelを出力'}
+            {exporting ? '出力中' : 'Excelを出力'}
           </button>
         </div>
 
@@ -2321,7 +2321,7 @@ function KinmuboTab({ today }) {
         )}
 
         {/* Loading */}
-        {previewLoading && <div className={styles.kinmuboLoading}>読み込み中…</div>}
+        {previewLoading && <div className={styles.kinmuboLoading}>読み込み中</div>}
 
         {/* Empty */}
         {!previewLoading && preview && !hasData && (
@@ -2385,7 +2385,7 @@ function KinmuboTab({ today }) {
             </div>
 
             {filteredPreview.length === 0 && (
-              <div className={styles.kinmuboEmpty}>該当する従業員がいません。</div>
+              <div className={styles.kinmuboEmpty}>該当なし</div>
             )}
 
             {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
@@ -2726,7 +2726,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
   const isFiltering = !!searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
   const countLabel = isFiltering
     ? `${users.length}名中 ${filtered.length}名を表示`
-    : `登録ユーザー ${users.length}名`
+    : `登録従業員 ${users.length}名`
 
   return (
     <div className={styles.calContent}>
@@ -2735,14 +2735,14 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
         {/* Page header */}
         <div className={styles.usersPageHeader}>
           <div>
-            <h2 className={styles.kinmuboPageTitle}>ユーザー管理</h2>
-            <p className={styles.kinmuboPageDesc}>従業員情報、PINコード、担当業務、時給を管理します。</p>
+            <h2 className={styles.kinmuboPageTitle}>従業員管理</h2>
+            <p className={styles.kinmuboPageDesc}>従業員・PIN・業務・時給の管理</p>
           </div>
           <button className={styles.kinmuboExportBtn} onClick={() => setAdding(true)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            ユーザーを追加
+            従業員を追加
           </button>
         </div>
 
@@ -2751,12 +2751,12 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
           <input
             type="text"
             className={styles.kinmuboSearch}
-            placeholder="氏名・ユーザーIDで検索"
+            placeholder="氏名・従業員IDで検索"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
           <div className={styles.usersStatusFilter}>
-            {[['all','すべて'],['in','出勤中'],['out','出勤していない']].map(([v,l]) => (
+            {[['all','すべて'],['in','出勤中'],['out','未出勤']].map(([v,l]) => (
               <button
                 key={v}
                 className={[styles.usersFilterBtn, statusFilter === v ? styles.usersFilterBtnActive : ''].join(' ')}
@@ -2779,15 +2779,15 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
         {/* User table */}
         <div className={styles.usersTableCard}>
           {users.length === 0 ? (
-            <div className={styles.kinmuboEmpty}>登録されているユーザーはいません。</div>
+            <div className={styles.kinmuboEmpty}>従業員が登録されていません</div>
           ) : filtered.length === 0 ? (
-            <div className={styles.kinmuboEmpty}>該当するユーザーがいません。</div>
+            <div className={styles.kinmuboEmpty}>該当なし</div>
           ) : (
             <table className={styles.usersTable}>
               <thead>
                 <tr>
                   <th className={styles.usersTh}>氏名</th>
-                  <th className={styles.usersTh}>ユーザーID</th>
+                  <th className={styles.usersTh}>従業員ID</th>
                   <th className={styles.usersTh}>本日の状態</th>
                   <th className={styles.usersTh} style={{width:90}}>操作</th>
                 </tr>
@@ -2814,7 +2814,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
                       </td>
                       <td className={styles.usersTd}>
                         <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                          {isIn ? '出勤中' : '出勤していない'}
+                          {isIn ? '出勤中' : '未出勤'}
                         </span>
                       </td>
                       <td className={styles.usersTd}>
@@ -2843,14 +2843,14 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
       {qrUser && (
         <div className={styles.modalOverlay} onClick={() => setQrUser(null)}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
-            <h3>ユーザーを追加しました</h3>
+            <h3>従業員を追加しました</h3>
             <p className={styles.modalLabel}>{qrUser.name}</p>
             <p className={styles.modalLabel} style={{ fontSize: '0.82rem', color: 'var(--color-subtext)' }}>{qrUser.id}</p>
             <div className={styles.qrCenter}>
               <QRImage value={qrUser.id} size={200} />
             </div>
             <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={() => { window.print() }}>🖨 印刷</button>
+              <button className={styles.saveBtn} onClick={() => { window.print() }}>印刷</button>
               <button className={styles.cancelBtn} onClick={() => setQrUser(null)}>閉じる</button>
             </div>
           </div>
@@ -2948,8 +2948,8 @@ function AddUserModal({ onClose, onAdded }) {
 
   async function handleAdd() {
     if (!addId.trim() || !addName.trim() || saving) return
-    if (/[\/?#%\s]/.test(addId.trim())) { alert('ユーザーIDに、空白と / ? # % は使えません'); return }
-    if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
+    if (/[\/?#%\s]/.test(addId.trim())) { alert('従業員IDに、空白と / ? # % は使えません'); return }
+    if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
     if (employeeType !== 'salaried' && workItems.length === 0 &&
       !window.confirm('担当する業務が1つも選ばれていません。退勤画面に業務が出ません。\nこのまま追加しますか？')) return
     setSaving(true)
@@ -2979,7 +2979,7 @@ function AddUserModal({ onClose, onAdded }) {
       onAdded(newUser)
     } catch(e) {
       alert(e?.status === 409
-        ? `ユーザーID「${addId.trim()}」はすでに使われています。別のIDにしてください（既存の人は変更していません）。`
+        ? `従業員ID「${addId.trim()}」はすでに使われています。別のIDにしてください（既存の人は変更していません）。`
         : '追加に失敗しました: ' + (e?.message || e))
       setSaving(false)
     }
@@ -2992,8 +2992,8 @@ function AddUserModal({ onClose, onAdded }) {
       <div className={styles.userEditModal} onClick={e => e.stopPropagation()}>
         <div className={styles.userEditHeader}>
           <div>
-            <div className={styles.userEditTitle}>ユーザーを追加</div>
-            <div className={styles.userEditSubtitle}>ユーザーIDと氏名を入力してください</div>
+            <div className={styles.userEditTitle}>従業員を追加</div>
+            <div className={styles.userEditSubtitle}>従業員IDと氏名を入力</div>
           </div>
           <button className={styles.userEditClose} onClick={onClose} aria-label="閉じる">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -3022,7 +3022,7 @@ function AddUserModal({ onClose, onAdded }) {
               </div>
               <div />
               <div>
-                <label className={styles.userEditLabel}>ユーザーID <span className={styles.userEditRequired}>必須</span></label>
+                <label className={styles.userEditLabel}>従業員ID <span className={styles.userEditRequired}>必須</span></label>
                 <input
                   className={styles.userEditInput}
                   placeholder="例: USER011"
@@ -3054,7 +3054,7 @@ function AddUserModal({ onClose, onAdded }) {
                 />
                 {pinError
                   ? <div className={styles.userEditErrMsg}>{pinError}</div>
-                  : <div className={styles.userEditHintText}>4桁の数字。未設定の場合はPINで打刻できません。</div>
+                  : <div className={styles.userEditHintText}>4桁の数字（未設定はPIN打刻不可）</div>
                 }
               </div>
             </div>
@@ -3174,7 +3174,7 @@ function AddUserModal({ onClose, onAdded }) {
           <div className={styles.userEditFooterBtns}>
             <button className={styles.userEditCancelBtn} onClick={onClose}>キャンセル</button>
             <button className={styles.userEditSaveBtn} onClick={handleAdd} disabled={!canSave || saving}>
-              {saving ? '追加中…' : 'ユーザーを追加'}
+              {saving ? '追加中' : '従業員を追加'}
             </button>
           </div>
         </div>
@@ -3211,7 +3211,7 @@ function MinWageSettings({ onUsersChanged }) {
   }, [])
 
   async function removeEntry(e) {
-    if (!window.confirm(`${fmtJaDate(e.from)}からの最低賃金 ${Number(e.wage).toLocaleString()}円 を削除します。\nその日以降の準備時間の計算が前の金額に戻ります。よろしいですか？\n（担当者の時給は自動では戻りません）`)) return
+    if (!window.confirm(`${fmtJaDate(e.from)}からの最低賃金 ${Number(e.wage).toLocaleString()}円 を削除します。\nその日以降の準備時間の計算が前の金額に戻ります。\n（担当者の時給は自動では戻りません）`)) return
     try {
       const next = history.filter(x => x.from !== e.from)
       await saveMinWageHistory(next)
@@ -3233,8 +3233,8 @@ function MinWageSettings({ onUsersChanged }) {
 
   async function preview() {
     const wage = Number(wageStr)
-    if (!(wage > 0)) { setErr('新しい最低賃金を入力してください'); return }
-    if (!from) { setErr('適用開始日を入力してください'); return }
+    if (!(wage > 0)) { setErr('新しい最低賃金を入力'); return }
+    if (!from) { setErr('適用開始日を入力'); return }
     if ((history || []).some(e => e.from === from)) { setErr(`${fmtJaDate(from)}の最低賃金はすでに登録されています`); return }
     setErr('')
     const users = await getUsers()
@@ -3278,8 +3278,8 @@ function MinWageSettings({ onUsersChanged }) {
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>
         準備時間の計算と、下で選んだ業務の時給に使います。変更すると、選んだ業務で時給が新しい最低賃金より低い人だけ、適用開始日から新しい時給になります。
       </div>
-      {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めませんでした。通信を確認して、ページを開き直してください（このまま変更はできません）。</div>}
-      {history === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読込中…</div>) : (
+      {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めません。通信を確認し、再読み込みしてください（変更不可）</div>}
+      {history === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読み込み中</div>) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
           {sorted.map((e, i) => {
             const isFuture = !!(e.from && e.from > today)
@@ -3333,7 +3333,7 @@ function MinWageSettings({ onUsersChanged }) {
             <p className={styles.modalLabel}>{fmtJaDate(plan.from)}から {minWageForDate(history, plan.from).toLocaleString()}円 → <strong>{plan.wage.toLocaleString()}円</strong></p>
             {plan.from < today && <p className={styles.confirmWarn}>過去の日付です。{fmtJaDate(plan.from)}以降の給与計算も新しい金額になります。</p>}
             {plan.rows.length === 0 ? (
-              <p className={styles.modalLabel}>時給を変更する人はいません（連動する業務の時給がすべて新しい最低賃金以上です）。</p>
+              <p className={styles.modalLabel}>変更対象なし（連動業務の時給はすべて新しい最低賃金以上）</p>
             ) : (
               <div style={{ maxHeight: '45vh', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 10 }}>
                 {plan.rows.map((r, k) => (
@@ -3353,7 +3353,7 @@ function MinWageSettings({ onUsersChanged }) {
             {plan.higher > 0 && <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>新しい最低賃金以上の時給 {plan.higher}件は変更しません。</p>}
             <div className={styles.modalActions}>
               <button className={styles.cancelBtn} onClick={() => setPlan(null)} disabled={busy}>キャンセル</button>
-              <button className={styles.saveBtn} onClick={apply} disabled={busy}>{busy ? '保存中…' : 'この内容で変更する'}</button>
+              <button className={styles.saveBtn} onClick={apply} disabled={busy}>{busy ? '保存中' : '変更'}</button>
             </div>
           </div>
         </div>
@@ -3394,10 +3394,10 @@ function CarRateSettings() {
 
   function add() {
     const rate = Number(rateStr)
-    if (!from) { setErr('適用開始日を入力してください'); return }
-    if (!(rate > 0)) { setErr('単価を入力してください'); return }
+    if (!from) { setErr('適用開始日を入力'); return }
+    if (!(rate > 0)) { setErr('単価を入力'); return }
     if ((rates || []).some(e => e.from === from)) { setErr(`${fmtJaDate(from)}の単価はすでに登録されています`); return }
-    if (from < today && !window.confirm(`${fmtJaDate(from)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい単価で計算されます。よろしいですか？`)) return
+    if (from < today && !window.confirm(`${fmtJaDate(from)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい単価で計算されます。`)) return
     persist([...(rates || []), { from, rate }], `${fmtJaDate(from)}から ${rate}円/km を適用します`)
     setRateStr('')
   }
@@ -3407,8 +3407,8 @@ function CarRateSettings() {
     <div>
       <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>車通勤の交通費単価</div>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>車通勤の従業員の交通費は「通勤距離 × 単価」で計算します。単価を変えると、適用開始日以降の分だけが新しい単価になります。</div>
-      {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めませんでした。通信を確認して、ページを開き直してください（このまま変更はできません）。</div>}
-      {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読込中…</div>) : (
+      {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めません。通信を確認し、再読み込みしてください（変更不可）</div>}
+      {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読み込み中</div>) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
           {sorted.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>まだ登録されていません</div>}
           {sorted.map((e, i) => {
@@ -3420,7 +3420,7 @@ function CarRateSettings() {
                 <strong style={{ color: '#1a3f6f' }}>{Number(e.rate).toLocaleString()}円/km</strong>
                 <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{status}</span>
                 {e.from && (
-                  <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価 ${e.rate}円/km を削除します。\nその日以降の車の交通費が前の単価で計算されます。よろしいですか？`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
+                  <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価 ${e.rate}円/km を削除します。\nその日以降の車の交通費が前の単価で計算されます。`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
                     style={{ border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 8, padding: '4px 10px', fontWeight: 700, cursor: 'pointer' }}>削除</button>
                 )}
               </div>
@@ -3459,7 +3459,7 @@ function SettingsTab({ users, onUsersChanged }) {
   const [error, setError] = useState('')
 
   async function handleSave() {
-    if (newPin.length !== 4) { setError('4桁のPINを入力してください'); return }
+    if (newPin.length !== 4) { setError('4桁のPINを入力'); return }
     if (newPin !== confirmPin) { setError('PINが一致しません'); setConfirmPin(''); return }
     try {
       await saveAdminPin(newPin)
@@ -3637,7 +3637,7 @@ function PcWorkTimeInputModal({ item, workTimes, workingMinutes, onSetTime, onCl
 
   function handleMChange(e) {
     const raw = toHalf(e.target.value).replace(/\D/g, '')
-    if (raw !== '' && parseInt(raw) > 59) { setError('分は0〜59で入力してください'); return }
+    if (raw !== '' && parseInt(raw) > 59) { setError('分は0〜59'); return }
     setM(raw)
     setError('')
   }
@@ -3982,7 +3982,7 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
           <div className={styles.userEditHintText}>
             {todayRate > 0
               ? `1日の交通費 ＝ 片道 × 2 × 単価${todayRate}円 ＝ ${Math.round(dist * todayRate).toLocaleString()}円（単価は「設定」で変更できます）`
-              : '車通勤の単価が未設定です。「設定」で登録してください'}
+              : '車通勤の単価が未設定です。「設定」で登録'}
           </div>
           {legacyKm > 0 && !(Number(distance) > 0) && (
             <div className={styles.userEditHintText} style={{ color: '#b45309' }}>
@@ -4149,14 +4149,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     if (!addRateForm) return
     const { item, date, normalStr, showMultiplierInput, customMultiplierStr } = addRateForm
     if (!normalStr) return
-    if (!date) { alert('適用開始日を入力してください'); return }
+    if (!date) { alert('適用開始日を入力'); return }
     const existing = rateHistory[item] || []
     if (existing.some(e => e.from === date)) {
       alert(`${fmtJaDate(date)}の時給はすでに登録されています。表の「削除」で消してから、入れ直してください。`)
       return
     }
     if (date < getTodayJst() &&
-      !window.confirm(`${fmtJaDate(date)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい時給になります。よろしいですか？`)) return
+      !window.confirm(`${fmtJaDate(date)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい時給になります。`)) return
     const normalVal = Number(normalStr)
     const inherited = getInheritedEntry(item, date)
     const inheritedMult = inherited && inherited.normal && inherited.sunday
@@ -4175,16 +4175,16 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   }
 
   function deleteRateHistoryEntry(item, entryFrom) {
-    if (!entryFrom) { alert('一番最初の時給は削除できません（変更するには新しい時給を追加してください）'); return }
+    if (!entryFrom) { alert('最初の時給は削除不可（変更は新しい時給を追加）'); return }
     const todayStr = getTodayJst()
     if (entryFrom <= todayStr &&
-      !window.confirm(`${fmtJaDate(entryFrom)}からの時給を削除します。\nその日以降の給与計算（出勤簿）が前の時給に戻ります。よろしいですか？\n（「変更を保存」を押すまで確定しません）`)) return
+      !window.confirm(`${fmtJaDate(entryFrom)}からの時給を削除します。\nその日以降の給与計算（出勤簿）が前の時給に戻ります。\n（「変更を保存」を押すまで確定しません）`)) return
     setRateHistory(prev => ({ ...prev, [item]: (prev[item] || []).filter(e => e.from !== entryFrom) }))
   }
 
   async function handleSaveAll() {
     if (!name.trim()) return
-    if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字を入力してください'); return }
+    if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
     setSaving(true)
     setPinError('')
     setUserIdError('')
@@ -4249,14 +4249,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       <div className={styles.userEditModal} onClick={e => e.stopPropagation()} style={{maxWidth: 480}}>
         <div className={styles.userEditHeader}>
           <div>
-            <div className={styles.userEditTitle}>ユーザー削除の確認</div>
+            <div className={styles.userEditTitle}>従業員削除の確認</div>
             <div className={styles.userEditSubtitle}>{user.name}（{user.id}）</div>
           </div>
           <button className={styles.userEditClose} onClick={() => setStep('main')} aria-label="閉じる"><XIcon /></button>
         </div>
         <div className={styles.userEditBody}>
           <p className={styles.confirmWarn}>
-            このユーザーと全ての打刻記録を完全に削除します。<br />この操作は元に戻せません。
+            この従業員と全ての打刻記録を完全に削除します。<br />元に戻せません。
           </p>
         </div>
         <div className={styles.userEditFooter}>
@@ -4282,12 +4282,12 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
         </div>
         <div className={styles.userEditBody}>
           <p className={styles.confirmMsg}>
-            <span className={styles.oldTime}>{isIn ? '出勤中' : '出勤していない'}</span>
+            <span className={styles.oldTime}>{isIn ? '出勤中' : '未出勤'}</span>
             {' → '}
-            <span className={styles.newTime}>{isIn ? '出勤していない' : '出勤中'}</span>
+            <span className={styles.newTime}>{isIn ? '未出勤' : '出勤中'}</span>
             {' に変更します'}
           </p>
-          <p className={styles.confirmWarn}>この操作は元に戻せません</p>
+          <p className={styles.confirmWarn}>元に戻せません</p>
         </div>
         <div className={styles.userEditFooter}>
           <div />
@@ -4345,14 +4345,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                 />
               </div>
               <div>
-                <label className={styles.userEditLabel}>ユーザーID <span className={styles.userEditRequired}>必須</span></label>
+                <label className={styles.userEditLabel}>従業員ID <span className={styles.userEditRequired}>必須</span></label>
                 <input
                   className={styles.userEditInput}
                   value={newUserId}
                   readOnly
                   style={{ background: '#f1f5f9', color: '#64748b' }}
                 />
-                <div className={styles.userEditHintText}>IDは変更できません（QRコードと打刻記録がIDでつながっているため）。</div>
+                <div className={styles.userEditHintText}>IDは変更不可（QR・打刻記録と紐づくため）</div>
               </div>
               <div>
                 <label className={styles.userEditLabel}>PINコード</label>
@@ -4377,7 +4377,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                 )}
                 {pinError
                   ? <div className={styles.userEditErrMsg}>{pinError}</div>
-                  : <div className={styles.userEditHintText}>4桁の数字。未設定の場合はPINで打刻できません。</div>
+                  : <div className={styles.userEditHintText}>4桁の数字（未設定はPIN打刻不可）</div>
                 }
               </div>
             </div>
@@ -4514,7 +4514,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                       if (!b.from) return -1
                       return b.from.localeCompare(a.from)
                     })
-                    if (sorted.length === 0) return <p className={styles.rateHistoryEmpty}>時給の登録がありません。「新しい時給を追加」から登録してください。</p>
+                    if (sorted.length === 0) return <p className={styles.rateHistoryEmpty}>時給が未登録です。「新しい時給を追加」から登録</p>
                     const todayStr = getTodayJst()
                     // Current: first in descending order where from <= today, or from is null
                     const currentIdx = sorted.findIndex(e => !e.from || e.from <= todayStr)
@@ -4648,7 +4648,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                             )}
                             <div className={styles.addRateFormActions}>
                               <button className={styles.cancelBtn} onClick={() => setAddRateForm(null)}>キャンセル</button>
-                              <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.normalStr}>この内容で時給を変更</button>
+                              <button className={styles.saveBtn} onClick={commitAddRate} disabled={!addRateForm.normalStr}>時給を変更</button>
                             </div>
                           </>
                         )
@@ -4670,7 +4670,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             <div className={styles.userEditSectionTitle}>本日の出勤状態</div>
             <div className={styles.userEditStatusRow}>
               <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                {isIn ? '出勤中' : '出勤していない'}
+                {isIn ? '出勤中' : '未出勤'}
               </span>
               <button className={styles.userEditStatusChangeBtn} onClick={() => setStep('confirmStatus')}>
                 {isIn ? '退勤にする' : '出勤中にする'}
@@ -4692,7 +4692,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             {dangerOpen && (
               <div className={styles.userEditDangerBody}>
                 <button className={styles.deleteTriggerBtn} onClick={() => setStep('confirmDelete')}>
-                  このユーザーを削除する
+                  この従業員を削除する
                 </button>
               </div>
             )}
@@ -4712,7 +4712,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
               onClick={handleSaveAll}
               disabled={!name.trim() || saving || !isDirty}
             >
-              {saving ? '保存中…' : '変更を保存'}
+              {saving ? '保存中' : '変更を保存'}
             </button>
           </div>
         </div>

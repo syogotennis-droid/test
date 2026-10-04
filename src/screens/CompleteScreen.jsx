@@ -68,7 +68,7 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
       </div>
 
       {logType === '休憩開始' && (
-        <div className={styles.nextHint}>戻ったら「休憩・戻り」を押してください</div>
+        <div className={styles.nextHint}>戻ったら「休憩・戻り」を押す</div>
       )}
 
       {workEntries.length > 0 && (
@@ -89,7 +89,7 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
       )}
 
       <div className={styles.countdown}>
-        <span>まもなく戻ります...</span>
+        <span>まもなく戻ります</span>
       </div>
     </div>
   )
