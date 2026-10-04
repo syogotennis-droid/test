@@ -28,7 +28,7 @@ function AdminRoute() {
     const onAuthRequired = () => {
       try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
       setUnlocked(false)
-      setError('ログインの有効期限が切れました。もう一度PINを入力。')
+      setError('ログインの有効期限が切れました。PINを再入力してください。')
     }
     window.addEventListener('auth-required', onAuthRequired)
     return () => window.removeEventListener('auth-required', onAuthRequired)

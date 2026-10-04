@@ -19,7 +19,7 @@ function groupsOf(defs) {
 }
 
 function nameError(name, defs, selfId) {
-  if (!name) return '氏名を入力'
+  if (!name) return '名前を入力'
   if (name.length > MAX_NAME) return `名前は${MAX_NAME}文字以内にしてください`
   if (SYSTEM_ITEMS.has(name)) return `「${name}」は計算用の項目のため使えません`
   const same = defs.find(d => d.id !== selfId && d.name === name)
@@ -45,7 +45,7 @@ function ItemForm({ title, initial, defs, onSave, onClose, onRestore }) {
     const e = nameError(trimmed, defs, initial?.id)
     if (e) { setErr(e); return }
     const g = group === NEW_GROUP ? newGroup.trim() : group
-    if (group === NEW_GROUP && !g) { setErr('新しいグループの氏名を入力'); return }
+    if (group === NEW_GROUP && !g) { setErr('グループ名を入力'); return }
     if (g && SYSTEM_ITEMS.has(g)) { setErr(`「${g}」はグループ名に使えません`); return }
     setBusy(true)
     try { await onSave({ name: trimmed, group: g || undefined, variant: g ? (variant.trim() || undefined) : undefined }) }
@@ -146,7 +146,7 @@ function RenameGroup({ group, defs, onSave, onClose }) {
   const [busy, setBusy] = useState(false)
   async function submit() {
     const n = name.trim()
-    if (!n) { setErr('氏名を入力'); return }
+    if (!n) { setErr('名前を入力'); return }
     if (SYSTEM_ITEMS.has(n)) { setErr(`「${n}」はグループ名に使えません`); return }
     if (n !== group && groupsOf(defs).includes(n)) { setErr('同じ名前のグループがあります'); return }
     setBusy(true)
