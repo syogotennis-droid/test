@@ -2409,7 +2409,7 @@ function KinmuboTab({ today }) {
                         </>
                       )}
                       <span className={styles.kinmuboAccordionSep}> ｜ </span>
-                      <span className={styles.kinmuboAccordionTime}>申告時間合計：{fmtMins(totalWorkMins)}</span>
+                      <span className={styles.kinmuboAccordionTime}>申告時間合計：{fmtMins(totalWorkMins) || "0分"}</span>
                     </span>
                     {inconsistentDates?.length > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>打刻要確認 {inconsistentDates.length}件</span>

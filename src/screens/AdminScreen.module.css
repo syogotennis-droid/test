@@ -2201,7 +2201,11 @@
   font-size: 0.875rem;
   color: #6b7280;
   margin: 0;
+  text-align: left;
 }
+
+/* 区切りの「｜」は折り返すと行末に残るので出さない（項目は隙間で区切る） */
+.kinmuboAccordionSep { display: none; }
 
 /* Operation card */
 .kinmuboOpCard {
