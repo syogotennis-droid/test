@@ -82,31 +82,35 @@ function fmtMinutes(mins) {
   return h > 0 ? `${h}時間${m}分` : `${m}分`
 }
 
-const TIME_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
+const TIME_KEYS = ['1','2','3','4','5','6','7','8','9','C','0','⌫']
+
+// Hours/minutes keypad. Right after a box is chosen, the first digit replaces what is there
+// (1時間 → press 2 → 2時間, not 12時間). C clears the box; out-of-range digits show the limit.
+function useTimeKeypad(h0, m0) {
+  const [hStr, setHStr] = useState(h0 > 0 ? String(h0) : '')
+  const [mStr, setMStr] = useState(m0 > 0 ? String(m0) : '')
+  const [focus, setFocusRaw] = useState('h')
+  const [fresh, setFresh] = useState(true)
+  const [hint, setHint] = useState('')
+  const setFocus = f => { setFocusRaw(f); setFresh(true); setHint('') }
+  const reset = (h, m) => { setHStr(h > 0 ? String(h) : ''); setMStr(m > 0 ? String(m) : ''); setFocus('h') }
+  function pressKey(k) {
+    const cur = focus === 'h' ? hStr : mStr, set = focus === 'h' ? setHStr : setMStr, max = focus === 'h' ? 23 : 59
+    setHint('')
+    if (k === '⌫') { set(cur.slice(0, -1)); setFresh(false); return }
+    if (k === 'C') { set(''); setFresh(false); return }
+    if (k === '') return
+    const next = fresh ? k : cur + k
+    if (parseInt(next) > max) { setHint(focus === 'h' ? '時間は23まで' : '分は59まで'); return }
+    set(next.replace(/^0+(?=\d)/, ''))
+    setFresh(false)
+  }
+  return { hStr, mStr, focus, setFocus, pressKey, hint, reset }
+}
 
 function TimeInputModal({ item, workTimes, onSetTime, onClose }) {
   const initial = workTimes[item] || { h: 0, m: 0 }
-  const [hStr, setHStr] = useState(initial.h > 0 ? String(initial.h) : '')
-  const [mStr, setMStr] = useState(initial.m > 0 ? String(initial.m) : '')
-  const [focus, setFocus] = useState('h')
-
-  function pressKey(k) {
-    if (k === '⌫') {
-      if (focus === 'h') setHStr(s => s.slice(0, -1))
-      else setMStr(s => s.slice(0, -1))
-      return
-    }
-    if (k === '') return
-    if (focus === 'h') {
-      const next = hStr + k
-      if (parseInt(next) > 23) return
-      setHStr(next)
-    } else {
-      const next = mStr + k
-      if (parseInt(next) > 59) return
-      setMStr(next)
-    }
-  }
+  const { hStr, mStr, focus, setFocus, pressKey, hint } = useTimeKeypad(initial.h, initial.m)
 
   function handleOk() {
     onSetTime(item, 'h', parseInt(hStr) || 0)
@@ -135,13 +139,14 @@ function TimeInputModal({ item, workTimes, onSetTime, onClose }) {
             <span className={styles.timeDisplayUnit}>分</span>
           </button>
         </div>
+        <div className={styles.timeHint}>{hint}</div>
         <div className={styles.timeNumGrid}>
           {TIME_KEYS.map((k, i) => (
             <button
               key={i}
-              className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
+              className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === 'C' ? styles.timeNumClear : ''].join(' ')}
               onClick={() => pressKey(k)}
-              disabled={k === ''}
+              aria-label={k === 'C' ? 'クリア' : k === '⌫' ? '1文字消す' : undefined}
             >{k}</button>
           ))}
         </div>
@@ -153,9 +158,7 @@ function TimeInputModal({ item, workTimes, onSetTime, onClose }) {
 
 function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onClose }) {
   const [editing, setEditing] = useState(null)
-  const [hStr, setHStr] = useState('')
-  const [mStr, setMStr] = useState('')
-  const [focus, setFocus] = useState('h')
+  const { hStr, mStr, focus, setFocus, pressKey, hint, reset } = useTimeKeypad(0, 0)
 
   function commitCurrent() {
     if (editing) {
@@ -168,27 +171,7 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
     commitCurrent()
     const t = workTimes[m] || { h: 0, m: 0 }
     setEditing(m)
-    setHStr(t.h > 0 ? String(t.h) : '')
-    setMStr(t.m > 0 ? String(t.m) : '')
-    setFocus('h')
-  }
-
-  function pressKey(k) {
-    if (k === '⌫') {
-      if (focus === 'h') setHStr(s => s.slice(0, -1))
-      else setMStr(s => s.slice(0, -1))
-      return
-    }
-    if (k === '') return
-    if (focus === 'h') {
-      const next = hStr + k
-      if (parseInt(next) > 23) return
-      setHStr(next)
-    } else {
-      const next = mStr + k
-      if (parseInt(next) > 59) return
-      setMStr(next)
-    }
+    reset(t.h, t.m)
   }
 
   return (
@@ -240,13 +223,14 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
                   <span className={styles.timeDisplayUnit}>分</span>
                 </button>
               </div>
+              <div className={styles.timeHint}>{hint}</div>
               <div className={styles.timeNumGrid}>
                 {TIME_KEYS.map((k, i) => (
                   <button
                     key={i}
-                    className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === '' ? styles.timeNumEmpty : ''].join(' ')}
+                    className={[styles.timeNumKey, k === '⌫' ? styles.timeNumDel : k === 'C' ? styles.timeNumClear : ''].join(' ')}
                     onClick={() => pressKey(k)}
-                    disabled={k === ''}
+                    aria-label={k === 'C' ? 'クリア' : k === '⌫' ? '1文字消す' : undefined}
                   >{k}</button>
                 ))}
               </div>
@@ -372,6 +356,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
   const displayH = Math.floor(totalInputMinutes / 60)
   const displayM = totalInputMinutes % 60
 
+  const [saveError, setSaveError] = useState('')
   async function handleConfirm() {
     if (saving) return
     const workItemsObj = {}
@@ -380,10 +365,13 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
       workItemsObj[id] = t.h * 60 + t.m
     })
     setSaving(true)
+    setSaveError('')
     try {
       await onComplete(workItemsObj, ctx.asksTransport ? { transportEligible } : {})
     } catch (e) {
       console.error(e)
+      // keep what was entered; tell why it was not registered
+      setSaveError(e?.message && /[ぁ-んァ-ヶ一-龥]/.test(e.message) ? e.message : '退勤を登録できませんでした。入力内容は残っています。通信を確認して、もう一度押してください')
       setSaving(false)
     }
   }
@@ -446,7 +434,14 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
                 {activeMember && (
                   <button
                     className={styles.clearBtn}
-                    onClick={e => { e.stopPropagation(); members.forEach(m => { setWorkTimes(prev => { const copy = { ...prev }; delete copy[m]; return copy }) }) }}
+                    aria-label={`${key}の入力をすべて消す`}
+                    onClick={e => {
+                      e.stopPropagation()
+                      const entered = members.filter(m => isActive(m))
+                      // more than one entry in this group → say what will be cleared
+                      if (entered.length > 1 && !window.confirm(`${key}の入力（${entered.map(m => variantLabel(m)).join('・')}）をすべて消しますか？`)) return
+                      setWorkTimes(prev => { const copy = { ...prev }; members.forEach(m => { delete copy[m] }); return copy })
+                    }}
                   >×</button>
                 )}
                 <div className={styles.workCardInner}>
@@ -474,6 +469,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
           <span className={styles.totalUnit}>分</span>
         </div>
 
+        {saveError && <div className={styles.saveError} role="alert">{saveError}</div>}
         {displayCards.length === 0 && (
           <div className={styles.skipHint}>業務が未設定です。そのまま退勤できます（管理者に連絡）</div>
         )}

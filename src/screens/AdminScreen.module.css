@@ -5249,3 +5249,22 @@
 .rateHistoryBtn { border: none; background: none; padding: 4px 6px; color: #1d4ed8; font-weight: 600; }
 .rateHistoryBtn:hover { background: #eff6ff; border-radius: 6px; }
 .rateHistoryBtn:disabled { border: none; background: none; color: #94a3b8; }
+
+/* 記録一覧：従業員の検索 */
+.userSearchInput { margin: 2px 12px 0; width: 260px; max-width: calc(100% - 24px); height: 34px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.88rem; background: #fff; box-sizing: border-box; }
+.userSearchInput:focus { outline: none; border-color: #2563eb; }
+
+/* タブレット幅：メニューはアイコンの下に短い名前を出す（アイコンだけだと分かりにくい） */
+@media (max-width: 1100px) {
+  .sidebar { width: 84px; }
+  .sidebarItem, .sidebarBackBtn {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 2px;
+    min-height: 56px;
+    font-size: 10.5px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .sidebarHeader { font-size: 0; }
+}

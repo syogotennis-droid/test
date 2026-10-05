@@ -163,13 +163,10 @@ export default function TabletApp() {
   }
 
   async function handleWorkComplete(workItems, options) {
-    try {
-      setCompletedInfo(await finishClockOut(workCtx, workItems, options))
-      setWorkCtx(null)
-      setState(STATE.COMPLETE)
-    } catch (e) {
-      setNetworkError('退勤を保存できません。接続を確認してください')
-    }
+    // a failure is shown on the work input screen (which keeps what was entered)
+    setCompletedInfo(await finishClockOut(workCtx, workItems, options))
+    setWorkCtx(null)
+    setState(STATE.COMPLETE)
   }
 
   function handleDone() {

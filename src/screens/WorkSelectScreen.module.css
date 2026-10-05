@@ -616,3 +616,18 @@
 }
 
 .backButton:disabled { opacity: 0.4; cursor: default; }
+
+.saveError {
+  flex-shrink: 0;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.timeNumClear { color: #475569; background: #f1f5f9; }
+.timeHint { min-height: 1.2em; text-align: center; color: #b45309; font-size: 0.9rem; font-weight: 700; }

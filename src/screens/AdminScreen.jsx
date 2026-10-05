@@ -478,30 +478,34 @@ function CalendarTab({ users, today, isTablet }) {
     if (users.length > 0 && !selectedUser) setSelectedUser(users[0])
   }, [users])
 
-  useEffect(() => {
+  // Each load is tagged; an answer for a person or month that is no longer selected is dropped,
+  // so the calendar never shows someone else's records under the selected name.
+  const loadSeq = React.useRef(0)
+  const [calLoadError, setCalLoadError] = useState('')
+  const [userQuery, setUserQuery] = useState('')
+  function loadMonth({ clear }) {
     if (!selectedUser) return
-    setLoading(true)
+    const seq = ++loadSeq.current
+    if (clear) { setLogs([]); setSessionWorkStatus({}); setLoading(true) }
+    setCalLoadError('')
     const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
     const lastDay = new Date(year, month + 1, 0).getDate()
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
       getSessionWorkStatusForUserRange(selectedUser.id, from, to)
-    ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [selectedUser, year, month])
-
-  function refreshLogs() {
-    if (!selectedUser) return
-    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
-    const lastDay = new Date(year, month + 1, 0).getDate()
-    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([
-      getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
-      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
-    ]).then(([data, workStatus]) => { setLogs(data); setSessionWorkStatus(workStatus) })
-      .catch(() => {})
+    ]).then(([data, workStatus]) => {
+      if (seq !== loadSeq.current) return
+      setLogs(data); setSessionWorkStatus(workStatus); setLoading(false)
+    }).catch(() => {
+      if (seq !== loadSeq.current) return
+      setLogs([]); setSessionWorkStatus({}); setLoading(false)
+      setCalLoadError('記録を読み込めませんでした。通信を確認して「再読み込み」を押してください')
+    })
   }
+  useEffect(() => { loadMonth({ clear: true }) }, [selectedUser, year, month])
+
+  function refreshLogs() { loadMonth({ clear: false }) }
 
   const days = getCalendarDays(year, month)
   const weekCount = days.length / 7
@@ -528,8 +532,9 @@ function CalendarTab({ users, today, isTablet }) {
       {/* 職員選択 */}
       <div className={styles.calSection}>
         <div className={styles.calSectionLabel}>従業員を選択</div>
+        <input className={styles.userSearchInput} value={userQuery} onChange={e => setUserQuery(e.target.value)} placeholder="氏名・IDで検索" aria-label="従業員を検索" />
         <div className={styles.userTabsWrap}>
-          {users.map(u => (
+          {users.filter(u => !userQuery.trim() || u.name.includes(userQuery.trim()) || u.id.toLowerCase().includes(userQuery.trim().toLowerCase()) || u.id === selectedUser?.id).map(u => (
             <button key={u.id} className={[styles.userTab, selectedUser?.id === u.id ? styles.activeUserTab : ''].join(' ')} onClick={() => setSelectedUser(u)}>
               {u.name}
             </button>
@@ -549,6 +554,11 @@ function CalendarTab({ users, today, isTablet }) {
 
         {loading ? (
           <div className={styles.empty}>読み込み中</div>
+        ) : calLoadError ? (
+          <div className={styles.empty}>
+            <div style={{ color: '#b91c1c', fontWeight: 700, marginBottom: 10 }}>{calLoadError}</div>
+            <button className={styles.navBtn} onClick={() => loadMonth({ clear: true })}>再読み込み</button>
+          </div>
         ) : (
           <div className={styles.calGrid} style={{ gridTemplateRows: `auto repeat(${weekCount}, minmax(84px, auto))` }}>
             {CAL_DAY_LABELS.map((d, i) => (
@@ -1334,6 +1344,21 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     return { logsToDelete, logsToUpdate, logsToCreate, cleared }
   }
 
+  // closing with unsaved edits asks first (✕, outside tap, キャンセル)
+  function requestClose() {
+    if (!saving) {
+      let dirty = false
+      try {
+        // same test as the save button: something would actually be saved
+        const d = computeLogDiff()
+        dirty = d.logsToDelete.length > 0 || d.logsToUpdate.length > 0 || d.logsToCreate.length > 0 ||
+          (workItemsLoaded && !isSalaried && hasWorkDataChanged()) || transportChanged
+      } catch { dirty = true }
+      if (dirty && !window.confirm('入力した内容を破棄して閉じますか？')) return
+    }
+    onClose()
+  }
+
   function hasWorkDataChanged() {
     const initial = initialWorkRowsSnapshot.current
     for (const s of sessions) {
@@ -1354,9 +1379,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     return false
   }
 
+  const errorsRef = React.useRef(null)
   function handleTryConfirm() {
     const errs = validate()
-    if (errs.length > 0) { setValidationErrors(errs); return }
+    if (errs.length > 0) {
+      setValidationErrors(errs)
+      // the list is below the sessions: bring it into view
+      setTimeout(() => errorsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+      return
+    }
     setValidationErrors([])
     const { logsToDelete, logsToUpdate, logsToCreate, cleared } = computeLogDiff()
     const logChanged = logsToDelete.length > 0 || logsToUpdate.length > 0 || logsToCreate.length > 0
@@ -1525,7 +1556,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const isEmpty = sessions.length === 0 && !hasLegacyData
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} onClick={requestClose}>
       <div className={isEmpty ? styles.modalDayEditCompact : styles.modalLg} onClick={e => e.stopPropagation()}>
         {step === 'form' && (
           <>
@@ -1534,7 +1565,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.modalHeaderTitle}>勤務記録の編集</div>
                 <div className={styles.modalHeaderSub}>{dateLabel} ・ {user.name}</div>
               </div>
-              <button className={styles.modalCloseBtn} onClick={onClose} tabIndex={-1}>✕</button>
+              <button className={styles.modalCloseBtn} onClick={requestClose} tabIndex={-1}>✕</button>
             </div>
 
             <div className={styles.modalBody}>
@@ -1686,7 +1717,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               )}
 
               {validationErrors.length > 0 && (
-                <div className={styles.dayEditErrors}>
+                <div className={styles.dayEditErrors} ref={errorsRef} role="alert">
                   {validationErrors.map((e, i) => <div key={i} className={styles.dayEditErrorItem}>⚠ {e}</div>)}
                 </div>
               )}
@@ -1741,7 +1772,13 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     || (workItemsLoaded && !isSalaried && hasWorkDataChanged()) || transportChanged
                   return (
                     <>
-                      <button className={styles.cancelBtn} onClick={onClose}>キャンセル</button>
+                      {validationErrors.length > 0 && (
+                        <button type="button" onClick={() => errorsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                          style={{ background: 'none', border: 'none', color: '#b91c1c', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', marginRight: 'auto' }}>
+                          入力エラー {validationErrors.length}件
+                        </button>
+                      )}
+                      <button className={styles.cancelBtn} onClick={requestClose}>キャンセル</button>
                       <button
                         className={styles.saveBtn}
                         onClick={handleTryConfirm}
@@ -1901,8 +1938,10 @@ function KinmuboTab({ today }) {
   const [preview, setPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [salariedSaveMsg, setSalariedSaveMsg] = useState('')
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [onlyIssues, setOnlyIssues] = useState(false)
   const [salariedDayEdits, setSalariedDayEdits] = useState({})
   const [salariedDaysData, setSalariedDaysData] = useState({})
 
@@ -2125,7 +2164,15 @@ function KinmuboTab({ today }) {
       const transportDays = getCommute(user).asks || rows.some(r => r.parentType === '交通費') ? transportDates.length : null
       // days with a clock-in that has no clock-out (also when another shift of that day is complete)
       const incompleteDays = Object.values(byDate).filter(e => e.sessions.some(se => se.inLog && !se.outLog)).length
-      return { user, workingDays, attendanceDays, transportDays, incompleteDays, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
+      // finished shifts with no work entered (per shift; a day without shift ids counts once if it has no entry at all)
+      const hasMins = o => Object.values(o || {}).some(m => m > 0)
+      const noWorkSessions = Object.values(byDate).reduce((n, e) => {
+        const done = e.sessions.filter(se => se.inLog && se.outLog)
+        if (done.length === 0) return n
+        if (done.every(se => !se.outLog.session_id && !se.inLog.session_id)) return n + (hasMins(e.workReportItems) ? 0 : 1)
+        return n + done.filter(se => !hasMins(se.perSessionWork) && !hasMins(e.workReportItems)).length
+      }, 0)
+      return { user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
     })
   }
 
@@ -2159,7 +2206,13 @@ function KinmuboTab({ today }) {
     }
     setSalariedDayEdits(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
     setSalariedDaysData(prev => ({ ...prev, [key]: { ...prev[key], userId, date: ds, [field]: value } }))
-    try { await saveSalariedDay(userId, ds, { breakMins: merged.breakMins, overtimeMins: merged.overtimeMins }) } catch {}
+    setSalariedSaveMsg('保存中')
+    try {
+      await saveSalariedDay(userId, ds, { breakMins: merged.breakMins, overtimeMins: merged.overtimeMins })
+      setSalariedSaveMsg('保存しました')
+    } catch {
+      setSalariedSaveMsg('保存できませんでした。通信を確認して、もう一度入力してください')
+    }
   }
 
   async function handleCreate() {
@@ -2239,7 +2292,8 @@ function KinmuboTab({ today }) {
 
   const [displayY, displayM] = selectedYM.split('-').map(Number)
   const hasData = preview && preview.length > 0
-  const filteredPreview = preview ? preview.filter(p => p.user.name.includes(searchQuery)) : []
+  const hasIssue = p => p.incompleteDays > 0 || p.noWorkSessions > 0 || (p.inconsistentDates?.length || 0) > 0
+  const filteredPreview = preview ? preview.filter(p => p.user.name.includes(searchQuery) && (!onlyIssues || hasIssue(p))) : []
   const totalEmployees = preview ? preview.length : 0
   const totalWorkingDays = preview ? preview.reduce((s, p) => s + p.attendanceDays, 0) : 0
   const totalSalary = preview ? preview.reduce((s, p) => s + p.totalPay, 0) : 0
@@ -2270,6 +2324,7 @@ function KinmuboTab({ today }) {
           <h2 className={styles.kinmuboPageTitle}>出勤簿作成</h2>
           <p className={styles.kinmuboPageDesc}>勤務実績・給与の確認とExcel出力</p>
           {loadError && <div className={styles.confirmClearedWarn} style={{ marginTop: 8 }}>{loadError}</div>}
+          {salariedSaveMsg && <div role="status" style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 50, padding: '10px 16px', borderRadius: 8, fontWeight: 700, fontSize: '0.9rem', background: salariedSaveMsg.startsWith('保存できません') ? '#fef2f2' : '#f0fdf4', color: salariedSaveMsg.startsWith('保存できません') ? '#b91c1c' : '#166534', border: '1px solid ' + (salariedSaveMsg.startsWith('保存できません') ? '#fca5a5' : '#bbf7d0') }}>社員の休憩・残業：{salariedSaveMsg}</div>}
         </div>
 
         {/* Operation card */}
@@ -2370,6 +2425,9 @@ function KinmuboTab({ today }) {
                 onChange={e => setSearchQuery(e.target.value)}
               />
               <div className={styles.kinmuboExpandBtns}>
+                <label className={styles.kinmuboExpandBtn} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={onlyIssues} onChange={e => setOnlyIssues(e.target.checked)} />要確認のみ
+                </label>
                 <button className={styles.kinmuboExpandBtn} onClick={() => {
                   setExpandedIds(prev => new Set([...prev, ...filteredPreview.map(p => p.user.id)]))
                 }}>すべて展開</button>
@@ -2384,7 +2442,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当なし</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
+            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -2412,6 +2470,9 @@ function KinmuboTab({ today }) {
                     )}
                     {incompleteDays > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>打刻未完了 {incompleteDays}日</span>
+                    )}
+                    {!isSalariedUser && noWorkSessions > 0 && (
+                      <span className={styles.kinmuboAccordionWarn}>業務未入力 {noWorkSessions}回</span>
                     )}
                     {!isSalariedUser && <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>}
                     <svg
@@ -2695,9 +2756,15 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
 
   useEffect(() => { loadStatuses() }, [])
 
+  // null = still loading, 'error' = could not load (never shown as 未出勤 until known)
+  const [statusState, setStatusState] = useState(null)
   async function loadStatuses() {
-    const s = await getTodayStatuses()
-    setStatuses(s)
+    try {
+      const s = await getTodayStatuses()
+      setStatuses(s); setStatusState('ok')
+    } catch {
+      setStatusState(prev => (prev === 'ok' ? 'ok' : 'error'))
+    }
   }
 
   async function handleModalSaved() {
@@ -2810,7 +2877,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
                       </td>
                       <td className={styles.usersTd}>
                         <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>
-                          {isIn ? '出勤中' : '未出勤'}
+                          {statusState === null ? '確認中' : statusState === 'error' ? '確認できません' : isIn ? '出勤中' : '未出勤'}
                         </span>
                       </td>
                       <td className={styles.usersTd}>
