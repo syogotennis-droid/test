@@ -89,6 +89,8 @@ async function main() {
     // Cloudflare (commute method, etc.) survive a second run; Firebase's values win otherwise.
     // null values are dropped: in a JSON merge patch a null would delete the key on the Cloudflare side
     const clean = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined))
+    // an empty PIN on Firebase must not wipe the PIN kept on Cloudflare (the pin column keeps it too)
+    if (clean.pin === '') delete clean.pin
     sql.push(`INSERT INTO users (id, pin, data) VALUES (${q(id)}, ${q(clean.pin || '')}, ${json(clean)}) ` +
       `ON CONFLICT(id) DO UPDATE SET pin = CASE WHEN excluded.pin != '' THEN excluded.pin ELSE users.pin END, ` +
       `data = json_patch(users.data, excluded.data);`)

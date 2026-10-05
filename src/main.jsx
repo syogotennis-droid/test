@@ -34,6 +34,28 @@ function AdminRoute() {
     return () => window.removeEventListener('auth-required', onAuthRequired)
   }, [])
   useEffect(() => { if (!unlocked) setTimeout(() => inputRef.current?.focus(), 50) }, [unlocked])
+  // While the admin screen is open: any operation extends the login; 30 minutes without
+  // operation asks for the PIN again (checked every 30 seconds, not only when the page loads)
+  useEffect(() => {
+    if (!unlocked) return
+    let last = 0
+    const extend = () => {
+      const now = Date.now()
+      if (now - last < 10000) return
+      last = now
+      try { if (isSessionValid()) localStorage.setItem(ADMIN_SESSION_KEY, String(now + ADMIN_SESSION_DURATION)) } catch {}
+    }
+    const check = () => {
+      if (isSessionValid()) return
+      try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+      setUnlocked(false)
+      setError('しばらく操作がなかったため、ログアウトしました。PINを再入力してください。')
+    }
+    const events = ['pointerdown', 'keydown', 'wheel', 'touchstart']
+    events.forEach(ev => window.addEventListener(ev, extend, { passive: true }))
+    const t = setInterval(check, 30000)
+    return () => { events.forEach(ev => window.removeEventListener(ev, extend)); clearInterval(t) }
+  }, [unlocked])
 
   function unlock() {
     try { localStorage.setItem(ADMIN_SESSION_KEY, String(Date.now() + ADMIN_SESSION_DURATION)) } catch {}

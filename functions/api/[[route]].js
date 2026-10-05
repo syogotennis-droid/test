@@ -22,8 +22,20 @@ export async function onRequest(context) {
   async function readBody() {
     try { return await request.json() } catch { throw new HttpError('bad_request', 400) }
   }
-  const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
-  const isTime = v => typeof v === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(v)
+  // a real calendar date (no 2026-02-30) / a real time of day (no 24:00, 25:99, :60)
+  const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v
+  const isTime = v => {
+    const m = typeof v === 'string' && v.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/)
+    return !!m && +m[1] < 24 && +m[2] < 60 && (m[3] === undefined || +m[3] < 60)
+  }
+  // a device (punch tablet) may change work input only for this month and last month (JST)
+  const tooOldForDevice = (date, role) => {
+    if (role !== 'device') return false
+    const [y, mo] = todayStr().split('-').map(Number)
+    const from = new Date(Date.UTC(y, mo - 2, 1)).toISOString().slice(0, 10)
+    return date < from
+  }
+  const userExists = async id => !!(await DB.prepare('SELECT 1 AS x FROM users WHERE id = ?').bind(id).first())
   const needStr = (v, what) => { if (typeof v !== 'string' || !v) throw new HttpError('bad_' + what, 400); return v }
   function ok(data) {
     return new Response(JSON.stringify(data), {
@@ -193,8 +205,24 @@ export async function onRequest(context) {
       if (!LOG_TYPES.has(b.log_type)) return fail('invalid log_type', 400)
       needStr(b.user_id, 'user_id')
       if (!isDate(b.date) || !isTime(b.time) || Number.isNaN(Date.parse(b.timestamp))) throw new HttpError('bad_datetime', 400)
-      if (!(await DB.prepare('SELECT 1 AS x FROM users WHERE id = ?').bind(b.user_id).first())) throw new HttpError('unknown_user', 400)
+      // the date/time must describe the same moment as the timestamp (JST), give or take 2 minutes
+      if (Math.abs(Date.parse(jstIso(b.date, b.time)) - Date.parse(b.timestamp)) > 2 * 60 * 1000) throw new HttpError('bad_datetime', 400)
+      if (!(await userExists(b.user_id))) throw new HttpError('unknown_user', 400)
       const id = typeof b.id === 'string' && b.id ? b.id : crypto.randomUUID()
+      // a resend of a punch that is already stored is fine (same id)
+      if (await DB.prepare('SELECT 1 AS x FROM logs WHERE id = ?').bind(id).first()) return ok({ id, sessionId: b.session_id })
+      // no second clock-in while a shift of that day is still open, and no second clock-out of one shift
+      if (b.log_type === '出勤') {
+        const open = await DB.prepare(
+          "SELECT 1 AS x FROM logs i WHERE i.user_id = ? AND i.date = ? AND i.log_type = '出勤' AND i.session_id IS NOT NULL " +
+          "AND NOT EXISTS (SELECT 1 FROM logs o WHERE o.user_id = i.user_id AND o.session_id = i.session_id AND o.log_type = '退勤')"
+        ).bind(b.user_id, b.date).first()
+        if (open) throw new HttpError('already_working', 409)
+      }
+      if (b.log_type === '退勤' && b.session_id) {
+        const done = await DB.prepare("SELECT 1 AS x FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '退勤'").bind(b.user_id, b.session_id).first()
+        if (done) throw new HttpError('already_out', 409)
+      }
       await DB.prepare(
         'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)'
       ).bind(
@@ -283,9 +311,18 @@ export async function onRequest(context) {
       const b = await readBody()
       needStr(b.userId, 'userId')
       if (!isDate(b.date)) throw new HttpError('bad_date', 400)
+      if (tooOldForDevice(b.date, role)) throw new HttpError('too_old', 422)
+      if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
+      const items = cleanItems(b.items)
+      // same protection as session_work_reports: an older queued entry must not overwrite a later admin fix
+      const at = typeof b.clientTs === 'string' && !Number.isNaN(Date.parse(b.clientTs)) ? b.clientTs : null
+      if (at) {
+        const cur = await DB.prepare('SELECT updated_at FROM work_reports WHERE id = ?').bind(`${b.userId}_${b.date}`).first()
+        if (cur?.updated_at && cur.updated_at > at) return ok({ ok: true, skipped: true })
+      }
       await DB.prepare(
         'INSERT OR REPLACE INTO work_reports (id, user_id, date, items, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(`${b.userId}_${b.date}`, b.userId, b.date, JSON.stringify(cleanItems(b.items)), new Date().toISOString()).run()
+      ).bind(`${b.userId}_${b.date}`, b.userId, b.date, JSON.stringify(items), at || new Date().toISOString()).run()
       return ok({ ok: true })
     }
 
@@ -387,6 +424,8 @@ export async function onRequest(context) {
       const b = await readBody()
       needStr(b.userId, 'userId'); needStr(b.sessionId, 'sessionId')
       if (!isDate(b.date)) throw new HttpError('bad_date', 400)
+      if (tooOldForDevice(b.date, role)) throw new HttpError('too_old', 422)
+      if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
       const id = `${b.userId}_${b.date}_${b.sessionId}`
       const filtered = cleanItems(b.items)
       // A tablet that was offline sends what the employee entered at clientTs. If an admin
@@ -492,12 +531,17 @@ export async function onRequest(context) {
           copiedDays++
           for (const { slot, items } of d.slots) {
             // never replace what is already there for this day
-            stmts.push(DB.prepare('INSERT OR IGNORE INTO weekly_copies (id, user_id, date, slot, items, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-              .bind(`${userId}_${target}_${slot}`, userId, target, slot, JSON.stringify(items), now))
+            // only if the answer stored for the week is "use" (another tablet may have answered "skip" a moment earlier)
+            stmts.push(DB.prepare(
+              'INSERT OR IGNORE INTO weekly_copies (id, user_id, date, slot, items, updated_at) SELECT ?, ?, ?, ?, ?, ? ' +
+              "WHERE EXISTS (SELECT 1 FROM weekly_copy_answers WHERE id = ? AND answer = 'use')"
+            ).bind(`${userId}_${target}_${slot}`, userId, target, slot, JSON.stringify(items), now, `${userId}_${weekStart}`))
           }
         }
       }
       await DB.batch(stmts)
+      const stored = await DB.prepare('SELECT answer, created_at FROM weekly_copy_answers WHERE id = ?').bind(`${userId}_${weekStart}`).first()
+      if (stored && (stored.answer !== answer || stored.created_at !== now)) return ok({ ok: true, already: true, copiedDays: 0 })
       return ok({ ok: true, copiedDays })
     }
     if (route === 'weekly_copies' && method === 'GET') {

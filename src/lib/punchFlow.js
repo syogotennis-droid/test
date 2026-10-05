@@ -37,7 +37,16 @@ async function endBreak(user, ps) {
 
 // mode: '出勤' | '退勤' | '休憩'
 // → { kind: 'error', message } | { kind: 'complete', info } | { kind: 'work', ctx }
-export async function handlePunch(mode, user) {
+// One punch at a time on this device: a second tap that arrives while the first is still
+// being saved sees its result (e.g. already working) instead of making a second clock-in.
+let punchQueue = Promise.resolve()
+export function handlePunch(mode, user) {
+  const run = punchQueue.then(() => handlePunchNow(mode, user)).catch(e => fail(e?.message || '記録できません。再度実行してください'))
+  punchQueue = run.catch(() => {})
+  return run
+}
+
+async function handlePunchNow(mode, user) {
   const ps = await getTodayPunchState(user.id)
 
   if (mode === '出勤') {
@@ -101,7 +110,13 @@ export async function answerWeeklyCopyAtClockOut(ctx, answer) {
   return { copiedDays: r.copiedDays || 0, prefill }
 }
 
-export async function finishClockOut(ctx, workItems, { transportEligible } = {}) {
+export function finishClockOut(ctx, workItems, opts = {}) {
+  // the same clock-out screen saves only once, even if this is called twice
+  if (!ctx.finishing) ctx.finishing = finishClockOutNow(ctx, workItems, opts).catch(e => { ctx.finishing = null; throw e })
+  return ctx.finishing
+}
+
+async function finishClockOutNow(ctx, workItems, { transportEligible } = {}) {
   const userId = ctx.user.id
   if (ctx.onBreak) await saveLog({ userId, logType: BREAK_END, sessionId: ctx.sessionId, date: ctx.date })
   await saveLog({ userId, logType: '退勤', sessionId: ctx.sessionId, date: ctx.date })

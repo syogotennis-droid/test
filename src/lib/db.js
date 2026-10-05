@@ -105,7 +105,7 @@ function readJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
 }
 function writeJSON(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+  try { localStorage.setItem(key, JSON.stringify(value)); return true } catch { return false }
 }
 
 function notifyOutbox() {
@@ -116,7 +116,11 @@ function enqueue(item) {
   // a newer upsert of the same record replaces an unsent older one
   const box = readJSON(OUTBOX_KEY, []).filter(x => !(item.key && x.key === item.key))
   box.push(item)
-  writeJSON(OUTBOX_KEY, box)
+  if (!writeJSON(OUTBOX_KEY, box)) {
+    // storage full: drop the rebuildable caches and try once more; never pretend an unsaved punch was saved
+    try { localStorage.removeItem(TODAY_LOGS_CACHE_KEY) } catch {}
+    if (!writeJSON(OUTBOX_KEY, box)) throw new Error('端末の保存容量が不足しているため記録できません。管理者に連絡してください')
+  }
   notifyOutbox()
 }
 
@@ -598,7 +602,7 @@ export async function getClockInTimeForDate(userId, date) {
 export async function saveWorkReport(userId, dateStr, items) {
   const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
   const key = `wr:${userId}_${dateStr}`
-  enqueue({ qid: crypto.randomUUID(), key, path: '/work_reports', method: 'PUT', body: { userId, date: dateStr, items: filtered } })
+  enqueue({ qid: crypto.randomUUID(), key, path: '/work_reports', method: 'PUT', body: { userId, date: dateStr, items: filtered, clientTs: new Date().toISOString() } })
   await flushOutbox()
 }
 
@@ -776,7 +780,8 @@ export function ratePeriods(rateObj, monthStart, monthEnd) {
   const sorted = [...history].filter(e => !e.from || e.from <= monthEnd).sort(byFrom)
   if (sorted.length === 0) return [{ fromDate: monthStart, toDate: monthEnd, ...cur }]
   const baseCandidates = sorted.filter(e => !e.from || e.from <= monthStart)
-  const base = baseCandidates.length > 0 ? baseCandidates[baseCandidates.length - 1] : sorted[0]
+  // no entry on or before the month start → the item's own rates (same as getRatesForDate)
+  const base = baseCandidates.length > 0 ? baseCandidates[baseCandidates.length - 1] : cur
   const periods = []
   let curFrom = monthStart, curNormal = Number(base?.normal) || 0, curSunday = Number(base?.sunday) || 0
   for (const e of sorted.filter(e => e.from && e.from > monthStart)) {
@@ -1790,8 +1795,9 @@ function withCachedValues(sheetData) {
     const m = part.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/)
     if (!m) return total
     const [, c1, r1, c2 = m[1], r2 = m[2]] = m
+    const colName = n => { let t = ''; while (n > 0) { t = String.fromCharCode(65 + (n - 1) % 26) + t; n = Math.floor((n - 1) / 26) } return t }
     for (let c = colNum(c1); c <= colNum(c2); c++) {
-      const col = [...Array(26)].map((_, i) => String.fromCharCode(65 + i))[c - 1]
+      const col = colName(c)
       for (let r = Number(r1); r <= Number(r2); r++) total += val(col + r)
     }
     return total

@@ -2123,8 +2123,8 @@ function KinmuboTab({ today }) {
       const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
       const transportDays = getCommute(user).asks || rows.some(r => r.parentType === '交通費') ? transportDates.length : null
-      // days with a clock-in but no clock-out (not counted as 出勤日数)
-      const incompleteDays = Object.values(byDate).filter(e => e.sessions.some(se => se.inLog && !se.outLog) && !e.sessions.some(se => se.inLog && se.outLog)).length
+      // days with a clock-in that has no clock-out (also when another shift of that day is complete)
+      const incompleteDays = Object.values(byDate).filter(e => e.sessions.some(se => se.inLog && !se.outLog)).length
       return { user, workingDays, attendanceDays, transportDays, incompleteDays, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
     })
   }
