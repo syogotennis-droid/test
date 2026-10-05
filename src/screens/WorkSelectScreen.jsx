@@ -210,7 +210,7 @@ function SubPickerModal({ groupKey, members, workTimes, onSetTime, onClear, onCl
                   >
                     <span>{variantLabel(m)}</span>
                     {active && <span className={styles.subPickerTime}>{fmtMinutes(t.h * 60 + t.m)}</span>}
-                    {!active && <span className={styles.subPickerHint}>タップ</span>}
+                    
                   </button>
                   {active && !isEditing && (
                     <button className={styles.subPickerClear} onClick={() => onClear(m)}>×</button>

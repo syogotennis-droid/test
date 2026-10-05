@@ -107,11 +107,8 @@ function AdminRoute() {
         </div>
 
         {/* Title */}
-        <div style={{ fontWeight: 800, fontSize: '1.4rem', color: '#111827', marginBottom: 5 }}>
-          管理画面ログイン
-        </div>
-        <div style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 24 }}>
-          管理用PINを入力
+        <div style={{ fontWeight: 800, fontSize: '1.4rem', color: '#111827', marginBottom: 24 }}>
+          管理者ログイン
         </div>
 
         {/* Label */}
@@ -119,7 +116,7 @@ function AdminRoute() {
           htmlFor="admin-pin-input"
           style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#374151', marginBottom: 6 }}
         >
-          管理用PIN
+          PIN
         </label>
 
         {/* Input + eye toggle */}
@@ -138,7 +135,7 @@ function AdminRoute() {
               if (e.key === 'Enter') { e.preventDefault(); handleSubmit() }
               else if (e.key === 'Escape') { e.preventDefault(); setPin(''); setError('') }
             }}
-            placeholder="4桁のPINを入力"
+            placeholder="4桁"
             style={{
               width: '100%', boxSizing: 'border-box',
               height: 50,

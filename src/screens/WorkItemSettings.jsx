@@ -10,6 +10,7 @@ import styles from './AdminScreen.module.css'
 const NEW_GROUP = '__new__'
 const MAX_NAME = 20
 
+const linkBtn = { height: 32, padding: '0 8px', border: 'none', borderRadius: 6, background: 'none', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }
 const btn = { height: 36, minWidth: 36, padding: '0 10px', border: '1.5px solid #dde4ec', borderRadius: 8, background: '#fff', color: '#1a3f6f', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }
 const inputStyle = { height: 44, width: '100%', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1rem', padding: '0 10px', background: '#f8fafc', color: '#1a3f6f', boxSizing: 'border-box', fontFamily: 'inherit' }
 const labelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: '#555', fontWeight: 700 }
@@ -261,8 +262,8 @@ export default function WorkItemSettings({ users }) {
             </div>
             <button style={{ ...btn, opacity: i === 0 ? 0.3 : 1 }} disabled={i === 0 || moving} onClick={() => move(d.id, -1)} aria-label="上へ">↑</button>
             <button style={{ ...btn, opacity: i === active.length - 1 ? 0.3 : 1 }} disabled={i === active.length - 1 || moving} onClick={() => move(d.id, 1)} aria-label="下へ">↓</button>
-            <button style={btn} onClick={() => setForm({ mode: 'edit', def: d })}>編集</button>
-            <button style={{ ...btn, color: '#d93025' }} onClick={() => setDeleting(d)}>削除</button>
+            <button style={{ ...linkBtn, color: '#1d4ed8' }} onClick={() => setForm({ mode: 'edit', def: d })}>編集</button>
+            <button style={{ ...linkBtn, color: '#d93025' }} onClick={() => setDeleting(d)}>削除</button>
           </div>
         ))}
       </div>

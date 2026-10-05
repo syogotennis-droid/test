@@ -5210,3 +5210,42 @@
 
 /* 勤務回が多い日でも確認画面のカードをつぶさない */
 .confirmSessionCard { flex-shrink: 0; }
+
+/* ── 見た目の統一（追加ボタン・削除リンク・通勤方法・時給履歴ボタン） ── */
+/* 「＋ 〇〇を追加」はすべて同じ形：左寄せ・控えめな枠・青文字 */
+.dayEditBreakAdd,
+.dayEditAddWorkBtn,
+.dayEditAddOutlineBtn,
+.addRateHistoryBtn {
+  align-self: flex-start;
+  width: auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dayEditBreakAdd:hover,
+.dayEditAddWorkBtn:hover,
+.dayEditAddOutlineBtn:hover,
+.addRateHistoryBtn:hover { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+
+/* まとめて削除するリンクは左下に小さく */
+.deleteTriggerBtn { width: auto; text-align: left; font-size: 0.82rem; padding: 4px 0; }
+
+/* 通勤方法は「種別」と同じ切り替えの形にする */
+.commuteToggle { flex-wrap: nowrap; gap: 0; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
+.commuteBtn { flex: 1; min-height: 36px; border: none; border-radius: 0; border-left: 1px solid #e2e8f0; font-size: 0.88rem; font-weight: 500; color: #64748b; }
+.commuteBtn:first-child { border-left: none; }
+.commuteBtnActive { background: #1a3f6f; color: #fff; font-weight: 700; }
+
+/* 業務ごとの時給履歴ボタンは文字リンクにして、行ごとの枠の繰り返しをなくす */
+.rateHistoryBtn { border: none; background: none; padding: 4px 6px; color: #1d4ed8; font-weight: 600; }
+.rateHistoryBtn:hover { background: #eff6ff; border-radius: 6px; }
+.rateHistoryBtn:disabled { border: none; background: none; color: #94a3b8; }

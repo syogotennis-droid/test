@@ -1545,7 +1545,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               {/* ── Per-session cards ── */}
               {sessions.length === 0 ? (
                 <div className={styles.dayEditEmptyState}>
-                  <span className={styles.dayEditEmptyIcon}>🕐</span>
+                  
                   <div className={styles.dayEditEmptyText}>打刻記録なし</div>
                   <button className={styles.dayEditAddPrimaryBtn} onClick={addSession}>＋ 打刻を追加</button>
                 </div>
@@ -3475,13 +3475,13 @@ function SettingsTab({ users, onUsersChanged }) {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px' }}>
-    <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* PIN変更 */}
-      <div style={{ maxWidth: 400 }}>
-        <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 16 }}>管理者PIN変更</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>新しいPIN（4桁）</div>
+      <section style={SETTINGS_CARD}>
+        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1a3f6f', marginBottom: 14 }}>管理者PIN変更</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={SETTINGS_LABEL}>新しいPIN（4桁）</span>
             <input
               type="password"
               inputMode="numeric"
@@ -3489,11 +3489,11 @@ function SettingsTab({ users, onUsersChanged }) {
               value={newPin}
               onChange={e => { setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }}
               autoComplete="new-password"
-              style={{ height: 52, width: '100%', boxSizing: 'border-box', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.4rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f' }}
+              style={SETTINGS_PIN_INPUT}
             />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.88rem', color: '#555', fontWeight: 700, marginBottom: 6 }}>確認（もう一度）</div>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={SETTINGS_LABEL}>確認（もう一度）</span>
             <input
               type="password"
               inputMode="numeric"
@@ -3501,31 +3501,35 @@ function SettingsTab({ users, onUsersChanged }) {
               value={confirmPin}
               onChange={e => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }}
               autoComplete="new-password"
-              style={{ height: 52, width: '100%', boxSizing: 'border-box', border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1.4rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 12px', background: '#f8fafc', color: '#1a3f6f' }}
+              style={SETTINGS_PIN_INPUT}
             />
-          </div>
-          {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem' }}>{error}</div>}
-          {saved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem' }}>✓ PINを変更しました（全デバイスに反映）</div>}
+          </label>
           <button
             onClick={handleSave}
             disabled={newPin.length !== 4 || confirmPin.length !== 4}
-            style={{ height: 52, background: '#1a5fa8', border: 'none', borderRadius: 12, color: '#fff', fontSize: '1.05rem', fontWeight: 800, cursor: 'pointer', opacity: (newPin.length !== 4 || confirmPin.length !== 4) ? 0.4 : 1 }}
+            style={{ height: 40, padding: '0 20px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer', opacity: (newPin.length !== 4 || confirmPin.length !== 4) ? 0.4 : 1 }}
           >
-            PINを変更する
+            PINを変更
           </button>
-          <div style={{ fontSize: '0.8rem', color: '#9baab8' }}>変更後は次回PIN入力から新しいPINが有効になります</div>
         </div>
-      </div>
+        {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>{error}</div>}
+        {saved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>PINを変更しました（全端末に反映）</div>}
+        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 10 }}>次回のPIN入力から新しいPINが有効</div>
+      </section>
 
-      <WorkItemSettings users={users} />
+      <section style={SETTINGS_CARD}><WorkItemSettings users={users} /></section>
 
-      <MinWageSettings onUsersChanged={onUsersChanged} />
+      <section style={SETTINGS_CARD}><MinWageSettings onUsersChanged={onUsersChanged} /></section>
 
-      <CarRateSettings />
+      <section style={SETTINGS_CARD}><CarRateSettings /></section>
     </div>
     </div>
   )
 }
+
+const SETTINGS_CARD = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '20px 24px' }
+const SETTINGS_LABEL = { fontSize: '0.82rem', color: '#475569', fontWeight: 700 }
+const SETTINGS_PIN_INPUT = { height: 40, width: 140, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: '1.1rem', textAlign: 'center', letterSpacing: '0.4em', outline: 'none', padding: '0 10px', background: '#fff', color: '#1a3f6f' }
 
 const NUMPAD_KEYS     = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 const NUMPAD_KEYS_DEC = ['1','2','3','4','5','6','7','8','9','.','0','⌫']
@@ -4468,7 +4472,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                                   disabled={!checked}
                                   onClick={() => { if (checked) { setHistoryModalItem(item); setAddRateForm(null) } }}
                                 >
-                                  時給履歴・変更
+                                  履歴・変更
                                 </button>
                               </td>
                             </>
