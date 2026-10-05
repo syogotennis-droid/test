@@ -97,10 +97,10 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
       <div className={styles.countdown}>
         <span>あと{Math.max(secs, 0)}秒で戻ります</span>
       </div>
-      <div className={styles.completeActions}>
+      {logType !== '出勤' && <div className={styles.completeActions}>
         {!held && <button className={styles.completeBtn} onClick={() => { setHeld(true); setSecs(30) }}>確認を続ける</button>}
         <button className={styles.completeBtn} onClick={onDone}>戻る</button>
-      </div>
+      </div>}
     </div>
   )
 }
