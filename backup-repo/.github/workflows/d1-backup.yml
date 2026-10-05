@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 18 * * *'   # 毎日 03:00 (日本時間)
   workflow_dispatch:        # Actions画面から手動でも実行できる
+    inputs:
+      reset_history:
+        description: '履歴の整理も今すぐ行う'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -22,7 +27,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: Export D1 databases
+      # 容量が上限の8割を超えたときも、バックアップは保存したうえでこの手順を「失敗」にする
+      # （GitHubから失敗のメールが届く。内容は実行結果の Summary に出る）
+      - name: Export D1 databases and check capacity
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -40,3 +47,20 @@ jobs:
             git commit -q -m "backup $(TZ=Asia/Tokyo date +%Y-%m-%d)"
             git push
           fi
+
+      # 月に1回（毎月1日）、gitの履歴を今あるファイルだけに作り直して、リポジトリが太り続けないようにする
+      # （残るのは、直近30日分と、それより前の各月末の分）
+      - name: Reset git history (monthly)
+        if: always()
+        env:
+          MANUAL_RESET: ${{ github.event_name == 'workflow_dispatch' && inputs.reset_history }}
+        run: |
+          if [ "$(TZ=Asia/Tokyo date +%d)" != "01" ] && [ "$MANUAL_RESET" != "true" ]; then
+            echo "今日は履歴の整理日ではありません"
+            exit 0
+          fi
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          git checkout -q --orphan history-reset
+          git commit -q -m "history reset $(TZ=Asia/Tokyo date +%Y-%m-%d)"
+          git push -f origin "history-reset:$branch"
+          echo "履歴を整理しました"

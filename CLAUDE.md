@@ -46,7 +46,7 @@ npx wrangler pages dev dist
 - `src/App.jsx` / `src/tablet/TabletApp.jsx` — 打刻アプリの流れ（ブラウザ版 / Androidアプリ版）
 - `setup-new-client.js` — 案件の作成・デプロイ
 - `migrate-from-firebase.js` — Firebase → D1 のデータ移行（Firebase は読むだけ）
-- `backup-repo/` — 毎日の自動バックアップ一式（別の非公開リポジトリにコピーして使う）
+- `backup-repo/` — 毎日の自動バックアップ一式（別の非公開リポジトリにコピーして使う）。直近30日は毎日分・それより前は月末分を残し、毎月1日にgit履歴を整理。全案件の容量とDB数を毎日確認し、上限の8割を超えると Actions を失敗にしてメールで知らせる
 
 ## 権限
 - 管理者PINはサーバー側でのみ照合する（端末には送らない）。5回続けて間違えると15分ロック
