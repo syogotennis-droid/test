@@ -1012,7 +1012,8 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
         days: g.days, rate: Math.round(g.daily * 100) / 100, pay: Math.round(g.days * g.daily),
       }
     }
-    const name = g.m.key === 'public' ? '公共交通機関' : ''
+    // the method name only when the month has more than one kind of transport row
+    const name = g.m.key === 'public' && groups.length > 1 ? '公共交通機関' : ''
     const inner = [name, amountGroups > 1 ? `${g.rate}円` : ''].filter(Boolean).join(' ')
     return {
       label: inner ? `交通費（${inner}）` : '交通費',
