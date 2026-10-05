@@ -237,7 +237,7 @@ export async function getTodayUserLogs(userId, date = getTodayDate()) {
 function cacheUsers(users) {
   writeJSON(USERS_CACHE_KEY, users.map(u => ({
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
-    asksTransport: u.asksTransport ?? getCommute(u).asks, formerIds: u.formerIds || [],
+    asksTransport: u.asksTransport ?? getCommute(u).asks, transportOptions: u.transportOptions ?? getCommute(u).options, formerIds: u.formerIds || [],
   })))
 }
 
@@ -891,51 +891,68 @@ export async function deleteWeeklyCopy(userId, date) {
 export const COMMUTE_METHODS = [
   { key: 'car', label: '車' },
   { key: 'bike', label: 'バイク' },
-  { key: 'bus', label: 'バス' },
-  { key: 'train', label: '電車' },
-  { key: 'none', label: '交通費なし' },
+  { key: 'public', label: '公共交通機関' },
 ]
+const COMMUTE_KEYS = COMMUTE_METHODS.map(m => m.key)
+export const commuteLabel = key => COMMUTE_METHODS.find(m => m.key === key)?.label || (key === 'legacy' ? '交通費' : key)
 
-// Commute settings valid on a date. Changes are kept in commuteHistory with a
-// start date, so editing someone's commute never changes earlier months.
-// Without a history the current fields apply to every date; users saved before
-// commute methods existed have no commuteMethod and keep the old behaviour
-// (daily amount × days).
-//  km: commute distance for car / bike. The day's transport = km × unit price
-//      (as in the customer's sheets; not doubled)
-//  An earlier version stored oneWayKm (paid ×2) or commuteDistanceKm (per day);
-//  those keep the amount they paid.
-export function commuteOn(user, dateStr) {
+// Commute settings valid on a date. Changes are kept in commuteHistory with a start date, so
+// editing someone's commute never changes earlier months.
+// A person can have several methods (commuteMethods = { car: { km }, bike: { km }, public: { amount } });
+// on a day they choose which ones they used (transport_day_methods).
+//  car / bike: the day's transport = km × unit price (as in the customer's sheets; not doubled)
+//  public: a fixed amount per day
+// Older data: a single commuteMethod (bus / train = public; walk = none), oneWayKm (paid ×2),
+// commuteDistanceKm (per day), or no method at all (legacy: itemRates['交通費'].amount per day).
+function commuteEntry(user, dateStr) {
   const hist = Array.isArray(user?.commuteHistory) ? user.commuteHistory : []
   const sorted = [...hist].sort((a, b) => (a.from || '').localeCompare(b.from || ''))
   let e = null
   for (const h of sorted) if (!h.from || !dateStr || h.from <= dateStr) e = h
-  if (!e) {
-    e = {
-      method: user?.commuteMethod || null,
-      km: user?.commuteKm,
-      oneWayKm: Number(user?.commuteOneWayKm) || 0,
-      amount: Number(user?.itemRates?.['交通費']?.amount) || 0,
-      legacyKm: Number(user?.commuteDistanceKm) || 0,
-    }
+  return e || {
+    methods: user?.commuteMethods,
+    method: user?.commuteMethod || null,
+    km: user?.commuteKm,
+    oneWayKm: Number(user?.commuteOneWayKm) || 0,
+    amount: Number(user?.itemRates?.['交通費']?.amount) || 0,
+    legacyKm: Number(user?.commuteDistanceKm) || 0,
   }
-  const km = e.km != null && e.km !== '' ? Number(e.km) || 0
-    : Number(e.oneWayKm) > 0 ? Number(e.oneWayKm) * 2 : Number(e.legacyKm) || 0
-  // 徒歩 (older data) is the same as 交通費なし
-  return { method: e.method === 'walk' ? 'none' : (e.method || null), km, amount: Number(e.amount) || 0, dailyKm: km }
+}
+function methodsOfEntry(e) {
+  if (e.methods && typeof e.methods === 'object') {
+    return COMMUTE_KEYS.filter(k => e.methods[k]).map(k => (k === 'public'
+      ? { key: k, amount: Number(e.methods[k].amount) || 0 }
+      : { key: k, km: Number(e.methods[k].km) || 0 })).filter(m => (m.key === 'public' ? m.amount > 0 : m.km > 0))
+  }
+  const method = e.method === 'bus' || e.method === 'train' ? 'public' : e.method
+  if (method === 'none' || method === 'walk') return []
+  if (method === 'car' || method === 'bike') {
+    const km = e.km != null && e.km !== '' ? Number(e.km) || 0 : Number(e.oneWayKm) > 0 ? Number(e.oneWayKm) * 2 : Number(e.legacyKm) || 0
+    return km > 0 ? [{ key: method, km }] : []
+  }
+  const amount = Number(e.amount) || 0
+  return amount > 0 ? [{ key: method === 'public' ? 'public' : 'legacy', amount }] : []
+}
+export function commuteOn(user, dateStr) {
+  const e = commuteEntry(user, dateStr)
+  const list = methodsOfEntry(e)
+  const first = list[0] || null
+  return {
+    list,
+    legacy: !(e.methods && typeof e.methods === 'object') && !e.method,
+    method: first ? first.key : (e.method ? 'none' : null),
+    km: first?.km || 0, amount: first?.amount || 0, dailyKm: first?.km || 0,
+  }
 }
 
-// Current settings + whether the clock-out screen asks "本日の交通費".
+// Current settings + whether the clock-out screen asks "本日の交通費" (and which methods it offers).
 // Must match asksTransport() in the API.
 export function getCommute(user) {
   const c = commuteOn(user, getTodayDate())
-  const label = COMMUTE_METHODS.find(m => m.key === c.method)?.label || '未設定'
-  let asks
-  if (user?.employeeType === 'salaried') asks = false
-  else if (c.method === 'none') asks = false
-  else if (c.method === 'car' || c.method === 'bike') asks = c.dailyKm > 0
-  else asks = c.amount > 0
-  return { ...c, label, distance: c.dailyKm, asks }
+  const salaried = user?.employeeType === 'salaried'
+  const asks = !salaried && c.list.length > 0
+  const label = c.list.length ? c.list.map(m => commuteLabel(m.key)).join('・') : c.legacy ? '未設定' : '交通費なし'
+  return { ...c, label, asks, options: asks ? c.list.filter(m => m.key !== 'legacy').map(m => m.key) : [] }
 }
 
 export async function getCarRates() {
@@ -960,38 +977,46 @@ export function carRateForDate(carRates, dateStr, kind = 'car') {
 
 // Transport pay rows for the given eligible days, using the commute settings
 // and the car unit price valid on each day.
-export function computeTransport(user, eligibleDates, carRates = []) {
+export function computeTransport(user, eligibleDates, carRates = [], dayMethods = {}) {
   const groups = []
   for (const d of [...eligibleDates].sort()) {
-    const c = commuteOn(user, d)
-    let g
-    if (c.method === 'none') continue
-    if (c.method === 'car' || c.method === 'bike') {
-      if (!c.dailyKm) continue
-      const rate = carRateForDate(carRates, d, c.method)
-      g = { key: `${c.method}|${c.km}|${rate}`, car: true, c, rate, daily: c.dailyKm * rate }
-    } else {
-      if (!c.amount) continue
-      g = { key: `amt|${c.amount}`, car: false, c, rate: c.amount, daily: c.amount }
+    const { list } = commuteOn(user, d)
+    if (list.length === 0) continue
+    // two or more methods: the ones chosen that day (none recorded → the first one)
+    let chosen = list
+    if (list.length > 1) {
+      const picked = (dayMethods[`${user?.id}_${d}`] || []).filter(k => list.some(m => m.key === k))
+      chosen = picked.length ? list.filter(m => picked.includes(m.key)) : [list[0]]
     }
-    const found = groups.find(x => x.key === g.key)
-    if (found) found.days++
-    else groups.push({ ...g, days: 1 })
+    for (const m of chosen) {
+      let g
+      if (m.key === 'car' || m.key === 'bike') {
+        const rate = carRateForDate(carRates, d, m.key)
+        g = { key: `${m.key}|${m.km}|${rate}`, vehicle: true, m, rate, daily: m.km * rate }
+      } else {
+        g = { key: `${m.key}|${m.amount}`, vehicle: false, m, rate: m.amount, daily: m.amount }
+      }
+      const found = groups.find(x => x.key === g.key)
+      if (found) found.days++
+      else groups.push({ ...g, days: 1 })
+    }
   }
-  const amountGroups = groups.filter(g => !g.car).length
+  const amountGroups = groups.filter(g => !g.vehicle).length
   return groups.map(g => {
-    if (g.car) {
-      const vehicle = g.c.method === 'bike' ? 'バイク' : '車'
+    if (g.vehicle) {
+      const vehicle = commuteLabel(g.m.key)
       const r3 = Math.round(g.rate * 1000) / 1000
       return {
-        label: `交通費（${vehicle} ${g.c.km}km × ${r3}円）`,
-        excelLabel: `交通費（${vehicle} ${g.c.km}km×${r3}円/km・${g.days}日）`,
+        label: `交通費（${vehicle} ${g.m.km}km × ${r3}円）`,
+        excelLabel: `交通費（${vehicle} ${g.m.km}km×${r3}円/km・${g.days}日）`,
         days: g.days, rate: Math.round(g.daily * 100) / 100, pay: Math.round(g.days * g.daily),
       }
     }
+    const name = g.m.key === 'public' ? '公共交通機関' : ''
+    const inner = [name, amountGroups > 1 ? `${g.rate}円` : ''].filter(Boolean).join(' ')
     return {
-      label: amountGroups > 1 ? `交通費（${g.rate}円）` : '交通費',
-      excelLabel: amountGroups > 1 ? `交通費（${g.rate}円・${g.days}日）` : `交通費（${g.days}日）`,
+      label: inner ? `交通費（${inner}）` : '交通費',
+      excelLabel: `交通費（${inner ? inner + '・' : ''}${g.days}日）`,
       days: g.days, rate: g.rate, pay: Math.round(g.days * g.rate),
     }
   })
@@ -1017,13 +1042,38 @@ export async function getTransportDay(userId, date) {
   }
 }
 
-export async function saveTransportDay(userId, date, eligible) {
+export async function getTransportDayMethods(dateFrom, dateTo) {
+  return api('/transport_day_methods', { query: { dateFrom, dateTo } })
+}
+
+// The methods chosen for the day (array), or null — for pre-filling a second clock-out of the day
+export async function getTransportDayChoice(userId, date) {
+  const key = `${userId}_${date}`
+  const pending = readJSON(OUTBOX_KEY, []).find(x => x.key === `td:${key}`)
+  if (pending) return pending.body.methods || null
+  try {
+    const r = await api('/transport_day_methods', { query: { userId, date } })
+    return r[key] || null
+  } catch {
+    const v = readJSON(TRANSPORT_LOCAL_KEY + 'Methods', {})[key]
+    return v || null
+  }
+}
+
+export async function saveTransportDay(userId, date, eligible, methods = null) {
+  if (methods) {
+    const mm = readJSON(TRANSPORT_LOCAL_KEY + 'Methods', {})
+    mm[`${userId}_${date}`] = methods
+    const mk = Object.keys(mm)
+    if (mk.length > 60) mk.slice(0, mk.length - 60).forEach(k => delete mm[k])
+    writeJSON(TRANSPORT_LOCAL_KEY + 'Methods', mm)
+  }
   const m = readJSON(TRANSPORT_LOCAL_KEY, {})
   m[`${userId}_${date}`] = eligible
   const keys = Object.keys(m)
   if (keys.length > 60) keys.slice(0, keys.length - 60).forEach(k => delete m[k])
   writeJSON(TRANSPORT_LOCAL_KEY, m)
-  enqueue({ qid: crypto.randomUUID(), key: `td:${userId}_${date}`, path: '/transport_days', method: 'PUT', body: { userId, date, eligible } })
+  enqueue({ qid: crypto.randomUUID(), key: `td:${userId}_${date}`, path: '/transport_days', method: 'PUT', body: { userId, date, eligible, ...(methods ? { methods } : {}) } })
   await flushOutbox()
 }
 
@@ -1205,11 +1255,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const enc = new TextEncoder()
 
   // Fetch work_reports: prefer session data over legacy, merge correctly
-  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates] = await Promise.all([
+  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates, transportMethods] = await Promise.all([
     getMergedWorkReportsForRange(dateFrom || '', dateTo || ''),
     getSessionWorkReportsWithSessionsForRange(dateFrom || '', dateTo || ''),
     getTransportDays(dateFrom || '', dateTo || '9999-12-31'),
     getCarRates(),
+    getTransportDayMethods(dateFrom || '', dateTo || '9999-12-31'),
   ])
   const dayCountCells = (row, cells) => cells.map(([col, text]) =>
     `<c r="${col}${row}" s="${S.username}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`).join('')
@@ -1376,7 +1427,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // 交通費対象日 = 勤務日のうち、本人が「支給なし」にしていない日
     const transportDates = workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false)
     const commute = getCommute(user)
-    const transportRowsX = computeTransport(user, transportDates, carRates)
+    const transportRowsX = computeTransport(user, transportDates, carRates, transportMethods)
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
     let ci = 2

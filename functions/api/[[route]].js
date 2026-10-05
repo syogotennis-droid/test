@@ -158,7 +158,7 @@ export async function onRequest(context) {
       } else {
         // everything that belongs to the user, so a later user with the same ID starts clean
         await DB.batch(['users WHERE id', ...['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days',
-          'transport_days', 'weekly_copies', 'weekly_copy_answers', 'work_plans'].map(t => `${t} WHERE user_id`)]
+          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans'].map(t => `${t} WHERE user_id`)]
           .map(t => DB.prepare(`DELETE FROM ${t} = ?`).bind(id)))
       }
       return ok({ ok: true })
@@ -583,13 +583,29 @@ export async function onRequest(context) {
       const b = await readBody()
       needStr(b.userId, 'userId')
       if (!isDate(b.date)) throw new HttpError('bad_date', 400)
-      await transportStmt(DB, b.userId, b.date, !!b.eligible, new Date().toISOString()).run()
+      const now = new Date().toISOString()
+      await DB.batch([transportStmt(DB, b.userId, b.date, !!b.eligible, now), transportMethodsStmt(DB, b.userId, b.date, b.eligible ? b.methods : null, now)])
       return ok({ ok: true })
+    }
+    // methods used on each day (people with two or more commute methods)
+    if (route === 'transport_day_methods' && method === 'GET') {
+      const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
+      const where = [], args = []
+      if (userId) { where.push('user_id = ?'); args.push(userId) }
+      if (date) { where.push('date = ?'); args.push(date) }
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      const { results } = await DB.prepare('SELECT user_id, date, methods FROM transport_day_methods' + (where.length ? ' WHERE ' + where.join(' AND ') : ''))
+        .bind(...args).all()
+      const map = {}
+      results.forEach(r => { try { map[`${r.user_id}_${r.date}`] = JSON.parse(r.methods) } catch {} })
+      return ok(map)
     }
 
     // ── Batch Day Edit ─────────────────────────────────────────────────────
     if (route === 'batch/day_edit' && method === 'POST') {
-      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports } = await readBody()
+      const body = await readBody()
+      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports } = body
       needStr(userId, 'userId')
       if (!isDate(dateStr)) throw new HttpError('bad_date', 400)
       if ((logsToCreate || []).some(l => !LOG_TYPES.has(l.logType))) return fail('invalid log_type', 400)
@@ -598,7 +614,10 @@ export async function onRequest(context) {
       const stamp = (time, nextDay) => jstIso(nextDay ? addDays(dateStr, 1) : dateStr, time)
       const now = new Date().toISOString()
       const stmts = []
-      if (typeof transportEligible === 'boolean') stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
+      if (typeof transportEligible === 'boolean') {
+        stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
+        stmts.push(transportMethodsStmt(DB, userId, dateStr, transportEligible ? body.transportMethods : null, now))
+      }
       for (const log of (logsToDelete || []))
         stmts.push(DB.prepare('DELETE FROM logs WHERE id = ?').bind(log.id))
       for (const { id, time, nextDay } of (logsToUpdate || []))
@@ -669,7 +688,7 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'logs/check_in' || route === 'logs/today_statuses') return true
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
     // the employee's own transport choice / weekly copy
-    if (route === 'transport_days') return !!(sp.get('userId') && sp.get('date'))
+    if (route === 'transport_days' || route === 'transport_day_methods') return !!(sp.get('userId') && sp.get('date'))
     if (route === 'weekly_copy/offer' || route === 'weekly_copies') return !!sp.get('userId')
     return false
   }
@@ -686,24 +705,41 @@ function publicUser(u) {
   // pin is included so the tablet can match PINs while offline
   return {
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
-    asksTransport: asksTransport(u), formerIds: Array.isArray(u.formerIds) ? u.formerIds : [],
+    asksTransport: asksTransport(u), transportOptions: u.employeeType === 'salaried' ? [] : commuteMethodsOf(u).filter(k => k !== 'legacy'), formerIds: Array.isArray(u.formerIds) ? u.formerIds : [],
   }
 }
 
 // Whether the clock-out screen should ask "本日の交通費". Must match
 // getCommute() in src/lib/db.js.
-function asksTransport(u) {
-  if (u.employeeType === 'salaried') return false
+function commuteMethodsOf(u) {
   // the settings valid today (a change saved in advance with a later start date doesn't count yet)
   const date = todayStr()
   const hist = Array.isArray(u.commuteHistory) ? [...u.commuteHistory].sort((a, b) => (a.from || '').localeCompare(b.from || '')) : []
   let e = null
   for (const h of hist) if (!h.from || h.from <= date) e = h
-  if (!e) e = { method: u.commuteMethod, km: u.commuteKm, oneWayKm: u.commuteOneWayKm, legacyKm: u.commuteDistanceKm, amount: u.itemRates?.['交通費']?.amount }
-  const m = e.method
-  if (m === 'walk' || m === 'none') return false
-  if (m === 'car' || m === 'bike') return Number(e.km) > 0 || Number(e.oneWayKm) > 0 || Number(e.legacyKm) > 0
-  return Number(e.amount) > 0
+  if (!e) e = { methods: u.commuteMethods, method: u.commuteMethod, km: u.commuteKm, oneWayKm: u.commuteOneWayKm, legacyKm: u.commuteDistanceKm, amount: u.itemRates?.['交通費']?.amount }
+  if (e.methods && typeof e.methods === 'object') {
+    return COMMUTE_KEYS.filter(k => e.methods[k] && (k === 'public' ? Number(e.methods[k].amount) > 0 : Number(e.methods[k].km) > 0))
+  }
+  const m = e.method === 'bus' || e.method === 'train' ? 'public' : e.method
+  if (m === 'walk' || m === 'none') return []
+  if (m === 'car' || m === 'bike') return Number(e.km) > 0 || Number(e.oneWayKm) > 0 || Number(e.legacyKm) > 0 ? [m] : []
+  return Number(e.amount) > 0 ? [m === 'public' ? 'public' : 'legacy'] : []
+}
+
+// Whether the clock-out screen should ask "本日の交通費". Must match getCommute() in src/lib/db.js.
+function asksTransport(u) {
+  if (u.employeeType === 'salaried') return false
+  return commuteMethodsOf(u).length > 0
+}
+
+const COMMUTE_KEYS = ['car', 'bike', 'public']
+function transportMethodsStmt(DB, userId, date, methods, now) {
+  const list = Array.isArray(methods) ? [...new Set(methods.filter(m => COMMUTE_KEYS.includes(m)))] : []
+  return list.length
+    ? DB.prepare('INSERT OR REPLACE INTO transport_day_methods (id, user_id, date, methods, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(`${userId}_${date}`, userId, date, JSON.stringify(list), now)
+    : DB.prepare('DELETE FROM transport_day_methods WHERE id = ?').bind(`${userId}_${date}`)
 }
 
 function transportStmt(DB, userId, date, eligible, now) {

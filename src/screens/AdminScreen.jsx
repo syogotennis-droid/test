@@ -14,8 +14,8 @@ import {
   getSessionWorkStatusForUserRange, getMergedWorkReportsForRange,
   getSessionWorkReportsWithSessionsForRange, saveDayEditBatch,
   pairBreaks, breakMinutes, BREAK_START, BREAK_END, getTodayPunchState,
-  getCommute, getTransportDays, getCarRates, saveCarRates, computeTransport, attendanceDates,
-  COMMUTE_METHODS, carRateForDate, commuteOn,
+  getCommute, getTransportDays, getTransportDayMethods, getCarRates, saveCarRates, computeTransport, attendanceDates,
+  COMMUTE_METHODS, carRateForDate, commuteOn, commuteLabel,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
   prepTimeRows, planMinWageChange, withRateFrom, ratePeriods,
   getWorkItemDefs, activeWorkItemDefs, itemLabel, sortByItemOrder, isDeletedWorkItem, SYSTEM_ITEMS,
@@ -1064,17 +1064,27 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const [clearedPunches, setClearedPunches] = useState([]) // punches that the save will delete because the time was cleared
   const lastWorkSelectRef = useRef(null)
   const initialWorkRowsSnapshot = useRef({})
-  const asksTransport = getCommute(user).asks
+  // the methods registered for that day (two or more → choose which ones were used)
+  const dayCommute = commuteOn(user, dateStr)
+  const asksTransport = user?.employeeType !== 'salaried' && dayCommute.list.length > 0
+  const dayOptions = dayCommute.list.filter(m => m.key !== 'legacy').map(m => m.key)
   const [transportInit, setTransportInit] = useState(null) // null = loading / not applicable
   const [transportCur, setTransportCur] = useState(true)
+  const [methodsInit, setMethodsInit] = useState([])
+  const [methodsCur, setMethodsCur] = useState([])
 
   useEffect(() => {
     if (!asksTransport) return
-    getTransportDays(dateStr, dateStr)
-      .then(map => { const v = map[`${user.id}_${dateStr}`] !== false; setTransportInit(v); setTransportCur(v) })
+    Promise.all([getTransportDays(dateStr, dateStr), dayOptions.length > 1 ? getTransportDayMethods(dateStr, dateStr) : {}])
+      .then(([map, mm]) => {
+        const v = map[`${user.id}_${dateStr}`] !== false; setTransportInit(v); setTransportCur(v)
+        const saved = (mm[`${user.id}_${dateStr}`] || []).filter(k => dayOptions.includes(k))
+        const m = saved.length ? saved : dayOptions.slice(0, 1)
+        setMethodsInit(m); setMethodsCur(m)
+      })
       .catch(() => {})
   }, [user.id, dateStr, asksTransport])
-  const transportChanged = transportInit !== null && transportCur !== transportInit
+  const transportChanged = transportInit !== null && (transportCur !== transportInit || (dayOptions.length > 1 && [...methodsCur].sort().join() !== [...methodsInit].sort().join()))
 
   useEffect(() => {
     if (isSalaried) { setWorkItemsLoaded(true); return }
@@ -1428,7 +1438,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         isSalaried,
         sessionWorkData,
         deletedSessionIds,
-        ...(transportChanged ? { transportEligible: transportCur } : {}),
+        ...(transportChanged ? { transportEligible: transportCur, ...(dayOptions.length > 1 && transportCur ? { transportMethods: methodsCur } : {}) } : {}),
       })
       onSaved()
     } catch (err) {
@@ -1711,9 +1721,21 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.dayEditTransport}>
                   <span className={styles.dayEditTransportLabel}>この日の交通費</span>
                   <div className={styles.dayEditTransportBtns}>
-                    <button className={[styles.dayEditTransportBtn, transportCur ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => setTransportCur(true)}>支給対象</button>
-                    <button className={[styles.dayEditTransportBtn, !transportCur ? styles.dayEditTransportOff : ''].join(' ')} onClick={() => setTransportCur(false)}>支給なし</button>
+                    <button className={[styles.dayEditTransportBtn, transportCur ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => setTransportCur(true)}>あり</button>
+                    <button className={[styles.dayEditTransportBtn, !transportCur ? styles.dayEditTransportOff : ''].join(' ')} onClick={() => setTransportCur(false)}>なし</button>
                   </div>
+                  {transportCur && dayOptions.length > 1 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', marginTop: 8 }}>
+                      <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 700 }}>使ったもの</span>
+                      {dayOptions.map(k => (
+                        <label key={k} className={styles.commuteCheck} style={{ minWidth: 0 }}>
+                          <input type="checkbox" checked={methodsCur.includes(k)}
+                            onChange={e => setMethodsCur(prev => e.target.checked ? [...prev, k] : (prev.length > 1 ? prev.filter(x => x !== k) : prev))} />
+                          {commuteLabel(k)}
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1861,7 +1883,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               })}
               {hasChanges && transportChanged && (
                 <div className={styles.confirmDayTotal}>
-                  <span>この日の交通費</span><strong>{transportCur ? '支給対象' : '支給なし'}</strong>
+                  <span>この日の交通費</span><strong>{transportCur ? `あり${dayOptions.length > 1 ? `（${methodsCur.map(commuteLabel).join('・')}）` : ''}` : 'なし'}</strong>
                 </div>
               )}
               {!isSalaried && hasChanges && dayTotalMins > 0 && (
@@ -1976,21 +1998,21 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates()])
-      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates(), getTransportDayMethods(dateFrom, dateTo)])
+      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates))
+        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めません。通信を確認し、再読み込みしてください') } })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = []) {
+  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = [], transportMethods = {}) {
     const transportRows = (user, dates) =>
-      computeTransport(user, dates.filter(d => transportFlags[`${user.id}_${d}`] !== false), carRates)
+      computeTransport(user, dates.filter(d => transportFlags[`${user.id}_${d}`] !== false), carRates, transportMethods)
         .map(t => ({ label: t.label, parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: t.days, rate: t.rate, pay: t.pay }))
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
     const userEntries = users.filter(u =>
@@ -2975,8 +2997,7 @@ function AddUserModal({ users, onClose, onAdded }) {
     return r
   })
   const [multipliers, setMultipliers] = useState({})
-  const [commuteMethod, setCommuteMethod] = useState('none')
-  const [commuteDistance, setCommuteDistance] = useState('')
+  const [commuteForm, setCommuteForm] = useState(() => commuteFormFromUser({ commuteMethods: {} }))
   const [carRates, setCarRates] = useState([])
   useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
   const [fixedStartTime, setFixedStartTime] = useState('09:00')
@@ -3055,7 +3076,7 @@ function AddUserModal({ users, onClose, onAdded }) {
         id: addId.trim(), name: addName.trim(), pin, employeeType,
         workItems: employeeType === 'salaried' ? [] : workItems,
         itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
-        ...(employeeType !== 'salaried' ? { commuteMethod, commuteKm: Number(commuteDistance) || 0 } : {}),
+        ...(employeeType !== 'salaried' ? { commuteMethods: commuteMethodsFromForm(commuteForm) } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
@@ -3251,12 +3272,7 @@ function AddUserModal({ users, onClose, onAdded }) {
             </div>
           )}
           {employeeType !== 'salaried' && (
-            <CommuteSection
-              method={commuteMethod} onMethod={setCommuteMethod}
-              amount={itemRates['交通費']?.amount ?? ''} onAmount={v => setRate('交通費', 'amount', v)}
-              distance={commuteDistance} onDistance={setCommuteDistance}
-              carRates={carRates} isTablet={false} onNumpad={() => {}}
-            />
+            <CommuteSection form={commuteForm} onChange={setCommuteForm} carRates={carRates} isTablet={false} onNumpad={() => {}} />
           )}
         </div>
         <div className={styles.userEditFooter}>
@@ -4099,60 +4115,83 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
 // ─── CommuteSection (通勤・交通費) ────────────────────────────────────────────
 
 // method '' = saved before commute methods existed: keeps the old daily amount
-function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistance, carRates, isTablet, onNumpad, changed, from, onFrom }) {
-  const vehicle = method === 'car' || method === 'bike'
-  const todayRate = vehicle ? carRateForDate(carRates || [], getTodayJst(), method) : 0
-  const dist = Number(distance) || 0
-  const usesAmount = method === 'bus' || method === 'train' || method === ''
+// Commute form state <-> saved settings.
+// form = { on, car: { use, km }, bike: { use, km }, public: { use, amount } }
+function commuteFormFromUser(user) {
+  const c = commuteOn(user || {}, getTodayJst())
+  const get = k => c.list.find(m => m.key === k)
+  return {
+    on: c.list.length > 0,
+    car: { use: !!get('car'), km: get('car') ? String(get('car').km) : '' },
+    bike: { use: !!get('bike'), km: get('bike') ? String(get('bike').km) : '' },
+    public: { use: !!get('public'), amount: get('public') ? String(get('public').amount) : '' },
+    legacyAmount: get('legacy')?.amount || 0,
+  }
+}
+function commuteMethodsFromForm(f) {
+  if (!f.on) return {}
+  const out = {}
+  if (f.car.use && Number(f.car.km) > 0) out.car = { km: Number(f.car.km) }
+  if (f.bike.use && Number(f.bike.km) > 0) out.bike = { km: Number(f.bike.km) }
+  if (f.public.use && Number(f.public.amount) > 0) out.public = { amount: Number(f.public.amount) }
+  return out
+}
+
+function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed, from, onFrom }) {
+  const today = getTodayJst()
+  const set = (k, patch) => onChange({ ...form, [k]: { ...form[k], ...patch } })
+  const noneChecked = form.on && !form.car.use && !form.bike.use && !form.public.use
+  const row = (k, label, field, unit, pattern) => {
+    const v = form[k][field]
+    const rate = k === 'public' ? 0 : carRateForDate(carRates || [], today, k)
+    return (
+      <div key={k} className={styles.commuteMethodRow}>
+        <label className={styles.commuteCheck}>
+          <input type="checkbox" checked={form[k].use} onChange={e => set(k, { use: e.target.checked })} />{label}
+        </label>
+        {form[k].use && (
+          <>
+            <div className={styles.workItemInputWrap}>
+              {isTablet ? (
+                <button className={styles.numpadTriggerSm} onClick={() => onNumpad(k)}>{v || '0'}</button>
+              ) : (
+                <input className={styles.workItemInput} type="text" inputMode={k === 'public' ? 'numeric' : 'decimal'} placeholder="0" value={v}
+                  aria-label={`${label}の${k === 'public' ? '1日の金額' : '通勤距離'}`}
+                  onChange={e => { if (pattern.test(e.target.value)) set(k, { [field]: e.target.value }) }} />
+              )}
+              <span className={styles.workItemUnit}>{unit}</span>
+            </div>
+            <span className={styles.userEditHintText} style={{ margin: 0 }}>
+              {k === 'public' ? '1日の金額' : rate > 0
+                ? `1日 ＝ ${Number(v) || 0}km × ${rate.toFixed(3)}円 ＝ ${((Number(v) || 0) * rate).toFixed(1)}円`
+                : `${label}の単価が未設定です（「設定」の交通費単価）`}
+            </span>
+          </>
+        )}
+      </div>
+    )
+  }
   return (
     <div className={styles.userEditSection}>
       <div className={styles.userEditSectionTitle}>通勤・交通費</div>
       <div>
-        <label className={styles.userEditLabel}>通勤方法</label>
-        <div className={styles.commuteToggle}>
-          {COMMUTE_METHODS.map(m => (
-            <button key={m.key} type="button"
-              className={[styles.commuteBtn, method === m.key ? styles.commuteBtnActive : ''].join(' ')}
-              onClick={() => onMethod(m.key)}>{m.label}</button>
-          ))}
+        <label className={styles.userEditLabel}>交通費</label>
+        <div className={styles.commuteToggle} style={{ maxWidth: 320 }}>
+          <button type="button" className={[styles.commuteBtn, form.on ? styles.commuteBtnActive : ''].join(' ')} onClick={() => onChange({ ...form, on: true })}>あり</button>
+          <button type="button" className={[styles.commuteBtn, !form.on ? styles.commuteBtnActive : ''].join(' ')} onClick={() => onChange({ ...form, on: false })}>なし</button>
         </div>
-        {method === '' && <div className={styles.userEditHintText}>未設定（下の日額で計算）</div>}
+        {!form.on && <div className={styles.userEditHintText}>交通費なし（退勤時の「本日の交通費」も表示しません）</div>}
       </div>
-      {usesAmount && (
-        <div className={styles.commuteRow}>
-          <label className={styles.userEditLabel}>1日あたりの交通費</label>
-          <div className={styles.workItemInputWrap}>
-            {isTablet ? (
-              <button className={styles.numpadTriggerSm} onClick={() => onNumpad('amount')}>{amount || '0'}</button>
-            ) : (
-              <input className={styles.workItemInput} type="text" inputMode="numeric" placeholder="0" value={amount}
-                onChange={e => { if (/^\d{0,6}$/.test(e.target.value)) onAmount(e.target.value) }} />
-            )}
-            <span className={styles.workItemUnit}>円/日</span>
-          </div>
+      {form.on && (
+        <div>
+          <label className={styles.userEditLabel}>通勤方法（複数選べます。2つ以上のときは、退勤時にその日使ったものを選びます）</label>
+          {row('car', '車', 'km', 'km', /^\d{0,4}(\.\d{0,1})?$/)}
+          {row('bike', 'バイク', 'km', 'km', /^\d{0,4}(\.\d{0,1})?$/)}
+          {row('public', '公共交通機関', 'amount', '円/日', /^\d{0,6}$/)}
+          {noneChecked && (form.legacyAmount > 0
+            ? <div className={styles.userEditHintText}>以前の設定（1日 {form.legacyAmount}円）で計算中。通勤方法を選ぶと切り替わります</div>
+            : <div className={styles.userEditHintText} style={{ color: '#b45309' }}>通勤方法を1つ以上選んでください</div>)}
         </div>
-      )}
-      {vehicle && (
-        <div className={styles.commuteRow}>
-          <label className={styles.userEditLabel}>通勤距離</label>
-          <div className={styles.workItemInputWrap}>
-            {isTablet ? (
-              <button className={styles.numpadTriggerSm} onClick={() => onNumpad('distance')}>{distance || '0'}</button>
-            ) : (
-              <input className={styles.workItemInput} type="text" inputMode="decimal" placeholder="0" value={distance}
-                onChange={e => { const v = e.target.value; if (/^\d{0,4}(\.\d{0,1})?$/.test(v)) onDistance(v) }} />
-            )}
-            <span className={styles.workItemUnit}>km</span>
-          </div>
-          <div className={styles.userEditHintText}>
-            {todayRate > 0
-              ? `1日の交通費 ＝ ${dist}km × ${todayRate.toFixed(3)}円 ＝ ${(dist * todayRate).toFixed(1)}円（単価は「設定」で変更）`
-              : `${method === 'bike' ? 'バイク' : '車'}の単価が未設定です。「設定」の交通費単価で登録`}
-          </div>
-        </div>
-      )}
-      {method === 'none' && (
-        <div className={styles.userEditHintText}>交通費なし（退勤時の「本日の交通費」も表示しません）</div>
       )}
       {changed && onFrom && (
         <div className={styles.commuteRow}>
@@ -4172,6 +4211,7 @@ function commuteHistoryWith(user, entry) {
     ? [...user.commuteHistory]
     : [{
         from: null,
+        methods: user.commuteMethods || undefined,
         method: user.commuteMethod || null,
         oneWayKm: Number(user.commuteOneWayKm) || 0,
         amount: Number(user.itemRates?.['交通費']?.amount) || 0,
@@ -4225,14 +4265,12 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [transportAmount, setTransportAmount] = useState(
     user.itemRates?.['交通費']?.amount != null ? String(user.itemRates['交通費'].amount) : ''
   )
-  const normMethod = m => (m === 'walk' ? 'none' : (m || '')) // 徒歩 (older data) = 交通費なし
-  const [commuteMethod, setCommuteMethod] = useState(normMethod(user.commuteMethod))
-  const curKm = commuteOn(user, getTodayJst()).km
-  const [commuteDistance, setCommuteDistance] = useState(curKm > 0 ? String(curKm) : '')
+  const [commuteForm, setCommuteForm] = useState(() => commuteFormFromUser(user))
+  const initialCommute = useRef(JSON.stringify(commuteMethodsFromForm(commuteFormFromUser(user))))
   const [commuteFrom, setCommuteFrom] = useState(getTodayJst())
-  const commuteChanged = (commuteMethod || '') !== normMethod(user.commuteMethod)
-    || (Number(commuteDistance) || 0) !== (Number(curKm) || 0)
-    || (Number(transportAmount) || 0) !== (Number(user.itemRates?.['交通費']?.amount) || 0)
+  // changed = what would be saved differs (a person on older settings who touches nothing keeps them)
+  const commuteChanged = JSON.stringify(commuteMethodsFromForm(commuteForm)) !== initialCommute.current
+    && !(commuteForm.on && commuteForm.legacyAmount > 0 && Object.keys(commuteMethodsFromForm(commuteForm)).length === 0)
   const [carRates, setCarRates] = useState([])
   useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
   const [historyModalItem, setHistoryModalItem] = useState(null)
@@ -4256,7 +4294,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setIsDirty(true)
-  }, [name, pin, newUserId, workItems, transportAmount, commuteMethod, commuteDistance, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
+  }, [name, pin, newUserId, workItems, transportAmount, commuteForm, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -4366,9 +4404,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
         // switching to 社員 keeps the hourly items and rates, so switching back loses nothing
         ...(employeeType === 'salaried' ? {} : { workItems, itemRates: buildItemRates() }),
         ...(employeeType !== 'salaried' && commuteChanged ? {
-          commuteMethod: commuteMethod || null,
-          commuteKm: Number(commuteDistance) || 0,
-          commuteHistory: commuteHistoryWith(user, { from: commuteFrom, method: commuteMethod || null, km: Number(commuteDistance) || 0, amount: Number(transportAmount) || 0 }),
+          commuteMethods: commuteMethodsFromForm(commuteForm),
+          commuteHistory: commuteHistoryWith(user, { from: commuteFrom, methods: commuteMethodsFromForm(commuteForm) }),
         } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
@@ -4662,14 +4699,12 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
 
           {employeeType !== 'salaried' && (
             <CommuteSection
-              method={commuteMethod} onMethod={setCommuteMethod}
-              amount={transportAmount} onAmount={setTransportAmount}
-              distance={commuteDistance} onDistance={setCommuteDistance}
+              form={commuteForm} onChange={setCommuteForm}
               carRates={carRates} isTablet={isTablet}
               changed={commuteChanged} from={commuteFrom} onFrom={setCommuteFrom}
-              onNumpad={field => setNumpad(field === 'amount'
-                ? { title: '1日あたりの交通費（円）', field: 'amount', maxLength: 6 }
-                : { title: '通勤距離（km）', field: 'distance', maxLength: 6, decimal: true })}
+              onNumpad={field => setNumpad(field === 'public'
+                ? { title: '公共交通機関・1日の金額（円）', field: 'public', maxLength: 6 }
+                : { title: `${field === 'bike' ? 'バイク' : '車'}の通勤距離（km）`, field, maxLength: 6, decimal: true })}
             />
           )}
 
@@ -4897,13 +4932,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       {isTablet && numpad && (
         <NumpadOverlay
           title={numpad.title}
-          initialValue={numpad.field === 'pin' ? '' : numpad.field === 'distance' ? commuteDistance : transportAmount}
+          initialValue={numpad.field === 'pin' ? '' : numpad.field === 'car' || numpad.field === 'bike' ? commuteForm[numpad.field].km : numpad.field === 'public' ? commuteForm.public.amount : transportAmount}
           maxLength={numpad.maxLength}
           decimal={!!numpad.decimal}
           pinMode={!!numpad.pinMode}
           onConfirm={val => {
             if (numpad.field === 'pin') { setPin(val); setPinError('') }
-            else if (numpad.field === 'distance') setCommuteDistance(val)
+            else if (numpad.field === 'car' || numpad.field === 'bike') setCommuteForm(f => ({ ...f, [numpad.field]: { ...f[numpad.field], km: val } }))
+            else if (numpad.field === 'public') setCommuteForm(f => ({ ...f, public: { ...f.public, amount: val } }))
             else setTransportAmount(val)
           }}
           onClose={() => setNumpad(null)}

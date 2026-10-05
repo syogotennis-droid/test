@@ -5285,3 +5285,8 @@
   .dayEditSessionDelBtn, .dayEditBreakDel, .dayEditWorkDelBtn { min-height: 40px; min-width: 40px; }
   .dayEditBreakAdd, .dayEditAddWorkBtn, .dayEditAddOutlineBtn { min-height: 40px; }
 }
+
+/* 通勤方法（複数）の行 */
+.commuteMethodRow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+.commuteCheck { display: inline-flex; align-items: center; gap: 8px; min-width: 150px; font-weight: 600; color: #1e293b; cursor: pointer; }
+.commuteCheck input { width: 18px; height: 18px; }

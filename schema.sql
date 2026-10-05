@@ -107,6 +107,17 @@ CREATE TABLE IF NOT EXISTS transport_days (
 );
 CREATE INDEX IF NOT EXISTS idx_td_date ON transport_days(date);
 
+-- Which of the registered commute methods were used that day (only for people with two or
+-- more methods, e.g. 車 and 公共交通機関). methods = JSON array of method keys.
+CREATE TABLE IF NOT EXISTS transport_day_methods (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  methods TEXT NOT NULL,
+  updated_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_tdm_date ON transport_day_methods(date);
+
 -- 週コピー: work items copied from last week's actual reports, per day and per
 -- work session (slot = 1st, 2nd, ... session of that day). Only pre-fills the
 -- clock-out input; pay is still calculated from what is actually reported.

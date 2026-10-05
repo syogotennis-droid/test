@@ -85,10 +85,12 @@ npx wrangler pages dev dist
 - `config.minWageItems` で連動する業務を選ぶ（初期値 研修会・清掃・事務処理）。変更時は、連動業務で時給が新しい最低賃金より低い人だけ、時給履歴に適用開始日つきで追加（確認画面で対象を選べる）
 
 ## 交通費・日数
-- 通勤方法 `commuteMethod`: car / bike / bus / train / none（アルバイト・パートのみ。社員は対象外）。以前の `walk` は none と同じに扱う。未設定（以前のデータ）は従来どおり日額 `itemRates['交通費'].amount` × 日数
-- 車・バイク: 1日の交通費 ＝ 通勤距離 `commuteKm` × 単価（お客様のExcelと同じ。2倍しない）。単価は設定「交通費単価」の `config.carRates`（適用開始日つき。`{ from, base, carKmPerL, bikeKmPerL, rate, bikeRate }`、rate＝金額÷車の燃費、bikeRate＝金額÷バイクの燃費。燃費の初期値は車8・バイク13で変更可）。1日分は端数処理なし、月の合計で四捨五入。以前の版の `commuteOneWayKm`（片道、2倍で計算）と `commuteDistanceKm`（1日分）は、入れ直すまで以前と同じ金額で計算する
+- 通勤方法は複数登録できる: `commuteMethods = { car: { km }, bike: { km }, public: { amount } }`（アルバイト・パートのみ。社員は対象外。`{}` は交通費なし）。従業員の編集は「交通費 あり／なし」→ あり なら車・バイク・公共交通機関（バス・電車をまとめたもの）にチェック
+- 2つ以上登録している人は、退勤時に「本日の交通費 あり」のあと、その日使ったもの（1つ以上）を選ぶ。`transport_day_methods` に日ごとに保存し、その日の分だけ支給（記録がない日は最初の方法）。管理画面の勤務記録の編集でも直せる
+- 車・バイク: 1日の交通費 ＝ 通勤距離（km）× 単価（お客様のExcelと同じ。2倍しない）。単価は設定「交通費単価」の `config.carRates`（適用開始日つき。`{ from, base, carKmPerL, bikeKmPerL, rate, bikeRate }`、rate＝金額÷車の燃費、bikeRate＝金額÷バイクの燃費。燃費の初期値は車8・バイク13で変更可）。公共交通機関は1日の金額。1日分は端数処理なし、月の合計で四捨五入
+- 以前のデータ: `commuteMethod`（bus/train は公共交通機関、walk は交通費なし）、`commuteOneWayKm`（片道、2倍で計算）、`commuteDistanceKm`（1日分）、方法未設定の日額 `itemRates['交通費'].amount` は、入れ直すまで以前と同じ金額で計算する
 - 通勤設定の変更は `commuteHistory` に適用開始日つきで残し、その日より前は以前の設定で計算する
-- 本日の交通費（支給対象／支給なし）は退勤時に入力。`transport_days` に「支給なし」の日だけ保存
+- 本日の交通費（あり／なし）は退勤時に入力。`transport_days` に「なし」の日だけ保存
 - 勤務申告 = 業務入力があり打刻が完了した日（従来の定義）。出勤日数 = 出勤・退勤の両方がある日。交通費対象 = 勤務申告の日のうち「支給なし」でない日。打刻未完了の日は別表示
 - 計算は `src/lib/db.js` の `computeTransport` / `attendanceDates` / `prepTimeRows` を画面とExcelで共用
 

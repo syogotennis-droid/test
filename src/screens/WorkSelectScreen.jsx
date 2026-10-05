@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder } from '../lib/db'
+import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder, commuteLabel } from '../lib/db'
 import { answerWeeklyCopyAtClockOut } from '../lib/punchFlow'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
 import styles from './WorkSelectScreen.module.css'
@@ -325,6 +325,11 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
     setAsking(false)
   }
   const [transportEligible, setTransportEligible] = useState(ctx.transportDefault ?? true)
+  const transportOptions = ctx.transportOptions || []
+  const [transportMethods, setTransportMethods] = useState(ctx.transportMethodsDefault || [])
+  const toggleMethod = k => setTransportMethods(prev => (prev.includes(k)
+    ? (prev.length > 1 ? prev.filter(x => x !== k) : prev) // at least one stays checked
+    : [...prev, k]))
   const [editingItem, setEditingItem] = useState(null)
   const [subPickerGroup, setSubPickerGroup] = useState(null)
 
@@ -367,7 +372,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
     setSaving(true)
     setSaveError('')
     try {
-      await onComplete(workItemsObj, ctx.asksTransport ? { transportEligible } : {})
+      await onComplete(workItemsObj, ctx.asksTransport ? { transportEligible, transportMethods } : {})
     } catch (e) {
       console.error(e)
       // keep what was entered; tell why it was not registered
@@ -486,14 +491,26 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
               aria-checked={transportEligible}
               className={[styles.transportBtn, transportEligible ? styles.transportBtnOn : ''].join(' ')}
               onClick={() => setTransportEligible(true)}
-            >{transportEligible ? '✓ ' : ''}支給対象</button>
+            >{transportEligible ? '✓ ' : ''}あり</button>
             <button
               type="button"
               role="radio"
               aria-checked={!transportEligible}
               className={[styles.transportBtn, !transportEligible ? styles.transportBtnOff : ''].join(' ')}
               onClick={() => setTransportEligible(false)}
-            >{!transportEligible ? '✓ ' : ''}支給なし</button>
+            >{!transportEligible ? '✓ ' : ''}なし</button>
+          </div>
+        )}
+        {ctx.asksTransport && transportEligible && transportOptions.length > 1 && (
+          <div className={styles.transportMethods} role="group" aria-label="今日使った通勤方法">
+            <span className={styles.transportMethodsLabel}>今日使ったもの</span>
+            {transportOptions.map(k => (
+              <button key={k} type="button" role="checkbox" aria-checked={transportMethods.includes(k)}
+                className={[styles.transportMethodBtn, transportMethods.includes(k) ? styles.transportMethodOn : ''].join(' ')}
+                onClick={() => toggleMethod(k)}>
+                <span className={styles.transportMethodBox}>{transportMethods.includes(k) ? '✓' : ''}</span>{commuteLabel(k)}
+              </button>
+            ))}
           </div>
         )}
 

@@ -631,3 +631,25 @@
 
 .timeNumClear { color: #475569; background: #f1f5f9; }
 .timeHint { min-height: 1.2em; text-align: center; color: #b45309; font-size: 0.9rem; font-weight: 700; }
+
+/* 「あり」のとき、登録が2つ以上なら今日使った通勤方法を選ぶ */
+.transportMethods { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding-left: 4px; }
+.transportMethodsLabel { font-size: 18px; font-weight: 700; color: #475569; margin-right: 4px; }
+.transportMethodBtn {
+  display: inline-flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: 0 18px; border-radius: 12px; border: 2px solid #d6d9de;
+  background: #fff; color: #374151; font-size: 20px; font-weight: 700; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.transportMethodOn { border-color: #16a34a; background: #f0fdf4; color: #166534; }
+.transportMethodBox {
+  width: 26px; height: 26px; border-radius: 6px; border: 2px solid currentColor;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 18px;
+}
+@media (max-width: 760px) {
+  .transportMethodBtn { min-height: 44px; font-size: 16px; padding: 0 12px; }
+  .transportMethodsLabel { flex: 1 1 100%; font-size: 15px; }
+}
+@media (max-height: 640px) {
+  .transportMethodBtn { min-height: 42px; font-size: 17px; }
+}
