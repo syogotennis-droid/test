@@ -3364,7 +3364,6 @@ function MinWageSettings({ onUsersChanged }) {
   const inputStyle = { height: 44, border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1rem', padding: '0 10px', background: '#f8fafc', color: '#1a3f6f', boxSizing: 'border-box', fontFamily: 'inherit' }
   return (
     <div>
-      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>最低賃金</div>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>
         準備時間の計算と、下で選んだ業務の時給に使います。変更すると、選んだ業務で時給が新しい最低賃金より低い人だけ、適用開始日から新しい時給になります。
       </div>
@@ -3511,7 +3510,6 @@ function CarRateSettings() {
   const decimal = (setter, v) => { if (/^\d{0,5}(\.\d{0,3})?$/.test(v)) { setter(v); setErr('') } }
   return (
     <div>
-      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>交通費単価（車・バイク）</div>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>単価 ＝ 金額 ÷ 燃費。1日の交通費 ＝ 通勤距離 × 単価（端数はそのまま、月の合計で四捨五入）。変更は適用開始日以降に反映。</div>
       {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めません。通信を確認し、再読み込みしてください（変更不可）</div>}
       {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読み込み中</div>) : (
@@ -3613,16 +3611,8 @@ function SettingsTab({ users, onUsersChanged }) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px' }}>
     <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* 項目へ移動 */}
-      <nav style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} aria-label="設定の項目">
-        {[['set-pin', '管理者PIN'], ['set-items', '業務の管理'], ['set-minwage', '最低賃金'], ['set-car', '交通費単価']].map(([id, label]) => (
-          <button key={id} type="button" className={styles.kinmuboExpandBtn}
-            onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{label}</button>
-        ))}
-      </nav>
       {/* PIN変更 */}
-      <section id="set-pin" style={SETTINGS_CARD}>
-        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1a3f6f', marginBottom: 14 }}>管理者PIN変更</div>
+      <SettingsSection id="set-pin" title="管理者PIN変更" summary="管理画面に入るときのPIN">
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={SETTINGS_LABEL}>新しいPIN（4桁）</span>
@@ -3659,15 +3649,41 @@ function SettingsTab({ users, onUsersChanged }) {
         {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>{error}</div>}
         {saved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>PINを変更しました（全端末に反映）</div>}
         <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 10 }}>次回のPIN入力から新しいPINが有効</div>
-      </section>
+      </SettingsSection>
 
-      <section id="set-items" style={SETTINGS_CARD}><WorkItemSettings users={users} /></section>
+      <SettingsSection id="set-items" title="業務の管理" summary="業務の追加・名前・グループ・並び順"><WorkItemSettings users={users} /></SettingsSection>
 
-      <section id="set-minwage" style={SETTINGS_CARD}><MinWageSettings onUsersChanged={onUsersChanged} /></section>
+      <SettingsSection id="set-minwage" title="最低賃金" summary="準備時間の計算と、連動する業務の時給"><MinWageSettings onUsersChanged={onUsersChanged} /></SettingsSection>
 
-      <section id="set-car" style={SETTINGS_CARD}><CarRateSettings /></section>
+      <SettingsSection id="set-car" title="交通費単価（車・バイク）" summary="金額 ÷ 燃費 ＝ 1kmあたりの単価"><CarRateSettings /></SettingsSection>
     </div>
     </div>
+  )
+}
+
+// One settings block that opens when its title is clicked (closed by default; this browser remembers which were open)
+function SettingsSection({ id, title, summary, children }) {
+  const KEY = 'settingsOpen'
+  const [open, setOpen] = useState(() => { try { return (JSON.parse(localStorage.getItem(KEY) || '[]') || []).includes(id) } catch { return false } })
+  function toggle() {
+    const next = !open
+    setOpen(next)
+    try {
+      const list = new Set(JSON.parse(localStorage.getItem(KEY) || '[]') || [])
+      if (next) list.add(id); else list.delete(id)
+      localStorage.setItem(KEY, JSON.stringify([...list]))
+    } catch {}
+  }
+  return (
+    <section id={id} style={{ ...SETTINGS_CARD, padding: 0 }}>
+      <button type="button" onClick={toggle} aria-expanded={open}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '16px 24px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+        <span style={{ color: '#64748b', fontSize: '0.9rem', width: 14, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+        <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1a3f6f' }}>{title}</span>
+        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{summary}</span>
+      </button>
+      {open && <div style={{ padding: '0 24px 20px' }}>{children}</div>}
+    </section>
   )
 }
 

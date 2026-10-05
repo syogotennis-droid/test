@@ -244,7 +244,6 @@ export default function WorkItemSettings({ users }) {
 
   return (
     <div>
-      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>業務の管理</div>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12, lineHeight: 1.6 }}>
         表示順（退勤画面・給与・出勤簿）。同じグループの業務は退勤画面で1つのカードにまとまります。
         名前を変えても過去の記録・時給は変わりません。
