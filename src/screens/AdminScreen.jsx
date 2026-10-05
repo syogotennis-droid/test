@@ -15,7 +15,7 @@ import {
   getSessionWorkReportsWithSessionsForRange, saveDayEditBatch,
   pairBreaks, breakMinutes, BREAK_START, BREAK_END, getTodayPunchState,
   getCommute, getTransportDays, getCarRates, saveCarRates, computeTransport, attendanceDates,
-  COMMUTE_METHODS, carRateForDate,
+  COMMUTE_METHODS, carRateForDate, commuteOn,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
   prepTimeRows, planMinWageChange, withRateFrom, ratePeriods,
   getWorkItemDefs, activeWorkItemDefs, itemLabel, sortByItemOrder, isDeletedWorkItem, SYSTEM_ITEMS,
@@ -3055,7 +3055,7 @@ function AddUserModal({ users, onClose, onAdded }) {
         id: addId.trim(), name: addName.trim(), pin, employeeType,
         workItems: employeeType === 'salaried' ? [] : workItems,
         itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
-        ...(employeeType !== 'salaried' ? { commuteMethod, commuteOneWayKm: Number(commuteDistance) || 0 } : {}),
+        ...(employeeType !== 'salaried' ? { commuteMethod, commuteKm: Number(commuteDistance) || 0 } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
@@ -3459,16 +3459,28 @@ function MinWageSettings({ onUsersChanged }) {
 function CarRateSettings() {
   const [rates, setRates] = useState(null)
   const [from, setFrom] = useState(getTodayJst())
-  const [rateStr, setRateStr] = useState('')
+  const [baseStr, setBaseStr] = useState('')
+  const [carKmStr, setCarKmStr] = useState('8')
+  const [bikeKmStr, setBikeKmStr] = useState('13')
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const today = getTodayJst()
 
   const [loadErr, setLoadErr] = useState(false)
-  useEffect(() => { getCarRates().then(setRates).catch(() => setLoadErr(true)) }, [])
+  useEffect(() => {
+    getCarRates().then(list => {
+      setRates(list)
+      // the fuel figures rarely change: start from the latest ones
+      const last = [...list].sort((a, b) => (b.from || '').localeCompare(a.from || ''))[0]
+      if (last?.carKmPerL) setCarKmStr(String(last.carKmPerL))
+      if (last?.bikeKmPerL) setBikeKmStr(String(last.bikeKmPerL))
+    }).catch(() => setLoadErr(true))
+  }, [])
 
   const sorted = [...(rates || [])].sort((a, b) => (b.from || '').localeCompare(a.from || ''))
   const currentIdx = sorted.findIndex(e => !e.from || e.from <= today)
+  const f3 = v => (Number.isFinite(v) && v > 0 ? v.toFixed(3) : '—')
+  const base = Number(baseStr), carKm = Number(carKmStr), bikeKm = Number(bikeKmStr)
 
   async function persist(next, okMsg) {
     try {
@@ -3478,64 +3490,99 @@ function CarRateSettings() {
       setErr('')
       setTimeout(() => setMsg(''), 4000)
     } catch {
-      setErr('保存に失敗しました')
+      setErr('保存できません。再度実行してください')
     }
   }
 
   function add() {
-    const rate = Number(rateStr)
     if (!from) { setErr('適用開始日を入力'); return }
-    if (!(rate > 0)) { setErr('単価を入力'); return }
+    if (!(base > 0)) { setErr('単価の元になる金額を入力'); return }
+    if (!(carKm > 0) || !(bikeKm > 0)) { setErr('車・バイクの燃費を入力'); return }
     if ((rates || []).some(e => e.from === from)) { setErr(`${fmtJaDate(from)}の単価はすでに登録されています`); return }
     if (from < today && !window.confirm(`${fmtJaDate(from)}は過去の日付です。この日以降の出勤簿も新しい単価で計算します。`)) return
-    persist([...(rates || []), { from, rate }], `${fmtJaDate(from)}から ${rate}円/km を適用します`)
-    setRateStr('')
+    const entry = { from, base, carKmPerL: carKm, bikeKmPerL: bikeKm, rate: base / carKm, bikeRate: base / bikeKm }
+    persist([...(rates || []), entry], `${fmtJaDate(from)}から 車 ${f3(entry.rate)}円/km・バイク ${f3(entry.bikeRate)}円/km を適用します`)
+    setBaseStr('')
   }
 
-  const inputStyle = { height: 44, border: '2px solid #e2e8f0', borderRadius: 10, fontSize: '1rem', padding: '0 10px', background: '#f8fafc', color: '#1a3f6f', boxSizing: 'border-box', fontFamily: 'inherit' }
+  const cell = { padding: '8px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '0.88rem', textAlign: 'right', whiteSpace: 'nowrap' }
+  const head = { ...cell, background: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: '0.8rem' }
+  const numIn = w => ({ height: 38, width: w, border: '1px solid #cbd5e1', borderRadius: 6, fontSize: '0.95rem', padding: '0 8px', textAlign: 'right', boxSizing: 'border-box', fontFamily: 'inherit' })
+  const decimal = (setter, v) => { if (/^\d{0,5}(\.\d{0,3})?$/.test(v)) { setter(v); setErr('') } }
   return (
     <div>
-      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>車通勤の交通費単価</div>
-      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>車通勤の交通費 ＝ 通勤距離 × 単価。単価の変更は適用開始日以降に反映。</div>
+      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>交通費単価（車・バイク）</div>
+      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>単価 ＝ 金額 ÷ 燃費。1日の交通費 ＝ 通勤距離 × 単価（端数はそのまま、月の合計で四捨五入）。変更は適用開始日以降に反映。</div>
       {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めません。通信を確認し、再読み込みしてください（変更不可）</div>}
       {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読み込み中</div>) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-          {sorted.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>まだ登録されていません</div>}
-          {sorted.map((e, i) => {
-            const isFuture = !!(e.from && e.from > today)
-            const status = isFuture ? '変更予定' : i === currentIdx ? '現在適用中' : '過去'
-            return (
-              <div key={e.from || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: i === currentIdx ? '#eff6ff' : '#f8fafc', border: '1px solid #e2e8f0', fontSize: '0.9rem' }}>
-                <span style={{ minWidth: 110 }}>{e.from ? `${fmtJaDate(e.from)}〜` : '最初から'}</span>
-                <strong style={{ color: '#1a3f6f' }}>{Number(e.rate).toLocaleString()}円/km</strong>
-                <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{status}</span>
-                {e.from && (
-                  <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価 ${e.rate}円/km を削除します。\nこの日以降の車の交通費は前の単価で計算します。`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
-                    style={{ border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 8, padding: '4px 10px', fontWeight: 700, cursor: 'pointer' }}>削除</button>
-                )}
-              </div>
-            )
-          })}
+        <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', border: '1px solid #e2e8f0' }}>
+            <thead>
+              <tr>
+                <th style={{ ...head, textAlign: 'left' }}>適用開始日</th>
+                <th style={head}>金額</th>
+                <th style={head}>車</th>
+                <th style={head}>バイク</th>
+                <th style={{ ...head, textAlign: 'center' }}>状態</th>
+                <th style={head}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.length === 0 && <tr><td colSpan={6} style={{ ...cell, textAlign: 'left', color: '#94a3b8' }}>まだ登録されていません</td></tr>}
+              {sorted.map((e, i) => {
+                const isFuture = !!(e.from && e.from > today)
+                const status = isFuture ? '変更予定' : i === currentIdx ? '現在適用中' : '過去'
+                return (
+                  <tr key={e.from || i} style={{ background: i === currentIdx ? '#eff6ff' : '#fff' }}>
+                    <td style={{ ...cell, textAlign: 'left' }}>{e.from ? `${fmtJaDate(e.from)}〜` : '最初から'}</td>
+                    <td style={cell}>{e.base ? `${Number(e.base).toLocaleString()}円` : '—'}</td>
+                    <td style={cell}><strong>{f3(Number(e.rate))}</strong>{e.carKmPerL ? <span style={{ color: '#94a3b8' }}>（{e.carKmPerL}）</span> : null}</td>
+                    <td style={cell}><strong>{f3(Number(e.bikeRate))}</strong>{e.bikeKmPerL ? <span style={{ color: '#94a3b8' }}>（{e.bikeKmPerL}）</span> : null}</td>
+                    <td style={{ ...cell, textAlign: 'center', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{status}</td>
+                    <td style={cell}>
+                      {e.from && (
+                        <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価を削除します。\nこの日以降の車・バイクの交通費は前の単価で計算します。`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
+                          style={{ border: 'none', background: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer' }}>削除</button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: '#555', fontWeight: 700 }}>
-          適用開始日
-          <input type="date" value={from} onChange={e => { setFrom(e.target.value); setErr('') }} style={inputStyle} />
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: '#555', fontWeight: 700 }}>
-          単価（円/km）
-          <input type="text" inputMode="decimal" value={rateStr} placeholder="例: 15"
-            onChange={e => { if (/^\d{0,4}(\.\d{0,2})?$/.test(e.target.value)) { setRateStr(e.target.value); setErr('') } }}
-            style={{ ...inputStyle, width: 120 }} />
-        </label>
-        <button onClick={add} disabled={!rateStr || rates === null}
-          style={{ height: 44, padding: '0 18px', background: '#1a5fa8', border: 'none', borderRadius: 10, color: '#fff', fontWeight: 800, cursor: 'pointer', opacity: rateStr ? 1 : 0.4 }}>
-          単価を追加
-        </button>
-      </div>
+      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#334155', marginBottom: 6 }}>新しい単価</div>
+      <table style={{ borderCollapse: 'collapse', border: '1px solid #e2e8f0' }}>
+        <thead>
+          <tr>
+            <th style={{ ...head, textAlign: 'left' }}>適用開始日</th>
+            <th style={head}>金額（円）</th>
+            <th style={head}>車（燃費）</th>
+            <th style={head}>バイク（燃費）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={{ ...cell, textAlign: 'left' }}><input type="date" value={from} onChange={e => { setFrom(e.target.value); setErr('') }} style={{ ...numIn(150), textAlign: 'left' }} /></td>
+            <td style={cell}><input type="text" inputMode="decimal" value={baseStr} placeholder="例: 174" aria-label="金額" onChange={e => decimal(setBaseStr, e.target.value)} style={{ ...numIn(100), background: '#fef9c3' }} /></td>
+            <td style={cell}><input type="text" inputMode="decimal" value={carKmStr} aria-label="車の燃費" onChange={e => decimal(setCarKmStr, e.target.value)} style={numIn(70)} /></td>
+            <td style={cell}><input type="text" inputMode="decimal" value={bikeKmStr} aria-label="バイクの燃費" onChange={e => decimal(setBikeKmStr, e.target.value)} style={numIn(70)} /></td>
+          </tr>
+          <tr>
+            <td style={{ ...cell, textAlign: 'left', color: '#64748b' }}>単価（円/km）</td>
+            <td style={cell}></td>
+            <td style={cell}><strong>{base > 0 && carKm > 0 ? f3(base / carKm) : '—'}</strong></td>
+            <td style={cell}><strong>{base > 0 && bikeKm > 0 ? f3(base / bikeKm) : '—'}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <button onClick={add} disabled={!baseStr || rates === null}
+        style={{ marginTop: 10, height: 40, padding: '0 18px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: baseStr ? 1 : 0.4 }}>
+        単価を追加
+      </button>
       {err && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem', marginTop: 8 }}>{err}</div>}
-      {msg && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem', marginTop: 8 }}>✓ {msg}</div>}
+      {msg && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.9rem', marginTop: 8 }}>{msg}</div>}
     </div>
   )
 }
@@ -3568,7 +3615,7 @@ function SettingsTab({ users, onUsersChanged }) {
     <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* 項目へ移動 */}
       <nav style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} aria-label="設定の項目">
-        {[['set-pin', '管理者PIN'], ['set-items', '業務の管理'], ['set-minwage', '最低賃金'], ['set-car', '車通勤の単価']].map(([id, label]) => (
+        {[['set-pin', '管理者PIN'], ['set-items', '業務の管理'], ['set-minwage', '最低賃金'], ['set-car', '交通費単価']].map(([id, label]) => (
           <button key={id} type="button" className={styles.kinmuboExpandBtn}
             onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{label}</button>
         ))}
@@ -4036,9 +4083,10 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
 // ─── CommuteSection (通勤・交通費) ────────────────────────────────────────────
 
 // method '' = saved before commute methods existed: keeps the old daily amount
-function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistance, carRates, isTablet, onNumpad, legacyKm, changed, from, onFrom }) {
-  const todayRate = carRateForDate(carRates || [], getTodayJst())
-  const dist = (Number(distance) || 0) * 2
+function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistance, carRates, isTablet, onNumpad, changed, from, onFrom }) {
+  const vehicle = method === 'car' || method === 'bike'
+  const todayRate = vehicle ? carRateForDate(carRates || [], getTodayJst(), method) : 0
+  const dist = Number(distance) || 0
   const usesAmount = method === 'bus' || method === 'train' || method === ''
   return (
     <div className={styles.userEditSection}>
@@ -4068,9 +4116,9 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
           </div>
         </div>
       )}
-      {method === 'car' && (
+      {vehicle && (
         <div className={styles.commuteRow}>
-          <label className={styles.userEditLabel}>通勤距離（片道）</label>
+          <label className={styles.userEditLabel}>通勤距離</label>
           <div className={styles.workItemInputWrap}>
             {isTablet ? (
               <button className={styles.numpadTriggerSm} onClick={() => onNumpad('distance')}>{distance || '0'}</button>
@@ -4082,14 +4130,9 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
           </div>
           <div className={styles.userEditHintText}>
             {todayRate > 0
-              ? `1日の交通費 ＝ 片道 × 2 × 単価${todayRate}円 ＝ ${Math.round(dist * todayRate).toLocaleString()}円（単価は「設定」で変更）`
-              : '車通勤の単価が未設定です。「設定」で登録'}
+              ? `1日の交通費 ＝ ${dist}km × ${todayRate.toFixed(3)}円 ＝ ${(dist * todayRate).toFixed(1)}円（単価は「設定」で変更）`
+              : `${method === 'bike' ? 'バイク' : '車'}の単価が未設定です。「設定」の交通費単価で登録`}
           </div>
-          {legacyKm > 0 && !(Number(distance) > 0) && (
-            <div className={styles.userEditHintText} style={{ color: '#b45309' }}>
-              以前は「1日分の距離 {legacyKm}km」で登録されています。片道の距離を入れ直してください（入れ直すまでは以前の距離で計算します）
-            </div>
-          )}
         </div>
       )}
       {method === 'none' && (
@@ -4168,10 +4211,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   )
   const normMethod = m => (m === 'walk' ? 'none' : (m || '')) // 徒歩 (older data) = 交通費なし
   const [commuteMethod, setCommuteMethod] = useState(normMethod(user.commuteMethod))
-  const [commuteDistance, setCommuteDistance] = useState(user.commuteOneWayKm ? String(user.commuteOneWayKm) : '')
+  const curKm = commuteOn(user, getTodayJst()).km
+  const [commuteDistance, setCommuteDistance] = useState(curKm > 0 ? String(curKm) : '')
   const [commuteFrom, setCommuteFrom] = useState(getTodayJst())
   const commuteChanged = (commuteMethod || '') !== normMethod(user.commuteMethod)
-    || (Number(commuteDistance) || 0) !== (Number(user.commuteOneWayKm) || 0)
+    || (Number(commuteDistance) || 0) !== (Number(curKm) || 0)
     || (Number(transportAmount) || 0) !== (Number(user.itemRates?.['交通費']?.amount) || 0)
   const [carRates, setCarRates] = useState([])
   useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
@@ -4307,8 +4351,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
         ...(employeeType === 'salaried' ? {} : { workItems, itemRates: buildItemRates() }),
         ...(employeeType !== 'salaried' && commuteChanged ? {
           commuteMethod: commuteMethod || null,
-          commuteOneWayKm: Number(commuteDistance) || 0,
-          commuteHistory: commuteHistoryWith(user, { from: commuteFrom, method: commuteMethod || null, oneWayKm: Number(commuteDistance) || 0, amount: Number(transportAmount) || 0 }),
+          commuteKm: Number(commuteDistance) || 0,
+          commuteHistory: commuteHistoryWith(user, { from: commuteFrom, method: commuteMethod || null, km: Number(commuteDistance) || 0, amount: Number(transportAmount) || 0 }),
         } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
@@ -4606,11 +4650,10 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
               amount={transportAmount} onAmount={setTransportAmount}
               distance={commuteDistance} onDistance={setCommuteDistance}
               carRates={carRates} isTablet={isTablet}
-              legacyKm={Number(user.commuteDistanceKm) || 0}
               changed={commuteChanged} from={commuteFrom} onFrom={setCommuteFrom}
               onNumpad={field => setNumpad(field === 'amount'
                 ? { title: '1日あたりの交通費（円）', field: 'amount', maxLength: 6 }
-                : { title: '通勤距離・片道（km）', field: 'distance', maxLength: 6, decimal: true })}
+                : { title: '通勤距離（km）', field: 'distance', maxLength: 6, decimal: true })}
             />
           )}
 

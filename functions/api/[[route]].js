@@ -699,10 +699,10 @@ function asksTransport(u) {
   const hist = Array.isArray(u.commuteHistory) ? [...u.commuteHistory].sort((a, b) => (a.from || '').localeCompare(b.from || '')) : []
   let e = null
   for (const h of hist) if (!h.from || h.from <= date) e = h
-  if (!e) e = { method: u.commuteMethod, oneWayKm: u.commuteOneWayKm, legacyKm: u.commuteDistanceKm, amount: u.itemRates?.['交通費']?.amount }
+  if (!e) e = { method: u.commuteMethod, km: u.commuteKm, oneWayKm: u.commuteOneWayKm, legacyKm: u.commuteDistanceKm, amount: u.itemRates?.['交通費']?.amount }
   const m = e.method
   if (m === 'walk' || m === 'none') return false
-  if (m === 'car') return Number(e.oneWayKm) > 0 || Number(e.legacyKm) > 0
+  if (m === 'car' || m === 'bike') return Number(e.km) > 0 || Number(e.oneWayKm) > 0 || Number(e.legacyKm) > 0
   return Number(e.amount) > 0
 }
 
