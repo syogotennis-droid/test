@@ -132,7 +132,10 @@ export async function onRequest(context) {
       return ok(results.map(pubUser))
     }
     if (route.startsWith('users/') && method === 'GET') {
-      const u = await DB.prepare('SELECT * FROM users WHERE id = ?').bind(route.slice(6)).first()
+      const qid = route.slice(6)
+      // an employee whose ID was changed keeps working with the old QR card (data.formerIds)
+      const u = await DB.prepare('SELECT * FROM users WHERE id = ?').bind(qid).first() ||
+        await DB.prepare("SELECT * FROM users WHERE EXISTS (SELECT 1 FROM json_each(users.data, '$.formerIds') WHERE value = ?)").bind(qid).first()
       return ok(u ? pubUser(u) : null)
     }
     if (route.startsWith('users/') && method === 'PUT') {
@@ -141,6 +144,8 @@ export async function onRequest(context) {
       const { id: _ignored, ...b } = await readBody()
       const cur = await DB.prepare('SELECT data FROM users WHERE id = ?').bind(id).first()
       if (sp.get('new') === '1' && cur) throw new HttpError('user_exists', 409)
+      // an old ID of someone else (their old QR card still opens their record) can't be given to a new person
+      if (sp.get('new') === '1' && await DB.prepare("SELECT 1 AS x FROM users WHERE EXISTS (SELECT 1 FROM json_each(users.data, '$.formerIds') WHERE value = ?)").bind(id).first()) throw new HttpError('user_exists', 409)
       const merged = { ...(cur ? JSON.parse(cur.data || '{}') : {}), ...b }
       await DB.prepare('INSERT OR REPLACE INTO users (id, pin, data) VALUES (?, ?, ?)')
         .bind(id, merged.pin || '', JSON.stringify(merged)).run()
@@ -681,7 +686,7 @@ function publicUser(u) {
   // pin is included so the tablet can match PINs while offline
   return {
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
-    asksTransport: asksTransport(u),
+    asksTransport: asksTransport(u), formerIds: Array.isArray(u.formerIds) ? u.formerIds : [],
   }
 }
 

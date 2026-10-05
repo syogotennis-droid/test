@@ -102,7 +102,7 @@ async function main() {
     for (const t of TABLES_WITH_USER) {
       sql.push(`UPDATE OR REPLACE ${t} SET id = CASE WHEN substr(id, 1, ${o.length + 1}) = ${q(o + '_')} THEN ${q(n)} || substr(id, ${o.length + 1}) ELSE id END, user_id = ${q(n)} WHERE user_id = ${q(o)};`)
     }
-    console.log(`  従業員ID ${o} → ${n} に付け替えます`)
+    console.log(`  従業員ID ${o} → ${n} に付け替えます（${o} のQRカードもそのまま使えます）`)
   }
   for (const u0 of data.users) {
     const { id: id0, ...rest } = u0
@@ -116,6 +116,10 @@ async function main() {
     sql.push(`INSERT INTO users (id, pin, data) VALUES (${q(id)}, ${q(clean.pin || '')}, ${json(clean)}) ` +
       `ON CONFLICT(id) DO UPDATE SET pin = CASE WHEN excluded.pin != '' THEN excluded.pin ELSE users.pin END, ` +
       `data = json_patch(users.data, excluded.data);`)
+  }
+  // the old ID stays usable: the punch tablet finds the person by it (old QR card)
+  for (const [o, n] of Object.entries(renames)) {
+    sql.push(`UPDATE users SET data = json_set(data, '$.formerIds', json_array(${q(o)})) WHERE id = ${q(n)};`)
   }
   for (const l of data.logs) {
     sql.push(

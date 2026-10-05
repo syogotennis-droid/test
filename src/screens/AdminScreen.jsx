@@ -2952,10 +2952,11 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
 // (the number after the highest one in use, so a retired person's old QR card never matches a new person)
 export function nextUserId(users, employeeType) {
   const salaried = employeeType === 'salaried'
-  const nums = (users || []).map(u => /^USER(\d+)$/i.exec(u.id || '')).filter(Boolean).map(m => Number(m[1]))
+  const ids = (users || []).flatMap(u => [u.id, ...(u.formerIds || [])])
+  const nums = ids.map(id => /^USER(\d+)$/i.exec(id || '')).filter(Boolean).map(m => Number(m[1]))
     .filter(n => (salaried ? n >= 101 : n >= 1 && n <= 99))
   let n = nums.length ? Math.max(...nums) + 1 : salaried ? 101 : 1
-  const used = new Set((users || []).map(u => String(u.id).toUpperCase()))
+  const used = new Set(ids.map(id => String(id).toUpperCase()))
   while (used.has(`USER${String(n).padStart(3, '0')}`)) n++
   return `USER${String(n).padStart(3, '0')}`
 }
@@ -4456,6 +4457,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                   style={{ background: '#f1f5f9', color: '#64748b' }}
                 />
                 <div className={styles.userEditHintText}>IDは変更不可（QR・打刻記録と紐づくため）</div>
+                {(user.formerIds || []).length > 0 && <div className={styles.userEditHintText}>以前のID：{user.formerIds.join('、')}（古いQRカードもそのまま使えます）</div>}
               </div>
               <div>
                 <label className={styles.userEditLabel}>PINコード</label>

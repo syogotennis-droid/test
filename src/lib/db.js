@@ -237,7 +237,7 @@ export async function getTodayUserLogs(userId, date = getTodayDate()) {
 function cacheUsers(users) {
   writeJSON(USERS_CACHE_KEY, users.map(u => ({
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
-    asksTransport: u.asksTransport ?? getCommute(u).asks,
+    asksTransport: u.asksTransport ?? getCommute(u).asks, formerIds: u.formerIds || [],
   })))
 }
 
@@ -532,7 +532,9 @@ export async function resolveUser(qrValue) {
     return await api(`/users/${enc(qrValue)}`)
   } catch (e) {
     if (!e.offline) throw e
-    return readJSON(USERS_CACHE_KEY, []).find(u => u.id === qrValue) || null
+    const cached = readJSON(USERS_CACHE_KEY, [])
+    // an employee whose ID was changed is still found with the old QR card
+    return cached.find(u => u.id === qrValue) || cached.find(u => (u.formerIds || []).includes(qrValue)) || null
   }
 }
 

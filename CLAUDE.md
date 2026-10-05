@@ -112,7 +112,7 @@ npx wrangler pages dev dist
 - QRコードの中身は従業員IDのみ。管理画面「QR印刷」から印刷
 
 ## 移行（Firebase → D1）
-- `--rename 旧ID=新ID` で移行時に従業員IDを付け替えられる（kamiyashiro は USER24→USER024。毎回同じ指定を付ける）
+- `--rename 旧ID=新ID` で移行時に従業員IDを付け替えられる（kamiyashiro は USER24→USER024。毎回同じ指定を付ける）。旧IDは `data.formerIds` に残り、古いQRカードで読んでも新IDの人として打刻できる（オフラインも）。旧IDで別の人は登録できない
 - 切り替え日に何度流しても安全: 従業員は既存の行に合流（Firebaseの値が優先、Cloudflareにだけある通勤設定などは残る）、管理者PINと最低賃金は既にあれば上書きしない
 
 ## 給与・出勤簿の計算
