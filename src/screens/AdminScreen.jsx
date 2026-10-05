@@ -1970,6 +1970,7 @@ function KinmuboTab({ today }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [onlyIssues, setOnlyIssues] = useState(false)
+  const [foldSummary, toggleSummary] = useFold('kinmubo.summary')
   const [salariedDayEdits, setSalariedDayEdits] = useState({})
   const [salariedDaysData, setSalariedDaysData] = useState({})
 
@@ -2415,8 +2416,8 @@ function KinmuboTab({ today }) {
         {/* Global work type summary */}
         {!previewLoading && hasData && globalSummary && globalSummary.types.length > 0 && (
           <div className={styles.kinmuboGlobalSummary}>
-            <div className={styles.kinmuboGlobalSummaryTitle}>業務別集計</div>
-            <div className={styles.kinmuboGlobalTableWrap}>
+            <FoldTitle open={foldSummary} onToggle={toggleSummary} className={styles.kinmuboGlobalSummaryTitle}>業務別集計</FoldTitle>
+            {foldSummary && <div className={styles.kinmuboGlobalTableWrap}>
               <table className={styles.kinmuboGlobalTable}>
                 <thead>
                   <tr>
@@ -2442,7 +2443,7 @@ function KinmuboTab({ today }) {
                   </tr>
                 </tfoot>
               </table>
-            </div>
+            </div>}
           </div>
         )}
 
@@ -4115,6 +4116,27 @@ function TimeNumpadOverlay({ title, initialValue = '', onConfirm, onClose }) {
 // ─── CommuteSection (通勤・交通費) ────────────────────────────────────────────
 
 // method '' = saved before commute methods existed: keeps the old daily amount
+// A block that can be folded by clicking its title; this browser remembers it (open by default)
+function useFold(key, defaultOpen = true) {
+  const [open, setOpen] = useState(() => {
+    try { const m = JSON.parse(localStorage.getItem('foldState') || '{}'); return key in m ? !!m[key] : defaultOpen } catch { return defaultOpen }
+  })
+  const toggle = () => setOpen(o => {
+    try { const m = JSON.parse(localStorage.getItem('foldState') || '{}'); m[key] = !o; localStorage.setItem('foldState', JSON.stringify(m)) } catch {}
+    return !o
+  })
+  return [open, toggle]
+}
+function FoldTitle({ open, onToggle, className, children }) {
+  return (
+    <button type="button" className={className} onClick={onToggle} aria-expanded={open}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 'none', borderBottom: undefined, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', padding: 0 }}>
+      <span style={{ fontSize: '0.75em', color: '#64748b', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+      {children}
+    </button>
+  )
+}
+
 // Commute form state <-> saved settings.
 // form = { on, car: { use, km }, bike: { use, km }, public: { use, amount } }
 function commuteFormFromUser(user) {
@@ -4137,7 +4159,9 @@ function commuteMethodsFromForm(f) {
   return out
 }
 
-function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed, from, onFrom }) {
+function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed, from, onFrom, foldable }) {
+  const [foldOpen, toggleFold] = useFold('userEdit.commute')
+  const open = !foldable || foldOpen
   const today = getTodayJst()
   const set = (k, patch) => onChange({ ...form, [k]: { ...form[k], ...patch } })
   const noneChecked = form.on && !form.car.use && !form.bike.use && !form.public.use
@@ -4173,7 +4197,10 @@ function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed,
   }
   return (
     <div className={styles.userEditSection}>
-      <div className={styles.userEditSectionTitle}>通勤・交通費</div>
+      {foldable
+        ? <FoldTitle open={foldOpen} onToggle={toggleFold} className={styles.userEditSectionTitle}>通勤・交通費</FoldTitle>
+        : <div className={styles.userEditSectionTitle}>通勤・交通費</div>}
+      {open && <>
       <div>
         <label className={styles.userEditLabel}>交通費</label>
         <div className={styles.commuteToggle} style={{ maxWidth: 320 }}>
@@ -4200,6 +4227,7 @@ function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed,
           <div className={styles.userEditHintText}>この日より前は以前の設定で計算</div>
         </div>
       )}
+      </>}
     </div>
   )
 }
@@ -4241,6 +4269,8 @@ function rateItems(user) {
 
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [step, setStep] = useState('main')
+  const [foldBasic, toggleBasic] = useFold('userEdit.basic')
+  const [foldItems, toggleItems] = useFold('userEdit.items')
   // items assigned when the form opened come first; the others are folded until asked for
   const initialAssigned = useRef(new Set(user.workItems || []))
   const [showUnassigned, setShowUnassigned] = useState(() => (user.workItems || []).length === 0)
@@ -4519,7 +4549,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
 
           {/* 基本情報 */}
           <div className={styles.userEditSection}>
-            <div className={styles.userEditSectionTitle}>基本情報</div>
+            <FoldTitle open={foldBasic} onToggle={toggleBasic} className={styles.userEditSectionTitle}>基本情報</FoldTitle>
+            {foldBasic && (
             <div className={styles.userEditGrid2}>
               <div>
                 <label className={styles.userEditLabel}>種別</label>
@@ -4583,12 +4614,14 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                 }
               </div>
             </div>
+            )}
           </div>
 
           {/* 作業項目・時給 */}
           {employeeType !== 'salaried' && (
             <div className={styles.userEditSection}>
-              <div className={styles.userEditSectionTitle}>業務・時給</div>
+              <FoldTitle open={foldItems} onToggle={toggleItems} className={styles.userEditSectionTitle}>業務・時給</FoldTitle>
+              {foldItems && (
               <div className={styles.workItemTableWrap}>
                 <table className={styles.workItemTable}>
                   <thead>
@@ -4694,12 +4727,13 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           )}
 
           {employeeType !== 'salaried' && (
             <CommuteSection
-              form={commuteForm} onChange={setCommuteForm}
+              form={commuteForm} onChange={setCommuteForm} foldable
               carRates={carRates} isTablet={isTablet}
               changed={commuteChanged} from={commuteFrom} onFrom={setCommuteFrom}
               onNumpad={field => setNumpad(field === 'public'

@@ -1592,7 +1592,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<row r="${T3_HDR}" ht="32">` +
       `<c r="A${T3_HDR}" s="${S.hdr}" t="inlineStr"><is><t>業務</t></is></c>` +
       `<c r="B${T3_HDR}" s="${S.hdr}" t="inlineStr"><is><t>時間計</t></is></c>` +
-      `<c r="C${T3_HDR}" s="${S.hdr}" t="inlineStr"><is><t>時給</t></is></c>` +
+      `<c r="C${T3_HDR}" s="${S.hdr}" t="inlineStr"><is><t>単価</t></is></c>` +
       `<c r="D${T3_HDR}" s="${S.hdr}" t="inlineStr"><is><t>給与</t></is></c>` +
       `</row>`
 
