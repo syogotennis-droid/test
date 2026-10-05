@@ -6,6 +6,9 @@
 //
 //   --local    write into the local D1 used by `wrangler pages dev` (for testing)
 //   --dry-run  only fetch and write the SQL file; don't touch D1
+//   --rename USER24=USER024[,OLD=NEW…]  give employees a new ID on Cloudflare (their records,
+//              work input, rates etc. move with them; Firebase keeps the old ID). Always pass
+//              the same --rename on every run, or the old ID comes back.
 //
 // Safe to run more than once: rows are written with INSERT OR REPLACE using the
 // same IDs as Firestore, so a second run just brings D1 up to date.
@@ -21,9 +24,17 @@ const projectId = arg('--project')
 const dbName = arg('--db')
 const local = flag('--local')
 const dryRun = flag('--dry-run')
+// --rename OLD=NEW[,OLD=NEW…]
+const renames = Object.fromEntries((arg('--rename') || '').split(',').map(x => x.trim()).filter(Boolean).map(x => x.split('=').map(y => y.trim())))
+for (const [o, n] of Object.entries(renames)) {
+  if (!o || !n || !/^[^/?#%\s]+$/.test(n) || o === n) { console.log(`--rename の指定が正しくありません: ${o}=${n}`); process.exit(1) }
+}
+const rid = id => renames[id] || id
+// record ids that start with "<userId>_" carry the employee ID too
+const rkey = (key, userId) => (renames[userId] && typeof key === 'string' && key.startsWith(userId + '_') ? renames[userId] + key.slice(userId.length) : key)
 
 if (!projectId || (!dbName && !dryRun)) {
-  console.log('使い方: node migrate-from-firebase.js --project <FirebaseのプロジェクトID> --db <D1のデータベース名> [--local] [--dry-run]')
+  console.log('使い方: node migrate-from-firebase.js --project <FirebaseのプロジェクトID> --db <D1のデータベース名> [--local] [--dry-run] [--rename 旧ID=新ID]')
   process.exit(1)
 }
 
@@ -83,8 +94,19 @@ async function main() {
   }
 
   const sql = []
-  for (const u of data.users) {
-    const { id, ...rest } = u
+  // employees renamed with --rename: move what is already on Cloudflare (from an earlier run or
+  // entered on Cloudflare) to the new ID first, so nothing is left under the old one
+  const TABLES_WITH_USER = ['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days', 'transport_days', 'weekly_copies', 'weekly_copy_answers', 'work_plans']
+  for (const [o, n] of Object.entries(renames)) {
+    sql.push(`UPDATE OR REPLACE users SET id = ${q(n)} WHERE id = ${q(o)};`)
+    for (const t of TABLES_WITH_USER) {
+      sql.push(`UPDATE OR REPLACE ${t} SET id = CASE WHEN substr(id, 1, ${o.length + 1}) = ${q(o + '_')} THEN ${q(n)} || substr(id, ${o.length + 1}) ELSE id END, user_id = ${q(n)} WHERE user_id = ${q(o)};`)
+    }
+    console.log(`  従業員ID ${o} → ${n} に付け替えます`)
+  }
+  for (const u0 of data.users) {
+    const { id: id0, ...rest } = u0
+    const id = rid(id0)
     // Merge into an existing row instead of replacing it: settings that only exist on
     // Cloudflare (commute method, etc.) survive a second run; Firebase's values win otherwise.
     // null values are dropped: in a JSON merge patch a null would delete the key on the Cloudflare side
@@ -98,27 +120,27 @@ async function main() {
   for (const l of data.logs) {
     sql.push(
       'INSERT OR REPLACE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, approved_time, first_work, last_work, transport_count, work_items) VALUES (' +
-      [l.id, l.user_id || '', l.log_type || '', l.date || '', l.time || '', l.timestamp || '', l.work_type || '', l.session_id || '',
+      [l.id, rid(l.user_id || ''), l.log_type || '', l.date || '', l.time || '', l.timestamp || '', l.work_type || '', l.session_id || '',
         Number(l.synced) || 0, l.approved_time ?? null, l.first_work ?? null, l.last_work ?? null,
         l.transport_count != null ? String(l.transport_count) : null].map(q).join(', ') +
       `, ${l.work_items ? json(l.work_items) : 'NULL'});`
     )
   }
   for (const r of data.work_reports) {
-    sql.push(`INSERT OR REPLACE INTO work_reports (id, user_id, date, items, updated_at) VALUES (${[r.id, r.userId || '', r.date || ''].map(q).join(', ')}, ${json(r.items)}, ${q(r.updatedAt || '')});`)
+    sql.push(`INSERT OR REPLACE INTO work_reports (id, user_id, date, items, updated_at) VALUES (${[rkey(r.id, r.userId), rid(r.userId || ''), r.date || ''].map(q).join(', ')}, ${json(r.items)}, ${q(r.updatedAt || '')});`)
   }
   for (const r of data.session_work_reports) {
-    sql.push(`INSERT OR REPLACE INTO session_work_reports (id, user_id, date, session_id, items, updated_at) VALUES (${[r.id, r.userId || '', r.date || '', r.sessionId || ''].map(q).join(', ')}, ${json(r.items)}, ${q(r.updatedAt || '')});`)
+    sql.push(`INSERT OR REPLACE INTO session_work_reports (id, user_id, date, session_id, items, updated_at) VALUES (${[rkey(r.id, r.userId), rid(r.userId || ''), r.date || '', r.sessionId || ''].map(q).join(', ')}, ${json(r.items)}, ${q(r.updatedAt || '')});`)
   }
   const system = data.config.find(c => c.id === 'system') || {}
   // Never replace a PIN / setting that already exists in D1 (set on Cloudflare or by an earlier run)
   if (system.adminPin) sql.push(`INSERT OR IGNORE INTO config (key, value) VALUES ('adminPin', ${q(String(system.adminPin))});`)
   if (system.minWage) sql.push(`INSERT OR IGNORE INTO config (key, value) VALUES ('minWage', ${q(String(system.minWage))});`)
   for (const r of data.overtime_apps) {
-    sql.push(`INSERT OR REPLACE INTO overtime_apps (id, user_id, date, minutes) VALUES (${[r.id, r.userId || '', r.date || '', Number(r.minutes) || 0].map(q).join(', ')});`)
+    sql.push(`INSERT OR REPLACE INTO overtime_apps (id, user_id, date, minutes) VALUES (${[rkey(r.id, r.userId), rid(r.userId || ''), r.date || '', Number(r.minutes) || 0].map(q).join(', ')});`)
   }
   for (const r of data.salaried_days) {
-    sql.push(`INSERT OR REPLACE INTO salaried_days (id, user_id, date, break_mins, overtime_mins) VALUES (${[r.id, r.userId || '', r.date || '', Number(r.breakMins) || 0, Number(r.overtimeMins) || 0].map(q).join(', ')});`)
+    sql.push(`INSERT OR REPLACE INTO salaried_days (id, user_id, date, break_mins, overtime_mins) VALUES (${[rkey(r.id, r.userId), rid(r.userId || ''), r.date || '', Number(r.breakMins) || 0, Number(r.overtimeMins) || 0].map(q).join(', ')});`)
   }
 
   mkdirSync('migration-output', { recursive: true })
