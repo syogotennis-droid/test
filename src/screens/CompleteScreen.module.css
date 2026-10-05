@@ -155,3 +155,19 @@
   .workSummaryRow { font-size: 1rem; }
   .countdown { margin-top: 4px; font-size: 0.95rem; }
 }
+
+.completeActions { display: flex; gap: 12px; }
+.completeBtn {
+  min-width: 140px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.completeBtn:active { background: rgba(255,255,255,0.3); }
+@media (max-height: 720px) { .completeBtn { min-height: 40px; font-size: 0.95rem; } }

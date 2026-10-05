@@ -5268,3 +5268,20 @@
   }
   .sidebarHeader { font-size: 0; }
 }
+
+/* 削除の確定ボタンは普通の幅（横いっぱいにしない） */
+.realDeleteBtn { flex: 0 0 auto; min-width: 120px; }
+
+/* 勤務記録の編集：内容に合う幅（横に間延びしない）。確認・削除の確認はさらに狭く */
+.modalDayEditForm { width: min(920px, 96vw) !important; max-width: 920px !important; }
+.modalDayEditConfirm { width: min(720px, 96vw) !important; max-width: 720px !important; }
+.sessionNoBadge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: #1d4ed8; color: #fff; font-size: 0.78rem; font-weight: 700; }
+
+/* タブレット幅：小さすぎた文字と押す場所を広げる */
+@media (max-width: 1100px) {
+  .calSessionRow, .calSessionNum { font-size: 12.5px; }
+  .calWorkBadgeGreen, .calWorkBadgeOrange, .calWorkBadgeBlue, .calWorkBadgeRed { font-size: 11.5px; }
+  .dayEditHmNum { min-height: 40px; min-width: 44px; font-size: 1rem; }
+  .dayEditSessionDelBtn, .dayEditBreakDel, .dayEditWorkDelBtn { min-height: 40px; min-width: 40px; }
+  .dayEditBreakAdd, .dayEditAddWorkBtn, .dayEditAddOutlineBtn { min-height: 40px; }
+}

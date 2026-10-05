@@ -19,10 +19,16 @@ const VIEW = {
 export default function CompleteScreen({ logType, workItems, user, clockInTime, breakInfo, onDone }) {
   const [now] = useState(() => new Date())
 
+  // count down, then back to the punch screen; 「確認を続ける」 gives 30 more seconds (a shared tablet
+  // must not keep someone's record on screen for long)
+  const withWork = logType === '退勤' && workItems && Object.values(workItems).some(m => m > 0)
+  const [secs, setSecs] = useState(() => (withWork ? 8 : logType === '休憩開始' ? 5 : 4))
+  const [held, setHeld] = useState(false)
   useEffect(() => {
-    const timer = setTimeout(onDone, logType === '休憩開始' ? 5000 : 4000)
-    return () => clearTimeout(timer)
-  }, [onDone, logType])
+    if (secs <= 0) { onDone(); return }
+    const t = setTimeout(() => setSecs(n => n - 1), 1000)
+    return () => clearTimeout(t)
+  }, [secs, onDone])
 
   const view = VIEW[logType] || VIEW['退勤']
   const isClockOut = logType === '退勤'
@@ -89,7 +95,11 @@ export default function CompleteScreen({ logType, workItems, user, clockInTime, 
       )}
 
       <div className={styles.countdown}>
-        <span>まもなく戻ります</span>
+        <span>あと{Math.max(secs, 0)}秒で戻ります</span>
+      </div>
+      <div className={styles.completeActions}>
+        {!held && <button className={styles.completeBtn} onClick={() => { setHeld(true); setSecs(30) }}>確認を続ける</button>}
+        <button className={styles.completeBtn} onClick={onDone}>戻る</button>
       </div>
     </div>
   )

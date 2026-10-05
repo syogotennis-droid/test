@@ -27,7 +27,7 @@ export default function SyncStatus() {
     : `未送信 ${pending}件 — 自動再送中`
 
   return (
-    <div role="status" style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 150, maxWidth: 'calc(100vw - 80px)', background: online ? '#fef3c7' : '#fee2e2', color: online ? '#92400e' : '#991b1b', border: `1px solid ${online ? '#fcd34d' : '#fca5a5'}`, borderRadius: 10, padding: '8px 12px', fontSize: '0.85rem', fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+    <div role="status" style={{ position: 'fixed', left: '50%', top: 6, transform: 'translateX(-50%)', zIndex: 150, maxWidth: 'calc(100vw - 32px)', pointerEvents: 'none', background: online ? '#fef3c7' : '#fee2e2', color: online ? '#92400e' : '#991b1b', border: `1px solid ${online ? '#fcd34d' : '#fca5a5'}`, borderRadius: 10, padding: '8px 12px', fontSize: '0.85rem', fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
       {text}
     </div>
   )

@@ -1557,7 +1557,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
   return (
     <div className={styles.modalOverlay} onClick={requestClose}>
-      <div className={isEmpty ? styles.modalDayEditCompact : styles.modalLg} onClick={e => e.stopPropagation()}>
+      <div className={isEmpty ? styles.modalDayEditCompact : step === 'form' ? [styles.modalLg, styles.modalDayEditForm].join(' ') : [styles.modalLg, styles.modalDayEditConfirm].join(' ')} onClick={e => e.stopPropagation()}>
         {step === 'form' && (
           <>
             <div className={styles.modalHeader}>
@@ -1605,10 +1605,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                       <div key={s.sessionId} className={styles.dayEditSessionCard}>
                         <div className={styles.dayEditSessionCardHeader}>
                           <div className={styles.dayEditSessionBadges}>
+                            <span className={styles.sessionNoBadge}>{si + 1}回目</span>
                             <span className={punchBadgeClass}>{punchBadgeText}</span>
                             {workBadgeClass && <span className={workBadgeClass}>{workBadgeText}</span>}
                           </div>
-                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この打刻を削除</button>
+                          <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この勤務回を削除</button>
                         </div>
                         <div className={styles.dayEditSessionCardBody}>
                           {renderSessionPunchInputs(s, si)}
@@ -1784,7 +1785,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         onClick={handleTryConfirm}
                         disabled={!canSave}
                         style={!canSave ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
-                      >保存する</button>
+                      >確認へ</button>
                     </>
                   )
                 })()}
@@ -1817,6 +1818,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 return (
                   <div key={s.sessionId} className={styles.confirmSessionCard}>
                     <div className={styles.confirmSessionCardBody}>
+                      <div className={styles.confirmSessionRow}>
+                        <span className={styles.sessionNoBadge}>{si + 1}回目</span>
+                        {!isSalaried && inTime && outTime && sessionTotalMins === 0 && <strong style={{ color: '#b45309' }}>業務未入力</strong>}
+                      </div>
                       {inTime && (
                         <div className={styles.confirmSessionRow}>
                           <span>出勤</span><strong>{inTime}</strong>
@@ -1869,7 +1874,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               <div className={styles.dayEditFooterBtns}>
                 <button className={styles.cancelBtn} onClick={() => setStep('form')}>戻って修正</button>
                 {hasChanges
-                  ? <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中' : '保存'}</button>
+                  ? <button className={styles.saveBtn} onClick={handleConfirm} disabled={saving}>{saving ? '保存中' : '保存する'}</button>
                   : <button className={styles.cancelBtn} onClick={onClose}>閉じる</button>
                 }
               </div>
@@ -1906,9 +1911,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           return (
             <>
               <div className={styles.modalHeader}>
-                <div className={styles.modalHeaderTitle}>打刻を削除</div>
+                <div className={styles.modalHeaderTitle}>勤務回を削除</div>
               </div>
               <div className={styles.modalBody}>
+                <p className={styles.confirmPunchTimeInfo}>{user.name}・{dateLabel}・{pendingIdx + 1}回目</p>
                 <p className={styles.confirmPunchTimeInfo}>出勤 {inLabel} → 退勤 {outLabel}</p>
                 <p className={styles.confirmWarn}>
                   {hasWorkInSession
@@ -2337,6 +2343,7 @@ function KinmuboTab({ today }) {
               <button className={styles.navBtn} onClick={() => shiftMonth(1)} disabled={selectedYM >= currentYM}>▶</button>
             </div>
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
           <button
             className={styles.kinmuboExportBtn}
             onClick={handleCreate}
@@ -2349,9 +2356,13 @@ function KinmuboTab({ today }) {
             </svg>
             {exporting ? '出力中' : 'Excelを出力'}
           </button>
+          {!previewLoading && hasData && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>この月の全員分を出力</div>}
+          </div>
+
         </div>
 
         {/* Summary cards */}
+        {!previewLoading && hasData && <div style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 6px 2px' }}>この月の全体（絞り込みに関係なく全員分）</div>}
         {!previewLoading && hasData && (
           <div className={styles.kinmuboSummaryRow}>
             <div className={styles.kinmuboSummaryCard}>
@@ -2420,7 +2431,7 @@ function KinmuboTab({ today }) {
               <input
                 type="text"
                 className={styles.kinmuboSearch}
-                placeholder="従業員名で検索"
+                placeholder="一覧を従業員名で絞り込み"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
@@ -2430,11 +2441,11 @@ function KinmuboTab({ today }) {
                 </label>
                 <button className={styles.kinmuboExpandBtn} onClick={() => {
                   setExpandedIds(prev => new Set([...prev, ...filteredPreview.map(p => p.user.id)]))
-                }}>すべて展開</button>
+                }}>表示中を展開</button>
                 <button className={styles.kinmuboExpandBtn} onClick={() => {
                   const ids = new Set(filteredPreview.map(p => p.user.id))
                   setExpandedIds(prev => new Set([...prev].filter(id => !ids.has(id))))
-                }}>すべて閉じる</button>
+                }}>表示中を閉じる</button>
               </div>
             </div>
 
@@ -3539,8 +3550,15 @@ function SettingsTab({ users, onUsersChanged }) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px' }}>
     <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* 項目へ移動 */}
+      <nav style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} aria-label="設定の項目">
+        {[['set-pin', '管理者PIN'], ['set-items', '業務の管理'], ['set-minwage', '最低賃金'], ['set-car', '車通勤の単価']].map(([id, label]) => (
+          <button key={id} type="button" className={styles.kinmuboExpandBtn}
+            onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{label}</button>
+        ))}
+      </nav>
       {/* PIN変更 */}
-      <section style={SETTINGS_CARD}>
+      <section id="set-pin" style={SETTINGS_CARD}>
         <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1a3f6f', marginBottom: 14 }}>管理者PIN変更</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -3580,11 +3598,11 @@ function SettingsTab({ users, onUsersChanged }) {
         <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 10 }}>次回のPIN入力から新しいPINが有効</div>
       </section>
 
-      <section style={SETTINGS_CARD}><WorkItemSettings users={users} /></section>
+      <section id="set-items" style={SETTINGS_CARD}><WorkItemSettings users={users} /></section>
 
-      <section style={SETTINGS_CARD}><MinWageSettings onUsersChanged={onUsersChanged} /></section>
+      <section id="set-minwage" style={SETTINGS_CARD}><MinWageSettings onUsersChanged={onUsersChanged} /></section>
 
-      <section style={SETTINGS_CARD}><CarRateSettings /></section>
+      <section id="set-car" style={SETTINGS_CARD}><CarRateSettings /></section>
     </div>
     </div>
   )
@@ -4108,6 +4126,9 @@ function rateItems(user) {
 
 function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [step, setStep] = useState('main')
+  // items assigned when the form opened come first; the others are folded until asked for
+  const initialAssigned = useRef(new Set(user.workItems || []))
+  const [showUnassigned, setShowUnassigned] = useState(() => (user.workItems || []).length === 0)
   const [name, setName] = useState(user.name)
   const [pin, setPin] = useState(user.pin || '')
   const [pinError, setPinError] = useState('')
@@ -4466,7 +4487,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {assignableItems().filter(item => item !== '交通費').map(item => {
+                    {(() => {
+                      const all = assignableItems().filter(item => item !== '交通費')
+                      const first = all.filter(i => initialAssigned.current.has(i)), rest = all.filter(i => !initialAssigned.current.has(i))
+                      return [...first, ...(showUnassigned ? rest : [])]
+                    })().map(item => {
                       const checked = workItems.includes(item)
                       const isTransport = item === '交通費'
                       const hist = rateHistory[item] || []
@@ -4543,6 +4568,15 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                         </tr>
                       )
                     })}
+                    {!showUnassigned && assignableItems().filter(i => i !== '交通費' && !initialAssigned.current.has(i)).length > 0 && (
+                      <tr>
+                        <td colSpan={5} className={styles.workItemTd}>
+                          <button type="button" className={styles.dayEditAddWorkBtn} onClick={() => setShowUnassigned(true)}>
+                            担当していない業務を表示（{assignableItems().filter(i => i !== '交通費' && !initialAssigned.current.has(i)).length}件）
+                          </button>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
