@@ -1232,7 +1232,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       if (isNew && !inT && outT) errs.push(`${pfx}出勤時刻を入力`)
       const aIn = absMin(inT, false), aOut = absMin(outT, s.outNext)
       if (aIn != null && aOut != null && aOut < aIn) {
-        errs.push(`${pfx}退勤が出勤より前です（0時以降の退勤は「翌日」にチェック）`)
+        errs.push(`${pfx}退勤が出勤より前です`)
       }
       if (aIn != null && aOut != null && aOut - aIn > 24 * 60) errs.push(`${pfx}出勤から退勤まで24時間を超えています`)
       const brs = []
@@ -1443,9 +1443,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             onClick={() => setEditingTimeField({ si, field: 'out' })}>
             {outTime || (isIncomplete ? '勤務中' : '──:──')}
           </button>
-          <label className={styles.dayEditNextDay} title="0時以降の退勤はチェック">
-          <input type="checkbox" checked={!!s.outNext} onChange={e => updateSession(si, 'outNext', e.target.checked)} />翌日
-        </label>
+        {s.outNext && <span className={styles.dayEditNextDay}>翌日</span>}
         </div>
       )
     }
@@ -1474,9 +1472,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
           className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
         <span className={styles.dayEditHmUnit}>分</span>
-        <label className={styles.dayEditNextDay} title="0時以降の退勤はチェック">
-          <input type="checkbox" checked={!!s.outNext} onChange={e => updateSession(si, 'outNext', e.target.checked)} />翌日
-        </label>
+        {s.outNext && <span className={styles.dayEditNextDay}>翌日</span>}
         {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
       </div>
     )

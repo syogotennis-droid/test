@@ -187,7 +187,7 @@ export function startOutboxSync() {
 }
 
 // A shift that started before midnight can still get its punches until OVERNIGHT_UNTIL_HOUR
-export const OVERNIGHT_UNTIL_HOUR = 3
+export const OVERNIGHT_UNTIL_HOUR = 0 // 日をまたぐ勤務は扱わない（0 = 0時を過ぎたら前日の勤務を続けない）
 
 export function shiftDate(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number)

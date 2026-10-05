@@ -716,7 +716,7 @@ function addDays(dateStr, n) {
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000
 
 // A punch made from 0:00 up to this hour (JST) can still finish yesterday's shift
-const OVERNIGHT_UNTIL_HOUR = 3
+const OVERNIGHT_UNTIL_HOUR = 0 // 日をまたぐ勤務は扱わない（0 = 0時を過ぎたら前日の勤務を続けない）
 function jstHour() {
   return new Date(Date.now() + JST_OFFSET_MS).getUTCHours()
 }
