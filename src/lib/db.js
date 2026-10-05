@@ -977,17 +977,30 @@ export function carRateForDate(carRates, dateStr, kind = 'car') {
 
 // Transport pay rows for the given eligible days, using the commute settings
 // and the car unit price valid on each day.
+// Methods paid on a day: one registered → that one; two or more → the ones chosen that day
+// (nothing recorded → the first one)
+function methodsUsedOn(user, d, dayMethods) {
+  const { list } = commuteOn(user, d)
+  if (list.length <= 1) return list
+  const picked = (dayMethods[`${user?.id}_${d}`] || []).filter(k => list.some(m => m.key === k))
+  return picked.length ? list.filter(m => picked.includes(m.key)) : [list[0]]
+}
+
+// Transport of each eligible day (not rounded; the month total is rounded in computeTransport)
+export function transportByDate(user, eligibleDates, carRates = [], dayMethods = {}) {
+  const out = {}
+  for (const d of eligibleDates) {
+    const amount = methodsUsedOn(user, d, dayMethods)
+      .reduce((s, m) => s + (m.key === 'car' || m.key === 'bike' ? m.km * carRateForDate(carRates, d, m.key) : m.amount), 0)
+    if (amount > 0) out[d] = amount
+  }
+  return out
+}
+
 export function computeTransport(user, eligibleDates, carRates = [], dayMethods = {}) {
   const groups = []
   for (const d of [...eligibleDates].sort()) {
-    const { list } = commuteOn(user, d)
-    if (list.length === 0) continue
-    // two or more methods: the ones chosen that day (none recorded → the first one)
-    let chosen = list
-    if (list.length > 1) {
-      const picked = (dayMethods[`${user?.id}_${d}`] || []).filter(k => list.some(m => m.key === k))
-      chosen = picked.length ? list.filter(m => picked.includes(m.key)) : [list[0]]
-    }
+    const chosen = methodsUsedOn(user, d, dayMethods)
     for (const m of chosen) {
       let g
       if (m.key === 'car' || m.key === 'bike') {
@@ -1429,6 +1442,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const transportDates = workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false)
     const commute = getCommute(user)
     const transportRowsX = computeTransport(user, transportDates, carRates, transportMethods)
+    // 表1の「交通費」列（交通費のある人だけ）: その日の金額
+    const showTransportCol = commute.asks || transportRowsX.length > 0
+    const transportDay = showTransportCol ? transportByDate(user, transportDates, carRates, transportMethods) : {}
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
     let ci = 2
@@ -1479,6 +1495,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
       hdrCell('C', T1_HDR, '出勤打刻') + hdrCell('D', T1_HDR, '退勤打刻') +
+      (showTransportCol ? hdrCell('E', T1_HDR, '交通費') : '') +
       `</row>`
 
     // 表2ヘッダー（業務時間申告）
@@ -1527,6 +1544,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         } else {
           t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`, `<c r="D${r1}" s="${S.time[dt]}"/>`)
         }
+        if (showTransportCol) {
+          const amt = isFirst ? transportDay[dateStr] : 0
+          t1c.push(amt > 0 ? `<c r="E${r1}" s="${S.pay_rate}"><v>${Math.round(amt * 1000) / 1000}</v></c>` : `<c r="E${r1}" s="${S.pay_rate}"/>`)
+        }
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
         r1++
       })
@@ -1539,6 +1560,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="C${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="D${T1_TOT}" s="${S.tot_lbl}"/>` +
+      (showTransportCol ? `<c r="E${T1_TOT}" s="${S.tot_pay}"><f>SUM(E${T1_DATA}:E${T1_DATA_END})</f></c>` : '') +
       `</row>`
 
     // 表2データ行（業務時間申告、1日=1行）
@@ -1717,7 +1739,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
     const sheetDataCached = withCachedValues(sheetData)
-    const maxColIdx = Math.max(4, ci) // 4 = col D (last T1 column)
+    const maxColIdx = Math.max(showTransportCol ? 5 : 4, ci) // 4 = col D / 5 = col E (last T1 column)
     // bestFit="1" lets Excel auto-size columns to content on open (no ####### ever)
     const colsXml =
       `<cols>` +

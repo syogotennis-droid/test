@@ -92,7 +92,7 @@ npx wrangler pages dev dist
 - 通勤設定の変更は `commuteHistory` に適用開始日つきで残し、その日より前は以前の設定で計算する
 - 本日の交通費（あり／なし）は退勤時に入力。`transport_days` に「なし」の日だけ保存
 - 勤務申告 = 業務入力があり打刻が完了した日（従来の定義）。出勤日数 = 出勤・退勤の両方がある日。交通費対象 = 勤務申告の日のうち「支給なし」でない日。打刻未完了の日は別表示
-- 計算は `src/lib/db.js` の `computeTransport` / `attendanceDates` / `prepTimeRows` を画面とExcelで共用
+- 計算は `src/lib/db.js` の `computeTransport` / `transportByDate` / `attendanceDates` / `prepTimeRows` を画面とExcelで共用。Excelの出勤簿は、交通費のある人だけ打刻表の退勤打刻の右に「交通費」列（その日の金額、合計行つき）
 
 ## 時刻
 - Cloudflare のサーバーは UTC で動くため、日付・時刻は日本時間（UTC+9）で扱う。「今日」の日付は端末から渡す
