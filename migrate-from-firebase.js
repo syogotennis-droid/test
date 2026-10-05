@@ -96,7 +96,7 @@ async function main() {
   const sql = []
   // employees renamed with --rename: move what is already on Cloudflare (from an earlier run or
   // entered on Cloudflare) to the new ID first, so nothing is left under the old one
-  const TABLES_WITH_USER = ['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days', 'transport_days', 'weekly_copies', 'weekly_copy_answers', 'work_plans']
+  const TABLES_WITH_USER = ['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days', 'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans']
   for (const [o, n] of Object.entries(renames)) {
     sql.push(`UPDATE OR REPLACE users SET id = ${q(n)} WHERE id = ${q(o)};`)
     for (const t of TABLES_WITH_USER) {
@@ -119,7 +119,9 @@ async function main() {
   }
   // the old ID stays usable: the punch tablet finds the person by it (old QR card)
   for (const [o, n] of Object.entries(renames)) {
-    sql.push(`UPDATE users SET data = json_set(data, '$.formerIds', json_array(${q(o)})) WHERE id = ${q(n)};`)
+    // added to the IDs already there (an earlier rename's old QR keeps working too)
+    sql.push(`UPDATE users SET data = json_set(data, '$.formerIds', (SELECT json_group_array(v) FROM (` +
+      `SELECT value AS v FROM json_each(COALESCE(json_extract(users.data, '$.formerIds'), '[]')) UNION SELECT ${q(o)}))) WHERE id = ${q(n)};`)
   }
   for (const l of data.logs) {
     sql.push(

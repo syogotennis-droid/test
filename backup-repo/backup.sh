@@ -5,8 +5,8 @@
 #
 # Kept files: every day of the last KEEP_DAYS days, and before that only the last file of each month.
 # Capacity: if a database uses more than WARN_PERCENT of MAX_DB_MB, or the account has more than
-# WARN_PERCENT of MAX_DATABASES databases, the backups are still saved but the script ends with
-# exit code 2 so the GitHub Action fails and GitHub sends an e-mail.
+# WARN_PERCENT of MAX_DATABASES databases, or either could not be checked, the backups are still
+# saved but the script ends with exit code 2 so the GitHub Action fails and GitHub sends an e-mail.
 set -euo pipefail
 
 KEEP_DAYS="${KEEP_DAYS:-30}"
@@ -28,13 +28,11 @@ warn=0
 report=""
 note() { echo "$1"; report="$report$1"$'\n'; }
 
-# size of a database in bytes: D1 reports it with every query (meta.size_after);
-# if that is not available, the size of the exported SQL is used as an estimate
+# size of a database in bytes: D1 reports it with every query (meta.size_after); empty if unknown
 db_size() {
-  local db="$1" fallback="$2" size
-  size=$($WRANGLER d1 execute "$db" $WHERE --json --command "SELECT 1" 2>/dev/null \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const r=JSON.parse(s);const m=(Array.isArray(r)?r[0]:r).meta||{};console.log(m.size_after||"")}catch{console.log("")}})' || true)
-  echo "${size:-$fallback}"
+  local db="$1"
+  $WRANGLER d1 execute "$db" $WHERE --json --command "SELECT 1" 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const r=JSON.parse(s);const m=(Array.isArray(r)?r[0]:r).meta||{};console.log(m.size_after||"")}catch{console.log("")}})' || true
 }
 
 while IFS= read -r line || [ -n "$line" ]; do
@@ -44,10 +42,15 @@ while IFS= read -r line || [ -n "$line" ]; do
   out="backups/$db/$today.sql"
   echo "== $db"
   if $WRANGLER d1 export "$db" $WHERE $table_args --output "$out"; then
-    raw=$(wc -c < "$out")
     gzip -f "$out"
     echo "   saved $out.gz ($(du -h "$out.gz" | cut -f1))"
-    bytes=$(db_size "$db" "$raw")
+    bytes=$(db_size "$db")
+    if ! [[ "$bytes" =~ ^[0-9]+$ ]]; then
+      # the backup is saved, but the capacity could not be checked: report it instead of passing
+      note "   容量を確認できません: $db"
+      warn=1
+      continue
+    fi
     mb=$(( bytes / 1024 / 1024 ))
     pct=$(( bytes * 100 / (MAX_DB_MB * 1024 * 1024) ))
     if [ "$pct" -ge "$WARN_PERCENT" ]; then
@@ -66,7 +69,10 @@ done < databases.txt
 # number of D1 databases in the account (all of them count toward the limit)
 count=$($WRANGLER d1 list --json 2>/dev/null \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).length)}catch{console.log("")}})' || true)
-if [ -n "$count" ]; then
+if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+  note "   データベース数を確認できません"
+  warn=1
+else
   if [ $(( count * 100 / MAX_DATABASES )) -ge "$WARN_PERCENT" ]; then
     note "   データベース数注意: ${count}個（上限 ${MAX_DATABASES}個）"
     warn=1

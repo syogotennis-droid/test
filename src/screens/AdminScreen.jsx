@@ -1621,13 +1621,16 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                           </div>
                           <button className={styles.dayEditSessionDelBtn} onClick={() => tryRemoveSession(s.sessionId)}>この勤務回を削除</button>
                         </div>
-                        <div className={styles.dayEditSessionCardBody}>
-                          {renderSessionPunchInputs(s, si)}
-                          {renderBreakRows(s, si)}
-                          {!isSalaried && !inTime && (workItemsLoaded || isNewSession) && (
+                        <div className={[styles.dayEditSessionCardBody, !isSalaried ? styles.dayEditSessionCols : ''].join(' ')}>
+                          <div className={styles.dayEditColTime}>
+                            {renderSessionPunchInputs(s, si)}
+                            {renderBreakRows(s, si)}
+                          </div>
+                          {!isSalaried && <div className={styles.dayEditColWork}>
+                          {!inTime && (workItemsLoaded || isNewSession) && (
                             <div className={styles.dayEditWorkSectionHint}>出勤時刻を入力すると業務を登録できます</div>
                           )}
-                          {!isSalaried && inTime && (
+                          {inTime && (
                             !workItemsLoaded ? (
                               <div className={styles.dayEditSectionLoading}>読み込み中</div>
                             ) : (
@@ -1693,6 +1696,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                               </>
                             )
                           )}
+                          </div>}
                         </div>
                       </div>
                     )
@@ -2199,7 +2203,10 @@ function KinmuboTab({ today }) {
         const done = e.sessions.filter(se => se.inLog && se.outLog)
         if (done.length === 0) return n
         if (done.every(se => !se.outLog.session_id && !se.inLog.session_id)) return n + (hasMins(e.workReportItems) ? 0 : 1)
-        return n + done.filter(se => !hasMins(se.perSessionWork) && !hasMins(e.workReportItems)).length
+        // per-shift entries: each finished shift needs its own; only a day entered the old way
+        // (one entry for the whole day, no per-shift entries) is judged as a whole
+        if (done.some(se => hasMins(se.perSessionWork))) return n + done.filter(se => !hasMins(se.perSessionWork)).length
+        return n + (hasMins(e.workReportItems) ? 0 : done.length)
       }, 0)
       return { user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
     })
@@ -2981,11 +2988,14 @@ export function nextUserId(users, employeeType) {
   let n = nums.length ? Math.max(...nums) + 1 : salaried ? 101 : 1
   const used = new Set(ids.map(id => String(id).toUpperCase()))
   while (used.has(`USER${String(n).padStart(3, '0')}`)) n++
+  // part-timers stop at USER099 (USER100 on is for salaried staff): then the ID is entered by hand
+  if (!salaried && n > 99) return ''
   return `USER${String(n).padStart(3, '0')}`
 }
 
 function AddUserModal({ users, onClose, onAdded }) {
   const [addId, setAddId] = useState(() => nextUserId(users, 'hourly'))
+  const [commuteTried, setCommuteTried] = useState(false)
   const [idEdited, setIdEdited] = useState(false)
   const [addName, setAddName] = useState('')
   const [pin, setPin] = useState('')
@@ -3061,6 +3071,7 @@ function AddUserModal({ users, onClose, onAdded }) {
     if (!addId.trim() || !addName.trim() || saving) return
     if (/[\/?#%\s]/.test(addId.trim())) { alert('従業員IDに、空白と / ? # % は使えません'); return }
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
+    if (employeeType !== 'salaried' && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
     if (employeeType !== 'salaried' && workItems.length === 0 &&
       !window.confirm('担当業務が未選択です（退勤画面に業務が出ません）。\nこのまま追加しますか？')) return
     setSaving(true)
@@ -3141,7 +3152,9 @@ function AddUserModal({ users, onClose, onAdded }) {
                   onChange={e => { setAddId(e.target.value); setIdEdited(true) }}
                   autoFocus
                 />
-                {!idEdited && <div className={styles.userEditHintText}>次の番号を自動で入れています（アルバイト・パート 001〜、社員 101〜。変更もできます）</div>}
+                {!idEdited && (addId
+                  ? <div className={styles.userEditHintText}>次の番号を自動で入れています（アルバイト・パート 001〜099、社員 101〜。変更もできます）</div>
+                  : <div className={styles.userEditHintText}>アルバイト・パートの番号（001〜099）が埋まっています。IDを入力してください</div>)}
               </div>
               <div>
                 <label className={styles.userEditLabel}>氏名 <span className={styles.userEditRequired}>必須</span></label>
@@ -3176,6 +3189,10 @@ function AddUserModal({ users, onClose, onAdded }) {
           {employeeType !== 'salaried' && (
             <div className={styles.userEditSection}>
               <div className={styles.userEditSectionTitle}>業務・時給</div>
+              {workItems.filter(i => i !== '交通費').length === 0 && (
+                <div className={styles.userEditHintText}>担当する業務を下から選んでください</div>
+              )}
+              {workItems.filter(i => i !== '交通費').length > 0 && (
               <div className={styles.workItemTableWrap}>
                 <table className={styles.workItemTable}>
                   <thead>
@@ -3188,7 +3205,7 @@ function AddUserModal({ users, onClose, onAdded }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {assignableItems().filter(item => item !== '交通費').map(item => {
+                    {assignableItems().filter(item => item !== '交通費' && workItems.includes(item)).map(item => {
                       const checked = workItems.includes(item)
                       const r = itemRates[item] || {}
                       const isTransport = item === '交通費'
@@ -3270,10 +3287,18 @@ function AddUserModal({ users, onClose, onAdded }) {
                   </tbody>
                 </table>
               </div>
+              )}
+              {assignableItems().some(item => item !== '交通費' && !workItems.includes(item)) && (
+                <div className={styles.addItemChips}>
+                  {assignableItems().filter(item => item !== '交通費' && !workItems.includes(item)).map(item => (
+                    <button key={item} type="button" className={styles.addItemChip} onClick={() => toggleWorkItem(item)}>＋ {itemLabel(item)}</button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {employeeType !== 'salaried' && (
-            <CommuteSection form={commuteForm} onChange={setCommuteForm} carRates={carRates} isTablet={false} onNumpad={() => {}} />
+            <CommuteSection form={commuteForm} onChange={setCommuteForm} carRates={carRates} isTablet={false} onNumpad={() => {}} showErrors={commuteTried} />
           )}
         </div>
         <div className={styles.userEditFooter}>
@@ -4159,9 +4184,23 @@ function commuteMethodsFromForm(f) {
   return out
 }
 
-function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed, from, onFrom, foldable }) {
+// What is missing in the commute form ({} when it can be saved): a checked way of commuting
+// without its distance / amount would otherwise be dropped silently on save
+export function commuteFormErrors(f) {
+  if (!f.on) return {}
+  const e = {}
+  if (f.car.use && !(Number(f.car.km) > 0)) e.car = '距離を入力してください'
+  if (f.bike.use && !(Number(f.bike.km) > 0)) e.bike = '距離を入力してください'
+  if (f.public.use && !(Number(f.public.amount) > 0)) e.public = '1日の金額を入力してください'
+  if (!f.car.use && !f.bike.use && !f.public.use && !(f.legacyAmount > 0)) e.none = '通勤方法を1つ以上選ぶか、交通費「なし」にしてください'
+  return e
+}
+
+function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed, from, onFrom, foldable, showErrors }) {
   const [foldOpen, toggleFold] = useFold('userEdit.commute')
-  const open = !foldable || foldOpen
+  const errors = showErrors ? commuteFormErrors(form) : {}
+  const hasErrors = Object.keys(errors).length > 0
+  const open = !foldable || foldOpen || hasErrors
   const today = getTodayJst()
   const set = (k, patch) => onChange({ ...form, [k]: { ...form[k], ...patch } })
   const noneChecked = form.on && !form.car.use && !form.bike.use && !form.public.use
@@ -4177,19 +4216,19 @@ function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed,
           <>
             <div className={styles.workItemInputWrap}>
               {isTablet ? (
-                <button className={styles.numpadTriggerSm} onClick={() => onNumpad(k)}>{v || '0'}</button>
+                <button className={[styles.numpadTriggerSm, errors[k] ? styles.userEditInputErr : ''].join(' ')} onClick={() => onNumpad(k)}>{v || '0'}</button>
               ) : (
-                <input className={styles.workItemInput} type="text" inputMode={k === 'public' ? 'numeric' : 'decimal'} placeholder="0" value={v}
+                <input className={[styles.workItemInput, errors[k] ? styles.userEditInputErr : ''].join(' ')} type="text" inputMode={k === 'public' ? 'numeric' : 'decimal'} placeholder="0" value={v}
                   aria-label={`${label}の${k === 'public' ? '1日の金額' : '通勤距離'}`}
                   onChange={e => { if (pattern.test(e.target.value)) set(k, { [field]: e.target.value }) }} />
               )}
               <span className={styles.workItemUnit}>{unit}</span>
             </div>
-            <span className={styles.userEditHintText} style={{ margin: 0 }}>
+            {errors[k] ? <span className={styles.userEditErrMsg} style={{ margin: 0 }}>{errors[k]}</span> : <span className={styles.userEditHintText} style={{ margin: 0 }}>
               {k === 'public' ? '1日の金額' : rate > 0
                 ? `1日 ＝ ${Number(v) || 0}km × ${rate.toFixed(3)}円 ＝ ${((Number(v) || 0) * rate).toFixed(1)}円`
                 : `${label}の単価が未設定です（「設定」の交通費単価）`}
-            </span>
+            </span>}
           </>
         )}
       </div>
@@ -4212,12 +4251,14 @@ function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed,
       {form.on && (
         <div>
           <label className={styles.userEditLabel}>通勤方法（複数選べます。2つ以上のときは、退勤時にその日使ったものを選びます）</label>
-          {row('car', '車', 'km', 'km', /^\d{0,4}(\.\d{0,1})?$/)}
-          {row('bike', 'バイク', 'km', 'km', /^\d{0,4}(\.\d{0,1})?$/)}
+          {row('car', '車', 'km', 'km', /^\d{0,4}(\.\d{0,2})?$/)}
+          {row('bike', 'バイク', 'km', 'km', /^\d{0,4}(\.\d{0,2})?$/)}
           {row('public', '公共交通機関', 'amount', '円/日', /^\d{0,6}$/)}
           {noneChecked && (form.legacyAmount > 0
             ? <div className={styles.userEditHintText}>以前の設定（1日 {form.legacyAmount}円）で計算中。通勤方法を選ぶと切り替わります</div>
-            : <div className={styles.userEditHintText} style={{ color: '#b45309' }}>通勤方法を1つ以上選んでください</div>)}
+            : errors.none
+              ? <div className={styles.userEditErrMsg}>{errors.none}</div>
+              : <div className={styles.userEditHintText} style={{ color: '#b45309' }}>通勤方法を1つ以上選んでください</div>)}
         </div>
       )}
       {changed && onFrom && (
@@ -4296,6 +4337,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     user.itemRates?.['交通費']?.amount != null ? String(user.itemRates['交通費'].amount) : ''
   )
   const [commuteForm, setCommuteForm] = useState(() => commuteFormFromUser(user))
+  const [commuteTried, setCommuteTried] = useState(false)
   const initialCommute = useRef(JSON.stringify(commuteMethodsFromForm(commuteFormFromUser(user))))
   const [commuteFrom, setCommuteFrom] = useState(getTodayJst())
   // changed = what would be saved differs (a person on older settings who touches nothing keeps them)
@@ -4417,6 +4459,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   async function handleSaveAll() {
     if (!name.trim()) return
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
+    if (employeeType !== 'salaried' && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
     setSaving(true)
     setPinError('')
     setUserIdError('')
@@ -4733,7 +4776,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
 
           {employeeType !== 'salaried' && (
             <CommuteSection
-              form={commuteForm} onChange={setCommuteForm} foldable
+              form={commuteForm} onChange={setCommuteForm} foldable showErrors={commuteTried}
               carRates={carRates} isTablet={isTablet}
               changed={commuteChanged} from={commuteFrom} onFrom={setCommuteFrom}
               onNumpad={field => setNumpad(field === 'public'

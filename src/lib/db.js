@@ -997,6 +997,9 @@ export function transportByDate(user, eligibleDates, carRates = [], dayMethods =
   return out
 }
 
+// yen rounding that ignores floating-point noise (0.1 + 0.2 style sums landing on x.4999999)
+const roundYen = x => Math.round(Math.round(x * 1e6) / 1e6)
+
 export function computeTransport(user, eligibleDates, carRates = [], dayMethods = {}) {
   const groups = []
   for (const d of [...eligibleDates].sort()) {
@@ -1015,14 +1018,31 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
     }
   }
   const amountGroups = groups.filter(g => !g.vehicle).length
+  // round once on the month total: each row gets its share so the rows add up to that total
+  // (the running total rounded, minus what the earlier rows already got)
+  let raw = 0, given = 0
+  const share = g => {
+    raw += g.days * g.daily
+    const upTo = roundYen(raw)
+    const pay = upTo - given
+    given = upTo
+    return pay
+  }
   return groups.map(g => {
+    // a single row (one way of commuting, one rate all month): just 交通費
+    if (groups.length === 1) {
+      return {
+        label: '交通費', excelLabel: `交通費（${g.days}日）`,
+        days: g.days, rate: g.vehicle ? Math.round(g.daily * 100) / 100 : g.rate, pay: share(g),
+      }
+    }
     if (g.vehicle) {
       const vehicle = commuteLabel(g.m.key)
       const r3 = Math.round(g.rate * 1000) / 1000
       return {
         label: `交通費（${vehicle} ${g.m.km}km × ${r3}円）`,
         excelLabel: `交通費（${vehicle} ${g.m.km}km×${r3}円/km・${g.days}日）`,
-        days: g.days, rate: Math.round(g.daily * 100) / 100, pay: Math.round(g.days * g.daily),
+        days: g.days, rate: Math.round(g.daily * 100) / 100, pay: share(g),
       }
     }
     // the method name only when the month has more than one kind of transport row
@@ -1031,7 +1051,7 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
     return {
       label: inner ? `交通費（${inner}）` : '交通費',
       excelLabel: `交通費（${inner ? inner + '・' : ''}${g.days}日）`,
-      days: g.days, rate: g.rate, pay: Math.round(g.days * g.rate),
+      days: g.days, rate: g.rate, pay: share(g),
     }
   })
 }
@@ -1546,7 +1566,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         }
         if (showTransportCol) {
           const amt = isFirst ? transportDay[dateStr] : 0
-          t1c.push(amt > 0 ? `<c r="E${r1}" s="${S.pay_rate}"><v>${Math.round(amt * 1000) / 1000}</v></c>` : `<c r="E${r1}" s="${S.pay_rate}"/>`)
+          t1c.push(amt > 0 ? `<c r="E${r1}" s="${S.pay_rate}"><v>${Number(amt.toPrecision(15))}</v></c>` : `<c r="E${r1}" s="${S.pay_rate}"/>`) // 15 digits = what Excel keeps (drops 434.59999999999997 style noise)
         }
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
         r1++
@@ -1560,7 +1580,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="C${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="D${T1_TOT}" s="${S.tot_lbl}"/>` +
-      (showTransportCol ? `<c r="E${T1_TOT}" s="${S.tot_pay}"><f>SUM(E${T1_DATA}:E${T1_DATA_END})</f></c>` : '') +
+      (showTransportCol ? `<c r="E${T1_TOT}" s="${S.tot_pay}"><f>ROUND(SUM(E${T1_DATA}:E${T1_DATA_END}),0)</f></c>` : '') +
       `</row>`
 
     // 表2データ行（業務時間申告、1日=1行）
@@ -1894,9 +1914,11 @@ function withCachedValues(sheetData) {
       return whole
     }
     let result = 0
+    const roundSum = f[1].match(/^ROUND\(SUM\((.*)\),0\)$/)
     const sum = f[1].match(/^SUM\((.*)\)$/)
     const round = f[1].match(/^ROUND\(([A-Z]+\d+)\*24\*([A-Z]+\d+),0\)$/)
-    if (sum) result = sumArgs(sum[1])
+    if (roundSum) result = roundYen(sumArgs(roundSum[1]))
+    else if (sum) result = sumArgs(sum[1])
     else if (round) result = Math.round(val(round[1]) * 24 * val(round[2]))
     else return whole
     vals.set(ref, result)

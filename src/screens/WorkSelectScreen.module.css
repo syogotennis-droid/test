@@ -475,6 +475,7 @@
 
 .infoName { color: #1a3f6f; font-weight: 900; }
 .infoWarn { color: #b45309; }
+.infoSlot { background: #1e5aa8; color: #fff; border-radius: 999px; padding: 1px 10px; font-weight: 800; }
 
 .infoPlan {
   background: #e0f2fe;

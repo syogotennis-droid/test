@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder, commuteLabel } from '../lib/db'
 import { answerWeeklyCopyAtClockOut } from '../lib/punchFlow'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
@@ -361,6 +361,16 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
   const displayH = Math.floor(totalInputMinutes / 60)
   const displayM = totalInputMinutes % 60
 
+  // 戻る after entering work times asks first (the entries are not saved); with nothing
+  // changed it goes straight back. The 2-minute idle return stays as it is (shared tablet).
+  const initialTimes = useRef(JSON.stringify(toWorkTimes(ctx.prefill)))
+  const enteredTimes = JSON.stringify(Object.fromEntries(activeItems.map(id => [id, workTimes[id]])))
+  function handleBack() {
+    if (activeItems.length > 0 && enteredTimes !== initialTimes.current &&
+      !window.confirm('入力した業務時間は保存されません。\n退勤せずに戻りますか？')) return
+    onCancel()
+  }
+
   const [saveError, setSaveError] = useState('')
   async function handleConfirm() {
     if (saving) return
@@ -395,6 +405,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         {(ctx.clockIn || prefilled || weeklyMsg) && (
           <div className={styles.infoBar}>
             <span className={styles.infoName}>{user.name} さん</span>
+            {ctx.slot > 1 && <span className={styles.infoSlot}>本日{ctx.slot}回目</span>}
             {ctx.clockIn?.time && <span>出勤 {ctx.clockIn.time.substring(0, 5)}</span>}
             {ctx.breakTotal > 0 && <span>休憩 {fmtMinutes(ctx.breakTotal)}</span>}
             {ctx.onBreak && <span className={styles.infoWarn}>休憩中のまま退勤します</span>}
@@ -515,7 +526,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         )}
 
         <div className={styles.bottomRow}>
-          <button className={styles.backButton} onClick={onCancel} disabled={saving}>戻る</button>
+          <button className={styles.backButton} onClick={handleBack} disabled={saving}>戻る</button>
           <button
             className={[styles.submitButton, saving ? styles.submitDisabled : ''].join(' ')}
             onClick={handleConfirm}

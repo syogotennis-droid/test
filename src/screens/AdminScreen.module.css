@@ -5290,3 +5290,28 @@
 .commuteMethodRow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
 .commuteCheck { display: inline-flex; align-items: center; gap: 8px; min-width: 150px; font-weight: 600; color: #1e293b; cursor: pointer; }
 .commuteCheck input { width: 18px; height: 18px; }
+
+/* 従業員追加: まだ選んでいない業務（押すと上の表に入る） */
+.addItemChips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.addItemChip {
+  min-height: 32px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 16px;
+  background: #fff; color: #334155; font-size: 0.82rem; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.addItemChip:hover { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+
+/* 勤務記録の編集: 1回分を「時刻・休憩」｜「業務」の2列にして縦に短く（狭い画面は1列） */
+.dayEditSessionCols {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 20px;
+  align-items: start;
+}
+.dayEditColTime { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dayEditColWork { min-width: 0; border-left: 1px dashed #e2e8f0; padding-left: 20px; }
+.dayEditSessionCols .dayEditBreaks { margin-top: 0; padding-top: 0; border-top: none; }
+@media (max-width: 900px) {
+  .dayEditSessionCols { grid-template-columns: minmax(0, 1fr); row-gap: 10px; }
+  .dayEditColWork { border-left: none; padding-left: 0; border-top: 1px dashed #e2e8f0; padding-top: 10px; }
+}
+.dayEditSessionCols .dayEditWorkFooter { flex-direction: row; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.dayEditSessionCols .dayEditSessionTotal { margin-left: auto; }

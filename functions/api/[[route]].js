@@ -216,27 +216,35 @@ export async function onRequest(context) {
       const id = typeof b.id === 'string' && b.id ? b.id : crypto.randomUUID()
       // a resend of a punch that is already stored is fine (same id)
       if (await DB.prepare('SELECT 1 AS x FROM logs WHERE id = ?').bind(id).first()) return ok({ id, sessionId: b.session_id })
-      // no second clock-in while a shift of that day is still open, and no second clock-out of one shift
-      if (b.log_type === '出勤') {
-        const open = await DB.prepare(
-          "SELECT 1 AS x FROM logs i WHERE i.user_id = ? AND i.date = ? AND i.log_type = '出勤' AND i.session_id IS NOT NULL " +
-          "AND NOT EXISTS (SELECT 1 FROM logs o WHERE o.user_id = i.user_id AND o.session_id = i.session_id AND o.log_type = '退勤')"
-        ).bind(b.user_id, b.date).first()
-        if (open) throw new HttpError('already_working', 409)
-      }
-      if (b.log_type === '退勤' && b.session_id) {
-        const done = await DB.prepare("SELECT 1 AS x FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '退勤'").bind(b.user_id, b.session_id).first()
-        if (done) throw new HttpError('already_out', 409)
-      }
-      await DB.prepare(
-        'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)'
+      // no second clock-in while a shift of that day is still open (more clock-ins than clock-outs
+      // that day, the same rule the punch tablet uses, so old-format logs without a shift id count too),
+      // and no second clock-out of one shift. The check is part of the INSERT itself, so two tablets
+      // punching at the same moment can't both get through.
+      const cond = b.log_type === '出勤'
+        ? "(SELECT COUNT(*) FROM logs WHERE user_id = ? AND date = ? AND log_type = '出勤') <= " +
+          "(SELECT COUNT(*) FROM logs WHERE user_id = ? AND date = ? AND log_type = '退勤')"
+        : b.log_type === '退勤' && b.session_id
+          ? "NOT EXISTS (SELECT 1 FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '退勤')"
+          : '1'
+      const condArgs = b.log_type === '出勤' ? [b.user_id, b.date, b.user_id, b.date]
+        : b.log_type === '退勤' && b.session_id ? [b.user_id, b.session_id] : []
+      const res = await DB.prepare(
+        'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) ' +
+        'SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ? WHERE ' + cond
       ).bind(
         id, b.user_id, b.log_type, b.date, b.time, b.timestamp,
         b.work_type || '', b.session_id || null,
         b.first_work || null, b.last_work || null,
         b.transport_count || null,
-        b.work_items ? JSON.stringify(b.work_items) : null
+        b.work_items ? JSON.stringify(b.work_items) : null,
+        ...condArgs
       ).run()
+      if (!res.meta?.changes) {
+        // the same punch sent twice at once: the other request stored it
+        if (await DB.prepare('SELECT 1 AS x FROM logs WHERE id = ?').bind(id).first()) return ok({ id, sessionId: b.session_id })
+        if (b.log_type === '出勤') throw new HttpError('already_working', 409)
+        if (b.log_type === '退勤' && b.session_id) throw new HttpError('already_out', 409)
+      }
       return ok({ id, sessionId: b.session_id })
     }
     if (route.startsWith('logs/') && method === 'PATCH') {
