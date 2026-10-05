@@ -21,11 +21,11 @@ function groupsOf(defs) {
 
 function nameError(name, defs, selfId) {
   if (!name) return '名前を入力'
-  if (name.length > MAX_NAME) return `名前は${MAX_NAME}文字以内にしてください`
+  if (name.length > MAX_NAME) return `名前は${MAX_NAME}文字以内`
   if (SYSTEM_ITEMS.has(name)) return `「${name}」は計算用の項目のため使えません`
   const same = defs.find(d => d.id !== selfId && d.name === name)
   if (same && !same.deleted) return '同じ名前の業務があります'
-  if (same && same.deleted) return '削除した業務に同じ名前があります。下の「削除した業務」から戻してください'
+  if (same && same.deleted) return '同じ名前の削除済み業務があります。「削除した業務」から戻せます'
   return ''
 }
 
@@ -246,8 +246,8 @@ export default function WorkItemSettings({ users }) {
     <div>
       <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>業務の管理</div>
       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12, lineHeight: 1.6 }}>
-        この順番で退勤画面・給与・出勤簿に並びます。同じグループの業務は、退勤画面で1つのカードにまとまります。
-        名前を変えても過去の記録・時給はそのままです。
+        表示順（退勤画面・給与・出勤簿）。同じグループの業務は退勤画面で1つのカードにまとまります。
+        名前を変えても過去の記録・時給は変わりません。
       </div>
       {msg && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.88rem', marginBottom: 8 }}>✓ {msg}</div>}
 

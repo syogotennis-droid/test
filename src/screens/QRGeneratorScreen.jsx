@@ -49,7 +49,7 @@ async function openPrintWindow(users) {
   if (users.length === 0) return
   // open before the async QR generation so the browser treats it as a click popup
   const win = window.open('', '_blank', 'width=700,height=500')
-  if (!win) { alert('印刷画面を開けませんでした。ブラウザのポップアップを許可してください。'); return }
+  if (!win) { alert('印刷画面を開けません。ブラウザのポップアップを許可してください。'); return }
   win.document.write('<p style="font-family:sans-serif;padding:16px">印刷の準備中…</p>')
   const cards = await Promise.all(users.map(cardHtml))
   win.document.open()

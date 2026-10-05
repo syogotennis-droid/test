@@ -50,7 +50,7 @@ export async function handlePunch(mode, user) {
 
   if (mode === '休憩') {
     if (ps.state === 'off') return fail(`${user.name} さんはまだ出勤していません`)
-    if (!ps.sessionId) return fail('休憩を記録できませんでした。管理者に連絡してください')
+    if (!ps.sessionId) return fail('休憩を記録できません。管理者に連絡してください')
     if (ps.state === 'break') return endBreak(user, ps)
     await saveLog({ userId: user.id, logType: BREAK_START, sessionId: ps.sessionId, date: ps.date })
     return done({ logType: BREAK_START, user })

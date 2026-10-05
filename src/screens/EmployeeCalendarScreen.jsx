@@ -241,7 +241,7 @@ function CopySection({ copy, onDelete }) {
           <span>{fmtCopyItems(copy[n])}</span>
         </div>
       ))}
-      <div className={styles.copyHint}>退勤のときに、この内容が最初から入ります</div>
+      <div className={styles.copyHint}>退勤時の業務入力に、この内容が入ります</div>
       {confirming ? (
         <div className={styles.copyConfirm}>
           <span>この日の業務予定を削除しますか？</span>

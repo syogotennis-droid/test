@@ -1220,10 +1220,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     for (let si = 0; si < sessions.length; si++) {
       const s = sessions[si]
       const pfx = sessions.length > 1 ? `${si + 1}回目：` : ''
-      if (s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)) errs.push(`${pfx}出勤「時」が不正です（0〜23）`)
-      if (s.inM !== '' && parseInt(s.inM) > 59) errs.push(`${pfx}出勤「分」は0〜59`)
-      if (s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)) errs.push(`${pfx}退勤「時」が不正です（0〜23）`)
-      if (s.outM !== '' && parseInt(s.outM) > 59) errs.push(`${pfx}退勤「分」は0〜59`)
+      if (s.inH !== '' && (isNaN(parseInt(s.inH)) || parseInt(s.inH) > 23)) errs.push(`${pfx}出勤の時は0〜23`)
+      if (s.inM !== '' && parseInt(s.inM) > 59) errs.push(`${pfx}出勤の分は0〜59`)
+      if (s.outH !== '' && (isNaN(parseInt(s.outH)) || parseInt(s.outH) > 23)) errs.push(`${pfx}退勤の時は0〜23`)
+      if (s.outM !== '' && parseInt(s.outM) > 59) errs.push(`${pfx}退勤の分は0〜59`)
       // an hour without minutes (or the other way round) would silently delete the punch
       if ((s.inH !== '') !== (s.inM !== '')) errs.push(`${pfx}出勤の${s.inH !== '' ? '分' : '時'}が空欄です`)
       if ((s.outH !== '') !== (s.outM !== '')) errs.push(`${pfx}退勤の${s.outH !== '' ? '分' : '時'}が空欄です`)
@@ -1232,7 +1232,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       if (isNew && !inT && outT) errs.push(`${pfx}出勤時刻を入力`)
       const aIn = absMin(inT, false), aOut = absMin(outT, s.outNext)
       if (aIn != null && aOut != null && aOut < aIn) {
-        errs.push(`${pfx}退勤が出勤より前になっています（0時を過ぎてからの退勤なら「翌日」にチェックしてください）`)
+        errs.push(`${pfx}退勤が出勤より前です（0時以降の退勤は「翌日」にチェック）`)
       }
       if (aIn != null && aOut != null && aOut - aIn > 24 * 60) errs.push(`${pfx}出勤から退勤まで24時間を超えています`)
       const brs = []
@@ -1241,11 +1241,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         const b = s.breaks[bi]
         const aS = absMin(start, breakIsNext(b.sNext, start, inT, s.outNext)), aE = absMin(end, breakIsNext(b.eNext, end, inT, s.outNext))
         if ((b.sH !== '') !== (b.sM !== '') || (b.eH !== '') !== (b.eM !== '')) errs.push(`${bp}時と分の片方が空欄です`)
-        else if ((b.sH !== '' && !start) || (b.eH !== '' && !end)) errs.push(`${bp}時刻が正しくありません`)
+        else if ((b.sH !== '' && !start) || (b.eH !== '' && !end)) errs.push(`${bp}時刻が不正です`)
         else if (!start && end) errs.push(`${bp}開始時刻を入力`)
-        else if (aS != null && aE != null && aE < aS) errs.push(`${bp}終了が開始より前になっています`)
-        else if (aS != null && aIn != null && aS < aIn) errs.push(`${bp}出勤より前になっています`)
-        else if (aOut != null && ((aE != null && aE > aOut) || (aS != null && aS > aOut))) errs.push(`${bp}退勤より後になっています`)
+        else if (aS != null && aE != null && aE < aS) errs.push(`${bp}終了が開始より前です`)
+        else if (aS != null && aIn != null && aS < aIn) errs.push(`${bp}出勤より前です`)
+        else if (aOut != null && ((aE != null && aE > aOut) || (aS != null && aS > aOut))) errs.push(`${bp}退勤より後です`)
         else if (aS != null) brs.push([aS, aE ?? aS, bp])
       })
       brs.sort((x, y) => x[0] - y[0])
@@ -1443,7 +1443,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             onClick={() => setEditingTimeField({ si, field: 'out' })}>
             {outTime || (isIncomplete ? '勤務中' : '──:──')}
           </button>
-          <label className={styles.dayEditNextDay} title="0時を過ぎてからの退勤のときにチェック">
+          <label className={styles.dayEditNextDay} title="0時以降の退勤はチェック">
           <input type="checkbox" checked={!!s.outNext} onChange={e => updateSession(si, 'outNext', e.target.checked)} />翌日
         </label>
         </div>
@@ -1474,7 +1474,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
           onFocus={e => { if (e.target.value) e.target.select() }} placeholder="--"
           className={[styles.dayEditHmNum, outMInvalid ? styles.dayEditHmNumErr : ''].join(' ')} />
         <span className={styles.dayEditHmUnit}>分</span>
-        <label className={styles.dayEditNextDay} title="0時を過ぎてからの退勤のときにチェック">
+        <label className={styles.dayEditNextDay} title="0時以降の退勤はチェック">
           <input type="checkbox" checked={!!s.outNext} onChange={e => updateSession(si, 'outNext', e.target.checked)} />翌日
         </label>
         {isIncomplete && <span className={styles.dayEditIncomplete}>退勤未打刻</span>}
@@ -1879,7 +1879,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <p className={styles.confirmPunchTimeInfo}>出勤 {inLabel} → 退勤 {outLabel}</p>
                 <p className={styles.confirmWarn}>
                   {hasWorkInSession
-                    ? '業務時間も登録されています。打刻と業務時間の両方を削除します。'
+                    ? '業務時間も登録済みです。打刻と業務時間の両方を削除します。'
                     : '元に戻せません。'}
                 </p>
               </div>
@@ -2202,10 +2202,10 @@ function KinmuboTab({ today }) {
       const warns = []
       if (incomplete.length > 0) warns.push(`打刻未完了（社員）：\n${incomplete.join('\n')}`)
       if (openHourly.length > 0) warns.push(`退勤の打刻がない日（アルバイト・パート）：\n${openHourly.join('\n')}`)
-      if (noWork.length > 0) warns.push(`打刻はあるが業務の入力がない日（給与が付きません）：\n${noWork.join('\n')}`)
+      if (noWork.length > 0) warns.push(`業務入力のない日（給与なし）：\n${noWork.join('\n')}`)
       if (inconsistent.length > 0) warns.push(`業務申告あり・打刻なし：\n${inconsistent.join('\n')}`)
       if (warns.length > 0) {
-        const msg = `以下の要確認データがあります：\n\n${warns.join('\n\n')}\n\n確認してから出力してください。このまま出力しますか？`
+        const msg = `以下の要確認データがあります：\n\n${warns.join('\n\n')}\n\nこのまま出力しますか？`
         if (!window.confirm(msg)) return
       }
     }
@@ -2235,7 +2235,7 @@ function KinmuboTab({ today }) {
         URL.revokeObjectURL(url)
       }
     } catch (e) {
-      alert('エクスポートに失敗しました: ' + (e?.message || e))
+      alert('Excel出力に失敗しました: ' + (e?.message || e))
     } finally {
       setExporting(false)
     }
@@ -2951,7 +2951,7 @@ function AddUserModal({ onClose, onAdded }) {
     if (/[\/?#%\s]/.test(addId.trim())) { alert('従業員IDに、空白と / ? # % は使えません'); return }
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
     if (employeeType !== 'salaried' && workItems.length === 0 &&
-      !window.confirm('担当する業務が1つも選ばれていません。退勤画面に業務が出ません。\nこのまま追加しますか？')) return
+      !window.confirm('担当業務が未選択です（退勤画面に業務が出ません）。\nこのまま追加しますか？')) return
     setSaving(true)
     try {
       if (pin) {
@@ -2979,7 +2979,7 @@ function AddUserModal({ onClose, onAdded }) {
       onAdded(newUser)
     } catch(e) {
       alert(e?.status === 409
-        ? `従業員ID「${addId.trim()}」はすでに使われています。別のIDにしてください（既存の人は変更していません）。`
+        ? `従業員ID「${addId.trim()}」は使用済みです。別のIDを入力してください（既存の従業員は変更なし）。`
         : '追加に失敗しました: ' + (e?.message || e))
       setSaving(false)
     }
@@ -3211,7 +3211,7 @@ function MinWageSettings({ onUsersChanged }) {
   }, [])
 
   async function removeEntry(e) {
-    if (!window.confirm(`${fmtJaDate(e.from)}からの最低賃金 ${Number(e.wage).toLocaleString()}円 を削除します。\nその日以降の準備時間の計算が前の金額に戻ります。\n（担当者の時給は自動では戻りません）`)) return
+    if (!window.confirm(`${fmtJaDate(e.from)}からの最低賃金 ${Number(e.wage).toLocaleString()}円 を削除します。\nこの日以降の準備時間は前の金額で計算します。\n（従業員の時給は戻りません）`)) return
     try {
       const next = history.filter(x => x.from !== e.from)
       await saveMinWageHistory(next)
@@ -3265,7 +3265,7 @@ function MinWageSettings({ onUsersChanged }) {
       setWageStr('')
       onUsersChanged?.()
     } catch (e) {
-      setErr('保存に失敗しました。一部の人の時給だけ更新された可能性があります。もう一度「変更内容を確認」から同じ内容を実行してください（すでに上がった人は変わりません）。')
+      setErr('保存できません。一部の従業員だけ更新された可能性があります。「変更内容を確認」から再度実行してください（更新済みの従業員は変わりません）。')
     } finally {
       setBusy(false)
     }
@@ -3397,7 +3397,7 @@ function CarRateSettings() {
     if (!from) { setErr('適用開始日を入力'); return }
     if (!(rate > 0)) { setErr('単価を入力'); return }
     if ((rates || []).some(e => e.from === from)) { setErr(`${fmtJaDate(from)}の単価はすでに登録されています`); return }
-    if (from < today && !window.confirm(`${fmtJaDate(from)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい単価で計算されます。`)) return
+    if (from < today && !window.confirm(`${fmtJaDate(from)}は過去の日付です。この日以降の出勤簿も新しい単価で計算します。`)) return
     persist([...(rates || []), { from, rate }], `${fmtJaDate(from)}から ${rate}円/km を適用します`)
     setRateStr('')
   }
@@ -3406,7 +3406,7 @@ function CarRateSettings() {
   return (
     <div>
       <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1a3f6f', marginBottom: 6 }}>車通勤の交通費単価</div>
-      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>車通勤の従業員の交通費は「通勤距離 × 単価」で計算します。単価を変えると、適用開始日以降の分だけが新しい単価になります。</div>
+      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>車通勤の交通費 ＝ 通勤距離 × 単価。単価の変更は適用開始日以降に反映。</div>
       {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めません。通信を確認し、再読み込みしてください（変更不可）</div>}
       {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読み込み中</div>) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
@@ -3420,7 +3420,7 @@ function CarRateSettings() {
                 <strong style={{ color: '#1a3f6f' }}>{Number(e.rate).toLocaleString()}円/km</strong>
                 <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 700, color: isFuture ? '#b45309' : i === currentIdx ? '#1d4ed8' : '#94a3b8' }}>{status}</span>
                 {e.from && (
-                  <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価 ${e.rate}円/km を削除します。\nその日以降の車の交通費が前の単価で計算されます。`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
+                  <button onClick={() => { if (isFuture || window.confirm(`${fmtJaDate(e.from)}からの単価 ${e.rate}円/km を削除します。\nこの日以降の車の交通費は前の単価で計算します。`)) persist(rates.filter(x => x.from !== e.from), '単価を削除しました') }}
                     style={{ border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 8, padding: '4px 10px', fontWeight: 700, cursor: 'pointer' }}>削除</button>
                 )}
               </div>
@@ -3955,7 +3955,7 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
               onClick={() => onMethod(m.key)}>{m.label}</button>
           ))}
         </div>
-        {method === '' && <div className={styles.userEditHintText}>未設定です（以前の設定のまま、下の日額で計算します）</div>}
+        {method === '' && <div className={styles.userEditHintText}>未設定（下の日額で計算）</div>}
       </div>
       {usesAmount && (
         <div className={styles.commuteRow}>
@@ -3985,7 +3985,7 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
           </div>
           <div className={styles.userEditHintText}>
             {todayRate > 0
-              ? `1日の交通費 ＝ 片道 × 2 × 単価${todayRate}円 ＝ ${Math.round(dist * todayRate).toLocaleString()}円（単価は「設定」で変更できます）`
+              ? `1日の交通費 ＝ 片道 × 2 × 単価${todayRate}円 ＝ ${Math.round(dist * todayRate).toLocaleString()}円（単価は「設定」で変更）`
               : '車通勤の単価が未設定です。「設定」で登録'}
           </div>
           {legacyKm > 0 && !(Number(distance) > 0) && (
@@ -3996,13 +3996,13 @@ function CommuteSection({ method, onMethod, amount, onAmount, distance, onDistan
         </div>
       )}
       {method === 'none' && (
-        <div className={styles.userEditHintText}>交通費は支給されません。退勤時の「本日の交通費」も表示されません。</div>
+        <div className={styles.userEditHintText}>交通費なし（退勤時の「本日の交通費」も表示しません）</div>
       )}
       {changed && onFrom && (
         <div className={styles.commuteRow}>
           <label className={styles.userEditLabel}>この変更の適用開始日</label>
           <input type="date" className={styles.userEditInput} value={from} onChange={e => onFrom(e.target.value)} />
-          <div className={styles.userEditHintText}>この日より前の交通費は、以前の設定のまま計算します</div>
+          <div className={styles.userEditHintText}>この日より前は以前の設定で計算</div>
         </div>
       )}
     </div>
@@ -4156,11 +4156,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     if (!date) { alert('適用開始日を入力'); return }
     const existing = rateHistory[item] || []
     if (existing.some(e => e.from === date)) {
-      alert(`${fmtJaDate(date)}の時給はすでに登録されています。表の「削除」で消してから、入れ直してください。`)
+      alert(`${fmtJaDate(date)}の時給は登録済みです。変更する場合は表の「削除」で消してから追加してください。`)
       return
     }
     if (date < getTodayJst() &&
-      !window.confirm(`${fmtJaDate(date)}は過去の日付です。この日以降の給与計算（出勤簿）も新しい時給になります。`)) return
+      !window.confirm(`${fmtJaDate(date)}は過去の日付です。この日以降の出勤簿も新しい時給で計算します。`)) return
     const normalVal = Number(normalStr)
     const inherited = getInheritedEntry(item, date)
     const inheritedMult = inherited && inherited.normal && inherited.sunday
@@ -4182,7 +4182,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     if (!entryFrom) { alert('最初の時給は削除不可（変更は新しい時給を追加）'); return }
     const todayStr = getTodayJst()
     if (entryFrom <= todayStr &&
-      !window.confirm(`${fmtJaDate(entryFrom)}からの時給を削除します。\nその日以降の給与計算（出勤簿）が前の時給に戻ります。\n（「変更を保存」を押すまで確定しません）`)) return
+      !window.confirm(`${fmtJaDate(entryFrom)}からの時給を削除します。\nこの日以降の出勤簿は前の時給で計算します。\n（「変更を保存」で確定）`)) return
     setRateHistory(prev => ({ ...prev, [item]: (prev[item] || []).filter(e => e.from !== entryFrom) }))
   }
 

@@ -293,7 +293,7 @@ function WeeklyCopyQuestion({ user, offer, onAnswer, onCancel }) {
             )
           })}
         </div>
-        <div className={styles.weeklyHint}>「使う」を押すと、今日と今週の同じ曜日の業務入力に最初から入ります</div>
+        <div className={styles.weeklyHint}>「使う」で、今週の同じ曜日の業務入力に先週の内容が入ります</div>
         <div className={styles.weeklyBtns}>
           <button className={styles.weeklyNo} onClick={() => answer('skip')} disabled={busy}>使わない</button>
           <button className={styles.weeklyYes} onClick={() => answer('use')} disabled={busy}>使う</button>
@@ -336,7 +336,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         if (Object.keys(wt).length === 0) setWeeklyMsg(`今週${r.copiedDays}日分を用意（今日の分なし）`)
       }
     } catch {
-      setWeeklyMsg('通信エラーでした。次の退勤のときにもう一度聞きます')
+      setWeeklyMsg('通信エラー。次の退勤時にもう一度確認します')
     }
     setAsking(false)
   }
