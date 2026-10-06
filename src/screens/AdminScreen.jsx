@@ -3552,7 +3552,6 @@ function CarRateSettings() {
   const decimal = (setter, v) => { if (/^\d{0,5}(\.\d{0,3})?$/.test(v)) { setter(v); setErr('') } }
   return (
     <div>
-      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 12 }}>単価 ＝ 金額 ÷ 燃費。1日の交通費 ＝ 通勤距離 × 単価（端数はそのまま、月の合計で四捨五入）。変更は適用開始日以降に反映。</div>
       {loadErr && <div style={{ color: '#dc2626', fontWeight: 700, marginBottom: 10 }}>設定を読み込めません。通信を確認し、再読み込みしてください（変更不可）</div>}
       {rates === null ? (!loadErr && <div style={{ color: '#94a3b8' }}>読み込み中</div>) : (
         <div style={{ overflowX: 'auto', marginBottom: 16 }}>
@@ -3560,7 +3559,7 @@ function CarRateSettings() {
             <thead>
               <tr>
                 <th style={{ ...head, textAlign: 'left' }}>適用開始日</th>
-                <th style={head}>金額</th>
+                <th style={head}></th>
                 <th style={head}>車</th>
                 <th style={head}>バイク</th>
                 <th style={{ ...head, textAlign: 'center' }}>状態</th>
@@ -3597,9 +3596,9 @@ function CarRateSettings() {
         <thead>
           <tr>
             <th style={{ ...head, textAlign: 'left' }}>適用開始日</th>
-            <th style={head}>金額（円）</th>
-            <th style={head}>車（燃費）</th>
-            <th style={head}>バイク（燃費）</th>
+            <th style={head}></th>
+            <th style={head}>車</th>
+            <th style={head}>バイク</th>
           </tr>
         </thead>
         <tbody>
@@ -3697,7 +3696,7 @@ function SettingsTab({ users, onUsersChanged }) {
 
       <SettingsSection id="set-minwage" title="最低賃金" summary="準備時間の計算と、連動する業務の時給"><MinWageSettings onUsersChanged={onUsersChanged} /></SettingsSection>
 
-      <SettingsSection id="set-car" title="交通費単価（車・バイク）" summary="金額 ÷ 燃費 ＝ 1kmあたりの単価"><CarRateSettings /></SettingsSection>
+      <SettingsSection id="set-car" title="交通費単価（車・バイク）"><CarRateSettings /></SettingsSection>
     </div>
     </div>
   )
@@ -3722,7 +3721,7 @@ function SettingsSection({ id, title, summary, children }) {
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '16px 24px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
         <span style={{ color: '#64748b', fontSize: '0.9rem', width: 14, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
         <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1a3f6f' }}>{title}</span>
-        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{summary}</span>
+        {summary && <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{summary}</span>}
       </button>
       {open && <div style={{ padding: '0 24px 20px' }}>{children}</div>}
     </section>
