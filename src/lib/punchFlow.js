@@ -2,7 +2,7 @@
 // (TabletApp.jsx): decides what a scan means from the employee's current state.
 import {
   getTodayPunchState, saveLog, BREAK_START, BREAK_END, pairBreaks, breakMinutes,
-  getWeeklyCopyForSlot, getWeeklyCopyOffer, getTransportDay, getTransportDayChoice, saveTransportDay,
+  getWeeklyCopyForSlot, getWeeklyCopyOffer, getLastWeekWork, getTransportDay, getTransportDayChoice, saveTransportDay,
   saveSessionWorkReport, saveWorkReport, localToday, getCommute, loadWorkItemDefs, answerWeeklyCopy,
   getSessionWorkReportsForDate,
 } from './db.js'
@@ -82,7 +82,7 @@ async function handlePunchNow(mode, user) {
   // last week's work (null when already answered, nothing to copy or offline)
   // registered commute methods (two or more → the screen asks which ones were used today)
   const transportOptions = asks ? (user.transportOptions ?? getCommute(user).options) : []
-  const [copyPrefill, savedTransport, offer, saved, , savedMethods] = await Promise.all([
+  const [copyPrefill, savedTransport, offer, saved, , savedMethods, lastWeek] = await Promise.all([
     getWeeklyCopyForSlot(user.id, date, slot),
     asks ? getTransportDay(user.id, date) : null,
     getWeeklyCopyOffer(user.id, date),
@@ -90,6 +90,8 @@ async function handlePunchNow(mode, user) {
     ps.sessionId ? getSessionWorkReportsForDate(user.id, date).then(r => r[ps.sessionId] || null).catch(() => null) : null,
     loadWorkItemDefs(), // latest names / order for the work cards
     transportOptions.length > 1 ? getTransportDayChoice(user.id, date).catch(() => null) : null,
+    // same weekday / same shift last week, for the "先週の◯曜日と同じ内容を入れる" button (null offline)
+    getLastWeekWork(user.id, date, slot),
   ])
   const methodsDefault = (savedMethods || []).filter(k => transportOptions.includes(k))
   const hasSaved = saved && Object.values(saved).some(m => m > 0)
@@ -99,6 +101,7 @@ async function handlePunchNow(mode, user) {
     ctx: {
       user, date, sessionId: ps.sessionId, clockIn: ps.clockIn, onBreak: ps.state === 'break',
       breakTotal, prefill, prefillIsSaved: !!hasSaved, slot, weeklyOffer: offer?.offer ? offer : null,
+      lastWeek: lastWeek && Object.values(lastWeek.items || {}).some(m => m > 0) ? lastWeek : null,
       asksTransport: asks, transportDefault: savedTransport ?? true,
       transportOptions, transportMethodsDefault: methodsDefault.length ? methodsDefault : transportOptions.slice(0, 1),
       sessionCount: ps.logs.filter(l => l.log_type === '退勤').length + 1,

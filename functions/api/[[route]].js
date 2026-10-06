@@ -511,6 +511,19 @@ export async function onRequest(context) {
       return ok({ ok: true })
     }
 
+    // ── Last week's work (先週の同じ曜日・同じ回) ──────────────────────────────
+    // For the "先週の◯曜日と同じ内容を入れる" button (clock-out screen and 勤務確認).
+    // slot = the n-th clock-in of the day. → { date, items } (items {} when nothing was entered)
+    if (route === 'last_week_work' && method === 'GET') {
+      const userId = sp.get('userId'), date = sp.get('date'), slot = Number(sp.get('slot'))
+      needStr(userId, 'userId')
+      if (!isDate(date) || !Number.isInteger(slot) || slot < 1) throw new HttpError('bad_query', 400)
+      const lastDate = addDays(date, -7)
+      const day = (await lastWeekSlots(DB, userId, mondayOf(date), lastDate)).find(d => d.date === lastDate)
+      const found = day?.slots.find(x => x.slot === slot)
+      return ok({ date: lastDate, items: found ? found.items : {} })
+    }
+
     // ── Weekly copy (週コピー) ─────────────────────────────────────────────
     // What last week looked like, offered at the first clock-out of the week.
     if (route === 'weekly_copy/offer' && method === 'GET') {
@@ -697,7 +710,7 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
     // the employee's own transport choice / weekly copy
     if (route === 'transport_days' || route === 'transport_day_methods') return !!(sp.get('userId') && sp.get('date'))
-    if (route === 'weekly_copy/offer' || route === 'weekly_copies') return !!sp.get('userId')
+    if (route === 'weekly_copy/offer' || route === 'weekly_copies' || route === 'last_week_work') return !!sp.get('userId')
     return false
   }
   if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer'
@@ -766,8 +779,8 @@ function mondayOf(dateStr) {
 
 // Last week's actual work per day and per session order:
 // [{ date, slots: [{ slot, items }] }]. Sessions are ordered by clock-in time.
-async function lastWeekSlots(DB, userId, weekStart) {
-  const from = addDays(weekStart, -7), to = addDays(weekStart, -1)
+async function lastWeekSlots(DB, userId, weekStart, onlyDate = null) {
+  const from = onlyDate || addDays(weekStart, -7), to = onlyDate || addDays(weekStart, -1)
   const [logsR, repR] = await Promise.all([
     DB.prepare("SELECT date, time, session_id FROM logs WHERE user_id = ? AND date >= ? AND date <= ? AND log_type = '出勤'").bind(userId, from, to).all(),
     DB.prepare('SELECT date, session_id, items FROM session_work_reports WHERE user_id = ? AND date >= ? AND date <= ?').bind(userId, from, to).all(),

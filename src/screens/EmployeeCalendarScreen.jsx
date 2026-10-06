@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs } from '../lib/db'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
 import styles from './EmployeeCalendarScreen.module.css'
 
@@ -81,7 +81,7 @@ function objsEqual(a, b) {
 }
 
 /* ─── 業務入力・編集フォーム（カード＋テンキー） ─── */
-function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, onCancel, onSave, saving }) {
+function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, lastWeek, onCancel, onSave, saving }) {
   // items already entered stay editable even if no longer selectable (e.g. deleted)
   const [editableItems] = useState(() => sortByItemOrder([...new Set([
     ...selectable, ...Object.keys(initialWork).filter(t => initialWork[t] > 0),
@@ -133,11 +133,27 @@ function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, on
     })
   }
 
+  // same weekday / same shift last week (only items this person can enter)
+  const lastWeekItems = Object.fromEntries(Object.entries(lastWeek?.items || {}).filter(([t, m]) => m > 0 && editableItems.includes(t)))
+  const lastWeekDow = lastWeek ? DOW_LABELS[new Date(lastWeek.date.replace(/-/g, '/')).getDay()] : ''
+  const [usedLastWeek, setUsedLastWeek] = useState(false)
+  function useLastWeek() {
+    if (Object.keys(currentObj).length > 0 && !window.confirm(`入力中の内容を、先週の${lastWeekDow}曜日の内容に置き換えますか？`)) return
+    setInputs(Object.fromEntries(Object.entries(lastWeekItems).map(([t, m]) => [t, { h: Math.floor(m / 60), m: m % 60 }])))
+    setUsedLastWeek(true)
+  }
+
   return (
     <>
       <div className={styles.editHeader}>
         <div className={styles.editHeaderDate}>{sessionLabel}</div>
+        {Object.keys(lastWeekItems).length > 0 && !objsEqual(currentObj, lastWeekItems) && (
+          <button type="button" className={styles.lastWeekBtn} onClick={useLastWeek}>先週の{lastWeekDow}曜日と同じ内容を入れる</button>
+        )}
       </div>
+      {usedLastWeek && (
+        <div className={styles.lastWeekBanner}>先週の{lastWeekDow}曜日と同じ内容を入れました。違うときは直して「保存する」</div>
+      )}
 
       <div className={styles.editBody}>
         <div className={styles.editLeftCol}>
@@ -276,6 +292,13 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
 
   const [editingSessionIdx, setEditingSessionIdx] = useState(null)
   const [saving, setSaving] = useState(false)
+  // last week's same weekday / same shift for the shift being edited (null offline or none)
+  const [lastWeek, setLastWeek] = useState(null)
+  function startEdit(idx) {
+    setLastWeek(null)
+    setEditingSessionIdx(idx)
+    getLastWeekWork(user.id, dateStr, idx + 1).then(r => setLastWeek(r))
+  }
 
   async function handleSave(workItemsObj) {
     const session = sessions[editingSessionIdx]
@@ -304,6 +327,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
             sessionLabel={sessionLabel}
             editableItems={editableItems}
             initialWork={editingWork}
+            lastWeek={lastWeek}
             onCancel={() => setEditingSessionIdx(null)}
             onSave={handleSave}
             saving={saving}
@@ -385,7 +409,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                       {canEditSession ? (
                         <button
                           className={hasWork ? styles.editWorkBtn : styles.inputWorkBtn}
-                          onClick={() => setEditingSessionIdx(idx)}
+                          onClick={() => startEdit(idx)}
                         >
                           {hasWork ? '業務を編集' : '業務を入力'}
                         </button>

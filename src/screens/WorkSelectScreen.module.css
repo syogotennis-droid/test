@@ -654,3 +654,31 @@
 @media (max-height: 640px) {
   .transportMethodBtn { min-height: 42px; font-size: 17px; }
 }
+
+/* 先週の同じ曜日の内容（退勤画面） */
+.lastWeekBanner {
+  flex-shrink: 0;
+  margin: 0 0 10px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #fef3c7;
+  border: 2px solid #f59e0b;
+  color: #92400e;
+  font-size: 19px;
+  font-weight: 800;
+}
+.lastWeekBtn {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin: 0 0 10px;
+  min-height: 52px;
+  padding: 0 22px;
+  border-radius: 12px;
+  border: 2px solid #1e5aa8;
+  background: #fff;
+  color: #1e5aa8;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+}

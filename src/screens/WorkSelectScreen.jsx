@@ -307,6 +307,10 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
   const [prefilled, setPrefilled] = useState(() => Object.keys(toWorkTimes(ctx.prefill)).length > 0)
   const [asking, setAsking] = useState(!!ctx.weeklyOffer)
   const [weeklyMsg, setWeeklyMsg] = useState('')
+  // same weekday / same shift last week (only items this user can select)
+  const lastWeekTimes = toWorkTimes(ctx.lastWeek?.items)
+  const lastWeekDow = ctx.lastWeek ? DOW[new Date(ctx.lastWeek.date.replace(/-/g, '/')).getDay()] : ''
+  const [usedLastWeek, setUsedLastWeek] = useState(false)
 
   async function handleWeeklyAnswer(answer) {
     try {
@@ -371,6 +375,18 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
     onCancel()
   }
 
+  // "先週の◯曜日と同じ内容を入れる": shown while the input differs from last week's
+  const minsOf = times => JSON.stringify(Object.fromEntries(sortByItemOrder(Object.keys(times))
+    .map(id => [id, (times[id]?.h || 0) * 60 + (times[id]?.m || 0)]).filter(([, m]) => m > 0)))
+  const showLastWeekBtn = Object.keys(lastWeekTimes).length > 0 && minsOf(workTimes) !== minsOf(lastWeekTimes)
+  function useLastWeek() {
+    if (activeItems.length > 0 && !window.confirm(`入力中の内容を、先週の${lastWeekDow}曜日の内容に置き換えますか？`)) return
+    setWorkTimes(lastWeekTimes)
+    setPrefilled(false)
+    setWeeklyMsg('')
+    setUsedLastWeek(true)
+  }
+
   const [saveError, setSaveError] = useState('')
   async function handleConfirm() {
     if (saving) return
@@ -412,6 +428,12 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
             {prefilled && <span className={styles.infoPlan}>{ctx.prefillIsSaved ? '入力済みの内容を表示（違う場合は修正）' : '先週の内容を入力済み（違う場合は修正）'}</span>}
             {weeklyMsg && <span className={styles.infoPlan}>{weeklyMsg}</span>}
           </div>
+        )}
+        {usedLastWeek && (
+          <div className={styles.lastWeekBanner}>先週の{lastWeekDow}曜日と同じ内容を入れました。違うときは直してください</div>
+        )}
+        {showLastWeekBtn && (
+          <button type="button" className={styles.lastWeekBtn} onClick={useLastWeek}>先週の{lastWeekDow}曜日と同じ内容を入れる</button>
         )}
         <div className={styles.workGrid}>
           {displayCards.map(card => {

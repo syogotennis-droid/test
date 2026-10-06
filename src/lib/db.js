@@ -854,6 +854,13 @@ export async function getTodayPunchState(userId) {
   return { state: openBreak ? 'break' : 'working', logs, date, clockIn, sessionId, breaks, openBreak }
 }
 
+// ─── Last week's work (先週の同じ曜日・同じ回) ─────────────────────────────────
+// What was entered for the same weekday last week, for the n-th shift of the day
+// (the "先週の◯曜日と同じ内容を入れる" button). → { date, items } or null (offline etc.)
+export async function getLastWeekWork(userId, date, slot) {
+  try { return await api('/last_week_work', { query: { userId, date, slot: String(slot) } }) } catch { return null }
+}
+
 // ─── Weekly copy (週コピー) ──────────────────────────────────────────────────
 // At the first clock-out of a week the employee is asked whether to reuse last
 // week's work. Accepted copies only pre-fill the clock-out input (per day and

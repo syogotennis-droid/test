@@ -1536,3 +1536,28 @@
 
 .copyCancelBtn { background: #fff; border: 1.5px solid #d1d5db; color: #374151; }
 .copyDeleteBtn { background: #dc2626; border: none; color: #fff; }
+
+/* 先週の同じ曜日の内容を入れる */
+.lastWeekBtn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 2px solid #1e5aa8;
+  background: #fff;
+  color: #1e5aa8;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+}
+.lastWeekBanner {
+  flex-shrink: 0;
+  margin: 8px 20px 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #fef3c7;
+  border: 2px solid #f59e0b;
+  color: #92400e;
+  font-size: 15px;
+  font-weight: 800;
+}
