@@ -524,6 +524,16 @@ export async function onRequest(context) {
       return ok({ date: lastDate, items: found ? found.items : {} })
     }
 
+    // Work entered on recent days, per shift, newest first (the "日付を選んでコピー" list).
+    // → [{ date, slot, items }] for the 62 days up to `date` (only shifts with work entered)
+    if (route === 'recent_work' && method === 'GET') {
+      const userId = sp.get('userId'), date = sp.get('date')
+      needStr(userId, 'userId')
+      if (!isDate(date)) throw new HttpError('bad_query', 400)
+      const days = await workSlots(DB, userId, addDays(date, -62), date)
+      return ok(days.reverse().flatMap(d => [...d.slots].reverse().map(x => ({ date: d.date, slot: x.slot, items: x.items }))))
+    }
+
     // ── Weekly copy (週コピー) ─────────────────────────────────────────────
     // What last week looked like, offered at the first clock-out of the week.
     if (route === 'weekly_copy/offer' && method === 'GET') {
@@ -710,7 +720,7 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
     // the employee's own transport choice / weekly copy
     if (route === 'transport_days' || route === 'transport_day_methods') return !!(sp.get('userId') && sp.get('date'))
-    if (route === 'weekly_copy/offer' || route === 'weekly_copies' || route === 'last_week_work') return !!sp.get('userId')
+    if (route === 'weekly_copy/offer' || route === 'weekly_copies' || route === 'last_week_work' || route === 'recent_work') return !!sp.get('userId')
     return false
   }
   if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer'
@@ -780,7 +790,12 @@ function mondayOf(dateStr) {
 // Last week's actual work per day and per session order:
 // [{ date, slots: [{ slot, items }] }]. Sessions are ordered by clock-in time.
 async function lastWeekSlots(DB, userId, weekStart, onlyDate = null) {
-  const from = onlyDate || addDays(weekStart, -7), to = onlyDate || addDays(weekStart, -1)
+  return workSlots(DB, userId, onlyDate || addDays(weekStart, -7), onlyDate || addDays(weekStart, -1))
+}
+
+// Work entered per day and per shift between two dates: [{ date, slots: [{ slot, items }] }]
+// (slot = the n-th clock-in of the day, ordered by time)
+async function workSlots(DB, userId, from, to) {
   const [logsR, repR] = await Promise.all([
     DB.prepare("SELECT date, time, session_id FROM logs WHERE user_id = ? AND date >= ? AND date <= ? AND log_type = '出勤'").bind(userId, from, to).all(),
     DB.prepare('SELECT date, session_id, items FROM session_work_reports WHERE user_id = ? AND date >= ? AND date <= ?').bind(userId, from, to).all(),

@@ -5315,3 +5315,5 @@
 }
 .dayEditSessionCols .dayEditWorkFooter { flex-direction: row; justify-content: space-between; align-items: center; flex-wrap: wrap; }
 .dayEditSessionCols .dayEditSessionTotal { margin-left: auto; }
+
+.dayEditWorkBtns { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -22,6 +22,7 @@ import {
   saveWorkItemDefs, newWorkItemId,
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
+import CopyFromDay from './CopyFromDay'
 import WorkItemSettings from './WorkItemSettings'
 import { useWorkItemDefs } from '../lib/useWorkItemDefs'
 import styles from './AdminScreen.module.css'
@@ -1197,6 +1198,16 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     }))
   }
 
+  // "日付を選んでコピー": { sessionId, slot } of the shift being filled, or null
+  const [copyFor, setCopyFor] = useState(null)
+  function copyWorkInto(sessionId, items, label) {
+    const has = (sessionWorkRows[sessionId] || []).some(r => r.type || (parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)
+    if (has && !window.confirm(`この回の業務を、${label}の内容に置き換えますか？`)) return false
+    const rows = sortByItemOrder(Object.keys(items)).map(t => ({ type: t, h: Math.floor(items[t] / 60), m: items[t] % 60 }))
+    setSessionWorkRows(prev => ({ ...prev, [sessionId]: rows.length ? rows : [{ type: '', h: 0, m: 0 }] }))
+    return true
+  }
+
   function addWorkRow(sessionId) {
     setSessionWorkRows(prev => ({
       ...prev,
@@ -1685,8 +1696,16 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                                   })}
                                 </div>
                                 <div className={styles.dayEditWorkFooter}>
-                                  {hasMoreSessionTypes && (
-                                    <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 業務を追加</button>
+                                  <div className={styles.dayEditWorkBtns}>
+                                    {hasMoreSessionTypes && (
+                                      <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 業務を追加</button>
+                                    )}
+                                    <button className={styles.dayEditAddWorkBtn} onClick={() => setCopyFor({ sessionId: s.sessionId, slot: si + 1 })}>日付を選んでコピー</button>
+                                  </div>
+                                  {copyFor?.sessionId === s.sessionId && (
+                                    <CopyFromDay userId={user.id} date={dateStr} slot={copyFor.slot} selectable={null}
+                                      onClose={() => setCopyFor(null)}
+                                      onPick={({ label, items }) => { if (copyWorkInto(s.sessionId, items, label)) setCopyFor(null) }} />
                                   )}
                                   <div className={styles.dayEditSessionTotal}>
                                     <span>今回の合計</span>

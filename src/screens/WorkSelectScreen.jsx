@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react'
-import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder, commuteLabel } from '../lib/db'
+import { itemLabel, workItemDef, isDeletedWorkItem, sortByItemOrder, commuteLabel, localToday } from '../lib/db'
 import { answerWeeklyCopyAtClockOut } from '../lib/punchFlow'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
+import CopyFromDay from './CopyFromDay'
 import styles from './WorkSelectScreen.module.css'
 
 const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '交通費'])
@@ -310,7 +311,9 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
   // same weekday / same shift last week (only items this user can select)
   const lastWeekTimes = toWorkTimes(ctx.lastWeek?.items)
   const lastWeekDow = ctx.lastWeek ? DOW[new Date(ctx.lastWeek.date.replace(/-/g, '/')).getDay()] : ''
-  const [usedLastWeek, setUsedLastWeek] = useState(false)
+  // where the input was copied from (先週の水曜日 / 10/1（水）…) for the banner, or ''
+  const [copiedFrom, setCopiedFrom] = useState('')
+  const [pickingDay, setPickingDay] = useState(false)
 
   async function handleWeeklyAnswer(answer) {
     try {
@@ -379,13 +382,15 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
   const minsOf = times => JSON.stringify(Object.fromEntries(sortByItemOrder(Object.keys(times))
     .map(id => [id, (times[id]?.h || 0) * 60 + (times[id]?.m || 0)]).filter(([, m]) => m > 0)))
   const showLastWeekBtn = Object.keys(lastWeekTimes).length > 0 && minsOf(workTimes) !== minsOf(lastWeekTimes)
-  function useLastWeek() {
-    if (activeItems.length > 0 && !window.confirm(`入力中の内容を、先週の${lastWeekDow}曜日の内容に置き換えますか？`)) return
-    setWorkTimes(lastWeekTimes)
+  function copyIn(times, label) {
+    if (activeItems.length > 0 && !window.confirm(`入力中の内容を、${label}の内容に置き換えますか？`)) return false
+    setWorkTimes(times)
     setPrefilled(false)
     setWeeklyMsg('')
-    setUsedLastWeek(true)
+    setCopiedFrom(label)
+    return true
   }
+  const useLastWeek = () => copyIn(lastWeekTimes, `先週の${lastWeekDow}曜日`)
 
   const [saveError, setSaveError] = useState('')
   async function handleConfirm() {
@@ -429,11 +434,19 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
             {weeklyMsg && <span className={styles.infoPlan}>{weeklyMsg}</span>}
           </div>
         )}
-        {usedLastWeek && (
-          <div className={styles.lastWeekBanner}>先週の{lastWeekDow}曜日と同じ内容を入れました。違うときは直してください</div>
+        {copiedFrom && (
+          <div className={styles.lastWeekBanner}>{copiedFrom}と同じ内容を入れました。違うときは直してください</div>
         )}
-        {showLastWeekBtn && (
-          <button type="button" className={styles.lastWeekBtn} onClick={useLastWeek}>先週の{lastWeekDow}曜日と同じ内容を入れる</button>
+        <div className={styles.copyBtns}>
+          {showLastWeekBtn && (
+            <button type="button" className={styles.lastWeekBtn} onClick={useLastWeek}>先週の{lastWeekDow}曜日と同じ内容を入れる</button>
+          )}
+          <button type="button" className={styles.lastWeekBtn} onClick={() => setPickingDay(true)}>日付を選んでコピー</button>
+        </div>
+        {pickingDay && (
+          <CopyFromDay userId={user.id} date={ctx.date || localToday()} slot={ctx.slot} selectable={allFlatItems}
+            onClose={() => setPickingDay(false)}
+            onPick={({ label, items }) => { if (copyIn(toWorkTimes(items), label)) setPickingDay(false) }} />
         )}
         <div className={styles.workGrid}>
           {displayCards.map(card => {

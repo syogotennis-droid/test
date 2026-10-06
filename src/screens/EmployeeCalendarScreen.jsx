@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs } from '../lib/db'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
+import CopyFromDay from './CopyFromDay'
 import styles from './EmployeeCalendarScreen.module.css'
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -81,7 +82,7 @@ function objsEqual(a, b) {
 }
 
 /* ─── 業務入力・編集フォーム（カード＋テンキー） ─── */
-function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, lastWeek, onCancel, onSave, saving }) {
+function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, lastWeek, copyFrom, onCancel, onSave, saving }) {
   // items already entered stay editable even if no longer selectable (e.g. deleted)
   const [editableItems] = useState(() => sortByItemOrder([...new Set([
     ...selectable, ...Object.keys(initialWork).filter(t => initialWork[t] > 0),
@@ -136,23 +137,35 @@ function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, la
   // same weekday / same shift last week (only items this person can enter)
   const lastWeekItems = Object.fromEntries(Object.entries(lastWeek?.items || {}).filter(([t, m]) => m > 0 && editableItems.includes(t)))
   const lastWeekDow = lastWeek ? DOW_LABELS[new Date(lastWeek.date.replace(/-/g, '/')).getDay()] : ''
-  const [usedLastWeek, setUsedLastWeek] = useState(false)
-  function useLastWeek() {
-    if (Object.keys(currentObj).length > 0 && !window.confirm(`入力中の内容を、先週の${lastWeekDow}曜日の内容に置き換えますか？`)) return
-    setInputs(Object.fromEntries(Object.entries(lastWeekItems).map(([t, m]) => [t, { h: Math.floor(m / 60), m: m % 60 }])))
-    setUsedLastWeek(true)
+  // where the input was copied from (先週の水曜日 / 10/1（水）…) for the banner, or ''
+  const [copiedFrom, setCopiedFrom] = useState('')
+  const [pickingDay, setPickingDay] = useState(false)
+  function copyIn(items, label) {
+    if (Object.keys(currentObj).length > 0 && !window.confirm(`入力中の内容を、${label}の内容に置き換えますか？`)) return false
+    setInputs(Object.fromEntries(Object.entries(items).filter(([t, m]) => m > 0 && editableItems.includes(t)).map(([t, m]) => [t, { h: Math.floor(m / 60), m: m % 60 }])))
+    setCopiedFrom(label)
+    return true
   }
+  const useLastWeek = () => copyIn(lastWeekItems, `先週の${lastWeekDow}曜日`)
 
   return (
     <>
       <div className={styles.editHeader}>
         <div className={styles.editHeaderDate}>{sessionLabel}</div>
-        {Object.keys(lastWeekItems).length > 0 && !objsEqual(currentObj, lastWeekItems) && (
-          <button type="button" className={styles.lastWeekBtn} onClick={useLastWeek}>先週の{lastWeekDow}曜日と同じ内容を入れる</button>
-        )}
+        <div className={styles.copyBtns}>
+          {Object.keys(lastWeekItems).length > 0 && !objsEqual(currentObj, lastWeekItems) && (
+            <button type="button" className={styles.lastWeekBtn} onClick={useLastWeek}>先週の{lastWeekDow}曜日と同じ内容を入れる</button>
+          )}
+          {copyFrom && <button type="button" className={styles.lastWeekBtn} onClick={() => setPickingDay(true)}>日付を選んでコピー</button>}
+        </div>
       </div>
-      {usedLastWeek && (
-        <div className={styles.lastWeekBanner}>先週の{lastWeekDow}曜日と同じ内容を入れました。違うときは直して「保存する」</div>
+      {copiedFrom && (
+        <div className={styles.lastWeekBanner}>{copiedFrom}と同じ内容を入れました。違うときは直して「保存する」</div>
+      )}
+      {pickingDay && (
+        <CopyFromDay userId={copyFrom.userId} date={copyFrom.date} slot={copyFrom.slot} selectable={editableItems}
+          onClose={() => setPickingDay(false)}
+          onPick={({ label, items }) => { if (copyIn(items, label)) setPickingDay(false) }} />
       )}
 
       <div className={styles.editBody}>
@@ -328,6 +341,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
             editableItems={editableItems}
             initialWork={editingWork}
             lastWeek={lastWeek}
+            copyFrom={{ userId: user.id, date: dateStr, slot: editingSessionIdx + 1 }}
             onCancel={() => setEditingSessionIdx(null)}
             onSave={handleSave}
             saving={saving}

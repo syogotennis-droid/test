@@ -864,6 +864,11 @@ export async function getLastWeekWork(userId, date, slot) {
   try { return await api('/last_week_work', { query: { userId, date, slot: String(slot) } }) } catch { return null }
 }
 
+// Recent days' work per shift, newest first: [{ date, slot, items }] or null (offline etc.)
+export async function getRecentWork(userId, date) {
+  try { return await api('/recent_work', { query: { userId, date } }) } catch { return null }
+}
+
 // ─── Weekly copy (週コピー) ──────────────────────────────────────────────────
 // At the first clock-out of a week the employee is asked whether to reuse last
 // week's work. Accepted copies only pre-fill the clock-out input (per day and
