@@ -1226,7 +1226,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<numFmt numFmtId="166" formatCode="0.0"/>',
     '<numFmt numFmtId="167" formatCode="#,##0"/>',
     '<numFmt numFmtId="168" formatCode="[h]時間mm分"/>',
-    '<numFmt numFmtId="169" formatCode="0.0#&quot;時間&quot;"/>',
+    '<numFmt numFmtId="169" formatCode="0.0&quot;時間&quot;"/>',
     '</numFmts>',
     '<fonts count="4">',
     '<font><sz val="11"/><name val="Calibri"/></font>',
@@ -1295,7 +1295,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center"/></xf>',
     '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
-    // 29 準備時間 in hours (0.17 per shift)
+    // 29 準備時間 in hours (0.17 per shift; shown with one decimal, the cell keeps 0.51)
     '<xf numFmtId="169" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     '</cellXfs>',
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',

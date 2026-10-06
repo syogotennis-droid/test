@@ -2221,7 +2221,7 @@ function KinmuboTab({ today }) {
 
   function fmtTimeOrDays(row) {
     if (row.mins === null && row.days != null) return `${row.days}日`
-    if (row.prepHours != null) return `${row.prepHours}時間`
+    if (row.prepHours != null) return `${(Math.round(row.prepHours * 10) / 10).toFixed(1)}時間` // shown with one decimal; pay uses 0.17 per shift
     return fmtMins(row.mins)
   }
 
