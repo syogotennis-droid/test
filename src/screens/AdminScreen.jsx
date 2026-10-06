@@ -4227,7 +4227,7 @@ function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed,
             {errors[k] ? <span className={styles.userEditErrMsg} style={{ margin: 0 }}>{errors[k]}</span> : <span className={styles.userEditHintText} style={{ margin: 0 }}>
               {k === 'public' ? '1日の金額' : rate > 0
                 ? `1日 ＝ ${Number(v) || 0}km × ${rate.toFixed(3)}円 ＝ ${((Number(v) || 0) * rate).toFixed(1)}円`
-                : `${label}の単価が未設定です（「設定」の交通費単価）`}
+                : `${label}の単価が未設定です`}
             </span>}
           </>
         )}
@@ -4246,11 +4246,10 @@ function CommuteSection({ form, onChange, carRates, isTablet, onNumpad, changed,
           <button type="button" className={[styles.commuteBtn, form.on ? styles.commuteBtnActive : ''].join(' ')} onClick={() => onChange({ ...form, on: true })}>あり</button>
           <button type="button" className={[styles.commuteBtn, !form.on ? styles.commuteBtnActive : ''].join(' ')} onClick={() => onChange({ ...form, on: false })}>なし</button>
         </div>
-        {!form.on && <div className={styles.userEditHintText}>交通費なし（退勤時の「本日の交通費」も表示しません）</div>}
-      </div>
+              </div>
       {form.on && (
         <div>
-          <label className={styles.userEditLabel}>通勤方法（複数選べます。2つ以上のときは、退勤時にその日使ったものを選びます）</label>
+          <label className={styles.userEditLabel}>通勤方法</label>
           {row('car', '車', 'km', 'km', /^\d{0,4}(\.\d{0,2})?$/)}
           {row('bike', 'バイク', 'km', 'km', /^\d{0,4}(\.\d{0,2})?$/)}
           {row('public', '公共交通機関', 'amount', '円/日', /^\d{0,6}$/)}
