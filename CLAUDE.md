@@ -92,6 +92,7 @@ npx wrangler pages dev dist
 - 車・バイク: 1日の交通費 ＝ 通勤距離（km）× 単価（お客様のExcelと同じ。2倍しない）。単価は設定「交通費単価」の `config.carRates`（適用開始日つき。`{ from, base, carKmPerL, bikeKmPerL, rate, bikeRate }`、rate＝金額÷車の燃費、bikeRate＝金額÷バイクの燃費。燃費の初期値は車8・バイク13で変更可）。公共交通機関は1日の金額。1日分は端数処理なし、月の合計で1回だけ切り上げ（上社の給与資料と同じ ROUNDUP。単価改定や方法で行が分かれても、各行の金額は合計が月の切り上げ額になるよう配分）。給与の行名は1行だけなら「交通費（○日）」、複数行のときだけ方法・距離・単価を付ける
 - 以前のデータ: `commuteMethod`（bus/train は公共交通機関、walk は交通費なし）、`commuteOneWayKm`（片道、2倍で計算）、`commuteDistanceKm`（1日分）、方法未設定の日額 `itemRates['交通費'].amount` は、入れ直すまで以前と同じ金額で計算する
 - 通勤設定の変更は `commuteHistory` に適用開始日つきで残し、その日より前は以前の設定で計算する
+- 設定「交通費」（単価の履歴と、アルバイト・パート全員の交通費一覧）。一覧は最初は閉じていて、車・バイクの距離と公共交通機関の金額をその場で直し、適用開始日を付けてまとめて保存（`commuteMethods` と `commuteHistory` だけを送る。空欄はその方法を使わない）
 - 本日の交通費（あり／なし）は退勤時に入力。`transport_days` に「なし」の日だけ保存
 - 勤務申告 = 業務入力があり打刻が完了した日（従来の定義）。出勤日数 = 出勤・退勤の両方がある日。交通費対象 = 勤務申告の日のうち「支給なし」でない日。打刻未完了の日は別表示
 - 計算は `src/lib/db.js` の `computeTransport` / `transportByDate` / `attendanceDates` / `prepTimeRows` を画面とExcelで共用。Excelの出勤簿は、交通費のある人だけ打刻表の退勤打刻の右に「交通費」列（その日の金額は丸めずに入れ、合計行は ROUNDUP(SUM()) で月の支給額と一致。土日の色も付ける）

@@ -3716,8 +3716,134 @@ function SettingsTab({ users, onUsersChanged }) {
 
       <SettingsSection id="set-minwage" title="最低賃金" summary="準備時間の計算と、連動する業務の時給"><MinWageSettings onUsersChanged={onUsersChanged} /></SettingsSection>
 
-      <SettingsSection id="set-car" title="交通費単価（車・バイク）"><CarRateSettings /></SettingsSection>
+      <SettingsSection id="set-car" title="交通費">
+        <CarRateSettings />
+        <CommuteListSettings users={users} onUsersChanged={onUsersChanged} />
+      </SettingsSection>
     </div>
+    </div>
+  )
+}
+
+// 交通費一覧（お客様のExcelの一覧表と同じ形）: part-timers only, one row each.
+// km / amount are edited in place; an empty box means that way of commuting is not used.
+// Saved with a start date into commuteHistory (earlier days keep the earlier settings).
+function CommuteListSettings({ users, onUsersChanged }) {
+  const [open, toggle] = useFold('settings.commuteList', false)
+  const [carRates, setCarRates] = useState([])
+  useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
+  const today = getTodayJst()
+  const list = (users || []).filter(u => u.employeeType !== 'salaried')
+    .sort((a, b) => String(a.id).localeCompare(String(b.id), 'ja', { numeric: true }))
+  const formOf = u => {
+    const f = commuteFormFromUser(u)
+    return { car: f.car.use ? f.car.km : '', bike: f.bike.use ? f.bike.km : '', public: f.public.use ? f.public.amount : '', legacy: f.on && !f.car.use && !f.bike.use && !f.public.use ? f.legacyAmount : 0 }
+  }
+  const [edits, setEdits] = useState({}) // { userId: { car, bike, public } } (changed rows only)
+  const [from, setFrom] = useState(today)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+  const valOf = (u, k) => (edits[u.id]?.[k] ?? formOf(u)[k])
+  const setVal = (u, k, v, pattern) => {
+    if (!pattern.test(v)) return
+    const base = formOf(u)
+    const next = { car: valOf(u, 'car'), bike: valOf(u, 'bike'), public: valOf(u, 'public'), [k]: v }
+    setEdits(prev => {
+      const n = { ...prev }
+      if (next.car === base.car && next.bike === base.bike && next.public === base.public) delete n[u.id]; else n[u.id] = next
+      return n
+    })
+    setMsg(''); setErr('')
+  }
+  const methodsOf = e => {
+    const out = {}
+    if (Number(e.car) > 0) out.car = { km: Number(e.car) }
+    if (Number(e.bike) > 0) out.bike = { km: Number(e.bike) }
+    if (Number(e.public) > 0) out.public = { amount: Number(e.public) }
+    return out
+  }
+  const daily = u => {
+    const e = { car: valOf(u, 'car'), bike: valOf(u, 'bike'), public: valOf(u, 'public') }
+    const parts = []
+    if (Number(e.car) > 0) parts.push(`車 ${Math.round(Number(e.car) * carRateForDate(carRates, today, 'car') * 10) / 10}円`)
+    if (Number(e.bike) > 0) parts.push(`バイク ${Math.round(Number(e.bike) * carRateForDate(carRates, today, 'bike') * 10) / 10}円`)
+    if (Number(e.public) > 0) parts.push(`公共 ${Number(e.public).toLocaleString()}円`)
+    if (parts.length) return parts.join('・')
+    const legacy = formOf(u).legacy
+    return legacy > 0 && !edits[u.id] ? `以前の設定 ${legacy.toLocaleString()}円` : 'なし'
+  }
+  const changed = Object.keys(edits)
+
+  async function save() {
+    if (!from) { setErr('適用開始日を入力'); return }
+    setSaving(true); setErr('')
+    let done = 0
+    try {
+      for (const id of changed) {
+        const u = list.find(x => x.id === id)
+        if (!u) continue
+        const methods = methodsOf(edits[id])
+        await upsertUser({ id, commuteMethods: methods, commuteHistory: commuteHistoryWith(u, { from, methods }) })
+        done++
+      }
+      setEdits({})
+      setMsg(`${done}名の交通費を保存しました（${fmtJaDateShort(from)}から）`)
+      onUsersChanged?.()
+    } catch {
+      setErr(`保存できません（${done}名は保存済み）。通信を確認して再度実行してください`)
+    }
+    setSaving(false)
+  }
+
+  const cell = { padding: '6px 8px', borderBottom: '1px solid #e2e8f0', fontSize: '0.88rem' }
+  const head = { ...cell, background: '#f8fafc', fontWeight: 700, color: '#475569', textAlign: 'left', whiteSpace: 'nowrap' }
+  const inp = { width: 84, height: 34, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: 6, textAlign: 'right', padding: '0 8px', fontSize: '0.9rem', fontFamily: 'inherit' }
+  const KM = /^\d{0,4}(\.\d{0,2})?$/, YEN = /^\d{0,6}$/
+  return (
+    <div style={{ marginTop: 24, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+      <FoldTitle open={open} onToggle={toggle} className={styles.userEditSectionTitle}>交通費一覧（{list.length}名）</FoldTitle>
+      {open && (
+        <>
+          <div style={{ overflowX: 'auto', marginTop: 8 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', border: '1px solid #e2e8f0' }}>
+              <thead>
+                <tr>
+                  <th style={head}>氏名</th>
+                  <th style={head}>車（km）</th>
+                  <th style={head}>バイク（km）</th>
+                  <th style={head}>公共交通機関（円）</th>
+                  <th style={head}>1日の交通費</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map(u => (
+                  <tr key={u.id} style={{ background: edits[u.id] ? '#fffbeb' : '#fff' }}>
+                    <td style={{ ...cell, whiteSpace: 'nowrap' }}>{u.name}</td>
+                    <td style={cell}><input style={inp} inputMode="decimal" aria-label={`${u.name}の車の通勤距離`} value={valOf(u, 'car')} onChange={e => setVal(u, 'car', e.target.value, KM)} /></td>
+                    <td style={cell}><input style={inp} inputMode="decimal" aria-label={`${u.name}のバイクの通勤距離`} value={valOf(u, 'bike')} onChange={e => setVal(u, 'bike', e.target.value, KM)} /></td>
+                    <td style={cell}><input style={inp} inputMode="numeric" aria-label={`${u.name}の公共交通機関の金額`} value={valOf(u, 'public')} onChange={e => setVal(u, 'public', e.target.value, YEN)} /></td>
+                    <td style={{ ...cell, color: '#334155' }}>{daily(u)}</td>
+                  </tr>
+                ))}
+                {list.length === 0 && <tr><td colSpan={5} style={{ ...cell, color: '#94a3b8' }}>アルバイト・パートの従業員がいません</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12, marginTop: 12 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={SETTINGS_LABEL}>適用開始日</span>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ height: 40, border: '1px solid #cbd5e1', borderRadius: 8, padding: '0 10px', fontFamily: 'inherit' }} />
+            </label>
+            <button type="button" onClick={save} disabled={!changed.length || saving}
+              style={{ height: 40, padding: '0 20px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer', opacity: !changed.length || saving ? 0.4 : 1 }}>
+              {saving ? '保存中' : changed.length ? `変更を保存（${changed.length}名）` : '変更を保存'}
+            </button>
+          </div>
+          {err && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>{err}</div>}
+          {msg && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>{msg}</div>}
+        </>
+      )}
     </div>
   )
 }
