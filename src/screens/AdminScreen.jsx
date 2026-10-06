@@ -4,7 +4,7 @@ import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import {
-  getLogs, getUsers, exportKinmubo, deleteLog, upsertUser, deleteUser,
+  getLogs, getUsers, exportKinmubo, payYen, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
   resolveUserByPin, saveAdminPin,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
@@ -17,7 +17,7 @@ import {
   getCommute, getTransportDays, getTransportDayMethods, getCarRates, saveCarRates, computeTransport, attendanceDates,
   COMMUTE_METHODS, carRateForDate, commuteOn, commuteLabel,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
-  prepTimeRows, planMinWageChange, withRateFrom, ratePeriods,
+  prepTimeRows, PREP_HOURS, planMinWageChange, withRateFrom, ratePeriods,
   getWorkItemDefs, activeWorkItemDefs, itemLabel, sortByItemOrder, isDeletedWorkItem, SYSTEM_ITEMS,
   saveWorkItemDefs, newWorkItemId,
 } from '../lib/db'
@@ -2175,14 +2175,14 @@ function KinmuboTab({ today }) {
           })
           const periodRangeLabel = multiPeriod ? `${fromDate.slice(5).replace('-','/')}〜${toDate.slice(5).replace('-','/')}` : ''
           if (hasSunday) {
-            if (wdM > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: wdM, days: null, rate: normalRate, pay: Math.round(wdM / 60 * normalRate) })
+            if (wdM > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: 'weekday', mins: wdM, days: null, rate: normalRate, pay: payYen(wdM / 60 * normalRate) })
             if (weM > 0) {
               const sunRate = sundayRate > 0 ? sundayRate : normalRate // no Sunday rate in this period → normal rate
-              rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : itemLabel(type) + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sunRate, pay: Math.round(weM / 60 * sunRate) })
+              rows.push({ label: multiPeriod ? periodRangeLabel + '（日曜）' : itemLabel(type) + '（日曜）', parentType: type, isMultiPeriod: multiPeriod, dayType: 'sunday', mins: weM, days: null, rate: sunRate, pay: payYen(weM / 60 * sunRate) })
             }
           } else {
             const tot = wdM + weM
-            if (tot > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: tot, days: null, rate: normalRate, pay: Math.round(tot / 60 * normalRate) })
+            if (tot > 0) rows.push({ label: multiPeriod ? periodRangeLabel : itemLabel(type), parentType: type, isMultiPeriod: multiPeriod, dayType: null, mins: tot, days: null, rate: normalRate, pay: payYen(tot / 60 * normalRate) })
           }
         }
       }
@@ -2190,7 +2190,7 @@ function KinmuboTab({ today }) {
       const prepGroups = prepTimeRows(prepSessionDates, minWageHistory)
       prepGroups.forEach(g => rows.push({
         label: prepGroups.length > 1 ? `準備時間（${g.wage}円）` : '準備時間', parentType: '準備時間',
-        isMultiPeriod: false, dayType: null, mins: g.mins, days: null, rate: g.wage, pay: g.pay,
+        isMultiPeriod: false, dayType: null, mins: g.mins, prepHours: Math.round(g.count * PREP_HOURS * 100) / 100, days: null, rate: g.wage, pay: g.pay,
       }))
       const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
@@ -2221,6 +2221,7 @@ function KinmuboTab({ today }) {
 
   function fmtTimeOrDays(row) {
     if (row.mins === null && row.days != null) return `${row.days}日`
+    if (row.prepHours != null) return `${row.prepHours}時間`
     return fmtMins(row.mins)
   }
 
@@ -3036,14 +3037,14 @@ function AddUserModal({ users, onClose, onAdded }) {
       setItemRates(prev => {
         const normalVal = prev[item]?.normal
         const sunday = normalVal === '' || normalVal == null || val === ''
-          ? '' : String(Math.round(Number(normalVal) * Number(val)))
+          ? '' : String(Math.round(Number(normalVal) * Number(val) * 100) / 100)
         return { ...prev, [item]: { ...prev[item], sunday } }
       })
     } else {
       setItemRates(prev => {
         const updated = { ...prev, [item]: { ...prev[item], [field]: val } }
         if (field === 'normal' && multipliers[item] != null) {
-          updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * Number(multipliers[item])))
+          updated[item].sunday = val === '' ? '' : String(Math.round(Number(val) * Number(multipliers[item]) * 100) / 100)
         }
         return updated
       })
@@ -4436,7 +4437,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       ? Math.round(inherited.sunday / inherited.normal * 100) / 100
       : null
     const effectiveMult = showMultiplierInput && customMultiplierStr ? Number(customMultiplierStr) : inheritedMult
-    const sunday = normalVal && effectiveMult ? Math.round(normalVal * effectiveMult) : undefined
+    const sunday = normalVal && effectiveMult ? Math.round(normalVal * effectiveMult * 100) / 100 : undefined
     const newEntry = { from: date, normal: normalVal }
     if (sunday != null && sunday > 0) newEntry.sunday = sunday
     setRateHistory(prev => {
@@ -4864,7 +4865,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                           ? Number(addRateForm.customMultiplierStr)
                           : inheritedMult
                         const newNormal = addRateForm.normalStr ? Number(addRateForm.normalStr) : null
-                        const computedSunday = newNormal && effectiveMult ? Math.round(newNormal * effectiveMult) : null
+                        const computedSunday = newNormal && effectiveMult ? Math.round(newNormal * effectiveMult * 100) / 100 : null
                         const prevNormal = inherited?.normal || null
                         const previewDateStr = fmtJaDateShort(addRateForm.date)
                         return (

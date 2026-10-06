@@ -344,15 +344,18 @@ export async function saveMinWageItems(list) {
 
 // 準備時間 (10 min per completed session) paid at the minimum wage valid on
 // each day → [{ mins, wage, pay }], one row per wage
+export const PREP_HOURS = 0.17
+
 export function prepTimeRows(sessionDates, history) {
   const groups = []
   for (const d of [...sessionDates].sort()) {
     const wage = minWageForDate(history, d)
     const last = groups[groups.length - 1]
-    if (last && last.wage === wage) last.mins += 10
-    else groups.push({ wage, mins: 10 })
+    if (last && last.wage === wage) last.count++
+    else groups.push({ wage, count: 1 })
   }
-  return groups.filter(g => g.wage > 0).map(g => ({ ...g, pay: Math.round(g.mins / 60 * g.wage) }))
+  // 0.17 hours (10.2 minutes) per shift, like the customer's sheets
+  return groups.filter(g => g.wage > 0).map(g => ({ ...g, mins: Math.round(g.count * PREP_HOURS * 60 * 1000) / 1000, pay: payYen(g.count * PREP_HOURS * g.wage) }))
 }
 
 // Rate changes for one minimum-wage change. Only linked items whose rate on
@@ -366,7 +369,7 @@ export function planMinWageChange(users, items, newWage, from) {
       if (!(u.workItems || []).includes(item)) continue
       const cur = getRatesForDate(u.itemRates?.[item], from)
       if (cur.normal >= newWage) continue
-      const newSunday = cur.sunday && cur.normal ? Math.round(newWage * cur.sunday / cur.normal) : 0
+      const newSunday = cur.sunday && cur.normal ? Math.round(newWage * cur.sunday / cur.normal * 100) / 100 : 0
       out.push({ userId: u.id, name: u.name, item, oldNormal: cur.normal, oldSunday: cur.sunday, newNormal: newWage, newSunday })
     }
   }
@@ -1004,8 +1007,9 @@ export function transportByDate(user, eligibleDates, carRates = [], dayMethods =
   return out
 }
 
-// yen rounding that ignores floating-point noise (0.1 + 0.2 style sums landing on x.4999999)
-const roundYen = x => Math.round(Math.round(x * 1e6) / 1e6)
+// Yen amounts are rounded UP, like the customer's payroll sheets (ROUNDUP).
+// Floating-point noise is ignored first (17.000000000000004 → 17, not 18).
+export const payYen = x => Math.ceil(Math.round(x * 1e6) / 1e6)
 
 export function computeTransport(user, eligibleDates, carRates = [], dayMethods = {}) {
   const groups = []
@@ -1025,12 +1029,12 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
     }
   }
   const amountGroups = groups.filter(g => !g.vehicle).length
-  // round once on the month total: each row gets its share so the rows add up to that total
+  // round up once on the month total: each row gets its share so the rows add up to that total
   // (the running total rounded, minus what the earlier rows already got)
   let raw = 0, given = 0
   const share = g => {
     raw += g.days * g.daily
-    const upTo = roundYen(raw)
+    const upTo = payYen(raw)
     const pay = upTo - given
     given = upTo
     return pay
@@ -1173,6 +1177,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     return ratePeriods(rateObj, `${y}-${pad2(m)}-01`, `${y}-${pad2(m)}-${pad2(lastD)}`)
   }
   // Convert 0-based column index to Excel letter(s): 0→A, 25→Z, 26→AA …
+  // break columns: 時間内退勤 / 時間内出勤, numbered ①② only when someone has more than one
+  const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
+  const breakHeaders = n => Array.from({ length: n }, (_, i) => {
+    const k = n > 1 ? (CIRCLED[i] || `(${i + 1})`) : ''
+    return [`時間内退勤${k}`, `時間内出勤${k}`]
+  }).flat()
+  const timeCell = (ref, style, hm) => {
+    if (!hm) return `<c r="${ref}" s="${style}"/>`
+    const [h, mi] = hm.split(':').map(Number)
+    return `<c r="${ref}" s="${style}"><v>${excelTime(h, mi)}</v></c>`
+  }
+
   function colLetter(n) {
     let s = '', m = n + 1
     while (m > 0) { m--; s = String.fromCharCode(65 + m % 26) + s; m = Math.floor(m / 26) }
@@ -1197,17 +1213,20 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     tot_lbl: 20, tot_hrs: 21, tot_pay: 22,
     pay_lbl: 23, pay_rate: 24,
     timeWrap: 25,
+    trDay: { wd: 26, sa: 27, su: 28 }, // 打刻表の交通費（その日の金額。土日は色付き）
+    prepHrs: 29,                       // 準備時間（0.17時間×回数）
   }
 
   const STYLES_XML = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-    '<numFmts count="5">',
+    '<numFmts count="6">',
     '<numFmt numFmtId="164" formatCode="yyyy/m/d"/>',
     '<numFmt numFmtId="165" formatCode="h:mm"/>',
     '<numFmt numFmtId="166" formatCode="0.0"/>',
     '<numFmt numFmtId="167" formatCode="#,##0"/>',
     '<numFmt numFmtId="168" formatCode="[h]時間mm分"/>',
+    '<numFmt numFmtId="169" formatCode="0.0#&quot;時間&quot;"/>',
     '</numFmts>',
     '<fonts count="4">',
     '<font><sz val="11"/><name val="Calibri"/></font>',
@@ -1229,7 +1248,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>',
     '</borders>',
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>',
-    '<cellXfs count="26">',
+    '<cellXfs count="30">',
     // 0 default
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
     // 1 title
@@ -1272,6 +1291,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center"/></xf>',
     // 25 multi-session text cell: bordered, center, wrapText
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>',
+    // 26-28 transport of the day wd/sa/su (General: the unrounded amount)
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    // 29 準備時間 in hours (0.17 per shift)
+    '<xf numFmtId="169" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     '</cellXfs>',
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',
     '</styleSheet>',
@@ -1343,6 +1368,13 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         entry.pendingIn = null
       }
     })
+    // breaks of each shift (休憩開始 / 休憩終了 with the same session_id) → 時間内退勤 / 時間内出勤
+    const logsBySession = {}
+    userLogs.forEach(l => { if (l.session_id) (logsBySession[l.session_id] = logsBySession[l.session_id] || []).push(l) })
+    Object.values(byDate).forEach(entry => entry.sessions.forEach(se => {
+      const sid = se.inLog?.session_id || se.outLog?.session_id
+      se.breaks = sid ? pairBreaks(logsBySession[sid] || []) : []
+    }))
 
     // Salaried employees: attendance only (日付・曜日・QR出勤・QR退勤)
     if (user.employeeType === 'salaried') {
@@ -1351,11 +1383,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const hdrCellSal = (col, rn, text) => `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
 
       const T1_HDR_SAL = 4, T1_DATA_SAL = 5
+      // all breaks of a day, in order (時間内退勤 / 時間内出勤 columns between 出勤打刻 and 退勤打刻)
+      const dayBreaks = ds => (byDate[ds]?.sessions || []).flatMap(se => se.breaks || [])
+      const nBreaksSal = Math.max(0, ...Object.keys(byDate).filter(ds => ds.startsWith(`${ym_y_str}-${ym_m_str}`)).map(ds => dayBreaks(ds).length))
+      const breakColsSal = Array.from({ length: nBreaksSal * 2 }, (_, i) => colLetter(3 + i))
+      const OUT_SAL = colLetter(3 + nBreaksSal * 2)
 
       const t1HdrSal =
         `<row r="${T1_HDR_SAL}" ht="36">` +
         hdrCellSal('A', T1_HDR_SAL, '日付') + hdrCellSal('B', T1_HDR_SAL, '曜日') +
-        hdrCellSal('C', T1_HDR_SAL, '出勤打刻') + hdrCellSal('D', T1_HDR_SAL, '退勤打刻') +
+        hdrCellSal('C', T1_HDR_SAL, '出勤打刻') +
+        breakHeaders(nBreaksSal).map((t, i) => hdrCellSal(breakColsSal[i], T1_HDR_SAL, t)).join('') +
+        hdrCellSal(OUT_SAL, T1_HDR_SAL, '退勤打刻') +
         `</row>`
 
       const t1RowsSal = []
@@ -1382,13 +1421,13 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
             const [ih, im] = allInTimes[0].split(':').map(Number)
             const [oh, om] = allOutTimes[0].split(':').map(Number)
             t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"><v>${excelTime(ih, im)}</v></c>`)
-            t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"><v>${excelTime(oh, om)}</v></c>`)
+            t1c.push(`<c r="${OUT_SAL}${r1sal}" s="${S.time[dt]}"><v>${excelTime(oh, om)}</v></c>`)
           } else {
             rowHtAttr = ` ht="${15 * allInTimes.length + 5}" customHeight="1"`
             const inXml = allInTimes.map(t => esc(t)).join('&#10;')
             const outXml = allOutTimes.map(t => esc(t)).join('&#10;')
             t1c.push(`<c r="C${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${inXml}</t></is></c>`)
-            t1c.push(`<c r="D${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${outXml}</t></is></c>`)
+            t1c.push(`<c r="${OUT_SAL}${r1sal}" s="${S.timeWrap}" t="inlineStr"><is><t xml:space="preserve">${outXml}</t></is></c>`)
           }
         } else {
           const hasIn = sessions.some(s => s.inLog)
@@ -1399,8 +1438,16 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           } else {
             t1c.push(`<c r="C${r1sal}" s="${S.time[dt]}"/>`)
           }
-          t1c.push(`<c r="D${r1sal}" s="${S.time[dt]}"/>`)
+          t1c.push(`<c r="${OUT_SAL}${r1sal}" s="${S.time[dt]}"/>`)
         }
+        // break cells go between 出勤打刻 (index 2) and 退勤打刻
+        const brs = dayBreaks(ds)
+        const brCells = []
+        for (let bi = 0; bi < nBreaksSal; bi++) {
+          brCells.push(timeCell(`${breakColsSal[bi * 2]}${r1sal}`, S.time[dt], brs[bi]?.start))
+          brCells.push(timeCell(`${breakColsSal[bi * 2 + 1]}${r1sal}`, S.time[dt], brs[bi]?.end))
+        }
+        t1c.splice(3, 0, ...brCells)
         t1RowsSal.push(`<row r="${r1sal}"${rowHtAttr}>${t1c.join('')}</row>`)
         r1sal++
       }
@@ -1409,7 +1456,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
         dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`]]) + `</row>`
       const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}</sheetData>`
-      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="4" width="14" customWidth="1"/></cols>`
+      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="${4 + nBreaksSal * 2}" width="14" customWidth="1"/></cols>`
       sheetXmls.push(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<worksheet xmlns="${WB_NS_SAL}" xmlns:r="${WB_REL_SAL}">` +
@@ -1488,6 +1535,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     )
 
     // Table 1: QR打刻記録 (one row per session, or empty row if no sessions that day)
+    // columns: A 日付 | B 曜日 | C 出勤打刻 | 時間内退勤・時間内出勤 (only when there are breaks) | 退勤打刻 | 交通費
+    const nBreaks = Math.max(0, ...Object.entries(byDate).filter(([ds]) => ds.startsWith(`${ym_y_str}-${ym_m_str}`))
+      .flatMap(([, e]) => e.sessions.map(se => (se.breaks || []).length)))
+    const breakCols = Array.from({ length: nBreaks * 2 }, (_, i) => colLetter(3 + i))
+    const OUT_COL = colLetter(3 + nBreaks * 2), TR_COL = colLetter(4 + nBreaks * 2)
     const T1_HDR = 4, T1_DATA = 5
     const dayRowsT1 = []
     for (let d = 1; d <= lastDay; d++) {
@@ -1521,8 +1573,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const t1Hdr =
       `<row r="${T1_HDR}" ht="36">` +
       hdrCell('A', T1_HDR, '日付') + hdrCell('B', T1_HDR, '曜日') +
-      hdrCell('C', T1_HDR, '出勤打刻') + hdrCell('D', T1_HDR, '退勤打刻') +
-      (showTransportCol ? hdrCell('E', T1_HDR, '交通費') : '') +
+      hdrCell('C', T1_HDR, '出勤打刻') +
+      breakHeaders(nBreaks).map((t, i) => hdrCell(breakCols[i], T1_HDR, t)).join('') +
+      hdrCell(OUT_COL, T1_HDR, '退勤打刻') +
+      (showTransportCol ? hdrCell(TR_COL, T1_HDR, '交通費') : '') +
       `</row>`
 
     // 表2ヘッダー（業務時間申告）
@@ -1561,19 +1615,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         } else {
           t1c.push(`<c r="A${r1}" s="${S.date[dt]}"/>`, `<c r="B${r1}" s="${S.dow[dt]}"/>`)
         }
-        if (session) {
-          const inStr = session.inLog?.time?.substring(0, 5) || ''
-          const outStr = session.outLog?.time?.substring(0, 5) || ''
-          if (inStr) { const [h, mi] = inStr.split(':').map(Number); t1c.push(`<c r="C${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
-          else t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`)
-          if (outStr) { const [h, mi] = outStr.split(':').map(Number); t1c.push(`<c r="D${r1}" s="${S.time[dt]}"><v>${excelTime(h, mi)}</v></c>`) }
-          else t1c.push(`<c r="D${r1}" s="${S.time[dt]}"/>`)
-        } else {
-          t1c.push(`<c r="C${r1}" s="${S.time[dt]}"/>`, `<c r="D${r1}" s="${S.time[dt]}"/>`)
+        const brs = session?.breaks || []
+        t1c.push(timeCell(`C${r1}`, S.time[dt], session?.inLog?.time?.substring(0, 5)))
+        for (let bi = 0; bi < nBreaks; bi++) {
+          t1c.push(timeCell(`${breakCols[bi * 2]}${r1}`, S.time[dt], brs[bi]?.start))
+          t1c.push(timeCell(`${breakCols[bi * 2 + 1]}${r1}`, S.time[dt], brs[bi]?.end))
         }
+        t1c.push(timeCell(`${OUT_COL}${r1}`, S.time[dt], session?.outLog?.time?.substring(0, 5)))
         if (showTransportCol) {
           const amt = isFirst ? transportDay[dateStr] : 0
-          t1c.push(amt > 0 ? `<c r="E${r1}" s="${S.pay_rate}"><v>${Number(amt.toPrecision(15))}</v></c>` : `<c r="E${r1}" s="${S.pay_rate}"/>`) // 15 digits = what Excel keeps (drops 434.59999999999997 style noise)
+          // 15 digits = what Excel keeps (drops 434.59999999999997 style noise)
+          t1c.push(amt > 0 ? `<c r="${TR_COL}${r1}" s="${S.trDay[dt]}"><v>${Number(amt.toPrecision(15))}</v></c>` : `<c r="${TR_COL}${r1}" s="${S.trDay[dt]}"/>`)
         }
         t1Rows.push(`<row r="${r1}">${t1c.join('')}</row>`)
         r1++
@@ -1585,9 +1637,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<row r="${T1_TOT}">` +
       `<c r="A${T1_TOT}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="C${T1_TOT}" s="${S.tot_lbl}"/>` +
-      `<c r="D${T1_TOT}" s="${S.tot_lbl}"/>` +
-      (showTransportCol ? sumCell(`E${T1_TOT}`, S.tot_pay, 'E', T1_DATA, T1_DATA_END, true) : '') +
+      ['C', ...breakCols, OUT_COL].map(c => `<c r="${c}${T1_TOT}" s="${S.tot_lbl}"/>`).join('') +
+      (showTransportCol ? sumCell(`${TR_COL}${T1_TOT}`, S.tot_pay, TR_COL, T1_DATA, T1_DATA_END, true) : '') +
       `</row>`
 
     // 表2データ行（業務時間申告、1日=1行）
@@ -1677,7 +1728,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
         if (hasSunday) {
           if (mins.wd > 0) {
-            const pay = Math.round(mins.wd / 60 * normalRate)
+            const pay = payYen(mins.wd / 60 * normalRate)
             sum.mins += mins.wd; sum.pay += pay
             totalPayHours += mins.wd / 60; totalPayAmount += pay
             payRows.push(
@@ -1692,7 +1743,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           if (mins.we > 0) {
             // a period without a Sunday rate pays Sundays at the normal rate
             const sunRate = sundayRate > 0 ? sundayRate : normalRate
-            const pay = Math.round(mins.we / 60 * sunRate)
+            const pay = payYen(mins.we / 60 * sunRate)
             sum.mins += mins.we; sum.pay += pay
             totalPayHours += mins.we / 60; totalPayAmount += pay
             const suLabel = itemLabel(type) + rangeLabel + '（日曜）'
@@ -1708,7 +1759,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         } else {
           const total = mins.wd + mins.we
           if (total > 0) {
-            const pay = Math.round(total / 60 * normalRate)
+            const pay = payYen(total / 60 * normalRate)
             sum.mins += total; sum.pay += pay
             totalPayHours += total / 60; totalPayAmount += pay
             payRows.push(
@@ -1723,6 +1774,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         }
       }
     }
+
+    // 時間計（B列の合計）は業務の行だけ（準備時間は「0.17時間」の数値で、時刻の形式ではないため）
+    const WORK_END = payRowIdx - 1
 
     // 交通費行
     for (const t of transportRowsX) {
@@ -1746,9 +1800,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       payRows.push(
         `<row r="${payRowIdx}">` +
         `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${prepGroups.length > 1 ? `準備時間（${g.wage}円）` : '準備時間'}</t></is></c>` +
-        `<c r="B${payRowIdx}" s="${S.hours.wd}"><v>${prepHours / 24}</v></c>` +
+        `<c r="B${payRowIdx}" s="${S.prepHrs}"><v>${Math.round(g.count * PREP_HOURS * 100) / 100}</v></c>` +
         `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${g.wage}</v></c>` +
-        `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUND(B${payRowIdx}*24*C${payRowIdx},0)</f></c>` +
+        `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUNDUP(B${payRowIdx}*C${payRowIdx},0)</f></c>` +
         `</row>`
       )
       payRowIdx++
@@ -1759,14 +1813,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const payTotRow =
       `<row r="${PTR}">` +
       `<c r="A${PTR}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      sumCell(`B${PTR}`, S.tot_hrs, 'B', T3_HDR + 1, PTR - 1) +
+      sumCell(`B${PTR}`, S.tot_hrs, 'B', T3_HDR + 1, WORK_END) +
       `<c r="C${PTR}" s="${S.tot_lbl}"/>` +
       sumCell(`D${PTR}`, S.tot_pay, 'D', T3_HDR + 1, PTR - 1) +
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
     const sheetDataCached = withCachedValues(sheetData)
-    const maxColIdx = Math.max(showTransportCol ? 5 : 4, ci) // 4 = col D / 5 = col E (last T1 column)
+    const maxColIdx = Math.max(4 + nBreaks * 2 + (showTransportCol ? 1 : 0), ci) // number of the last column used
     // bestFit="1" lets Excel auto-size columns to content on open (no ####### ever)
     const colsXml =
       `<cols>` +
@@ -1895,14 +1949,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 }
 
 // Excel の保護ビュー（ダウンロード直後）は数式を再計算しない。数式セルに計算済みの値も書いておき、
-// 合計が 0 に見えないようにする。使う数式は SUM(範囲/セル) と ROUND(Bn*24*Cn,0) だけ。
+// 合計が 0 に見えないようにする。使う数式は SUM(範囲/セル)、ROUNDUP(SUM(範囲),0)、ROUNDUP(Bn*Cn,0) だけ。
 // 数式は上から順に並んでいて、参照先は必ず手前の行にある。
 // Total of a column range. An empty range (no data rows) is written as 0: SUM(D71:D70) would be
 // read by Excel as D70:D71, i.e. include the total cell itself (circular reference warning).
 function sumCell(ref, style, col, from, to, round = false) {
   if (to < from) return `<c r="${ref}" s="${style}"><v>0</v></c>`
   const f = `SUM(${col}${from}:${col}${to})`
-  return `<c r="${ref}" s="${style}"><f>${round ? `ROUND(${f},0)` : f}</f></c>`
+  return `<c r="${ref}" s="${style}"><f>${round ? `ROUNDUP(${f},0)` : f}</f></c>`
 }
 
 function withCachedValues(sheetData) {
@@ -1929,12 +1983,12 @@ function withCachedValues(sheetData) {
       return whole
     }
     let result = 0
-    const roundSum = f[1].match(/^ROUND\(SUM\((.*)\),0\)$/)
+    const roundSum = f[1].match(/^ROUNDUP\(SUM\((.*)\),0\)$/)
     const sum = f[1].match(/^SUM\((.*)\)$/)
-    const round = f[1].match(/^ROUND\(([A-Z]+\d+)\*24\*([A-Z]+\d+),0\)$/)
-    if (roundSum) result = roundYen(sumArgs(roundSum[1]))
+    const round = f[1].match(/^ROUNDUP\(([A-Z]+\d+)\*([A-Z]+\d+),0\)$/)
+    if (roundSum) result = payYen(sumArgs(roundSum[1]))
     else if (sum) result = sumArgs(sum[1])
-    else if (round) result = Math.round(val(round[1]) * 24 * val(round[2]))
+    else if (round) result = payYen(val(round[1]) * val(round[2]))
     else return whole
     vals.set(ref, result)
     return `<c r="${ref}"${attrs}><f>${f[1]}</f><v>${result}</v></c>`
