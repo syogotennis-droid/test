@@ -1587,7 +1587,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="C${T1_TOT}" s="${S.tot_lbl}"/>` +
       `<c r="D${T1_TOT}" s="${S.tot_lbl}"/>` +
-      (showTransportCol ? `<c r="E${T1_TOT}" s="${S.tot_pay}"><f>ROUND(SUM(E${T1_DATA}:E${T1_DATA_END}),0)</f></c>` : '') +
+      (showTransportCol ? sumCell(`E${T1_TOT}`, S.tot_pay, 'E', T1_DATA, T1_DATA_END, true) : '') +
       `</row>`
 
     // 表2データ行（業務時間申告、1日=1行）
@@ -1631,9 +1631,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<c r="B${T2_TOT}" s="${S.tot_lbl}"/>`,
     ]
     for (const col of allTypeCols) {
-      t2TotCells.push(`<c r="${col}${T2_TOT}" s="${S.tot_hrs}"><f>SUM(${col}${T2_DATA}:${col}${T2_DATA_END})</f></c>`)
+      t2TotCells.push(sumCell(`${col}${T2_TOT}`, S.tot_hrs, col, T2_DATA, T2_DATA_END))
     }
-    t2TotCells.push(`<c r="${typeTotalCol}${T2_TOT}" s="${S.tot_hrs}"><f>SUM(${typeTotalCol}${T2_DATA}:${typeTotalCol}${T2_DATA_END})</f></c>`)
+    t2TotCells.push(sumCell(`${typeTotalCol}${T2_TOT}`, S.tot_hrs, typeTotalCol, T2_DATA, T2_DATA_END))
     const t2Tot = `<row r="${T2_TOT}">${t2TotCells.join('')}</row>`
 
     // 表3: 給与明細
@@ -1759,9 +1759,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const payTotRow =
       `<row r="${PTR}">` +
       `<c r="A${PTR}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      `<c r="B${PTR}" s="${S.tot_hrs}"><f>SUM(B${T3_HDR + 1}:B${PTR - 1})</f></c>` +
+      sumCell(`B${PTR}`, S.tot_hrs, 'B', T3_HDR + 1, PTR - 1) +
       `<c r="C${PTR}" s="${S.tot_lbl}"/>` +
-      `<c r="D${PTR}" s="${S.tot_pay}"><f>SUM(D${T3_HDR + 1}:D${PTR - 1})</f></c>` +
+      sumCell(`D${PTR}`, S.tot_pay, 'D', T3_HDR + 1, PTR - 1) +
       `</row>`
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
@@ -1806,8 +1806,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     }
     sumRows += `<row r="${sr}">` +
       `<c r="A${sr}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
-      `<c r="B${sr}" s="${S.tot_hrs}"><f>SUM(B3:B${sr - 1})</f></c>` +
-      `<c r="C${sr}" s="${S.tot_pay}"><f>SUM(C3:C${sr - 1})</f></c>` +
+      sumCell(`B${sr}`, S.tot_hrs, 'B', 3, sr - 1) +
+      sumCell(`C${sr}`, S.tot_pay, 'C', 3, sr - 1) +
       `</row>`
     const summarySheetXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -1897,6 +1897,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 // Excel の保護ビュー（ダウンロード直後）は数式を再計算しない。数式セルに計算済みの値も書いておき、
 // 合計が 0 に見えないようにする。使う数式は SUM(範囲/セル) と ROUND(Bn*24*Cn,0) だけ。
 // 数式は上から順に並んでいて、参照先は必ず手前の行にある。
+// Total of a column range. An empty range (no data rows) is written as 0: SUM(D71:D70) would be
+// read by Excel as D70:D71, i.e. include the total cell itself (circular reference warning).
+function sumCell(ref, style, col, from, to, round = false) {
+  if (to < from) return `<c r="${ref}" s="${style}"><v>0</v></c>`
+  const f = `SUM(${col}${from}:${col}${to})`
+  return `<c r="${ref}" s="${style}"><f>${round ? `ROUND(${f},0)` : f}</f></c>`
+}
+
 function withCachedValues(sheetData) {
   const colNum = s => s.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0)
   const vals = new Map()
