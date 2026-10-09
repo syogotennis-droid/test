@@ -5,3 +5,4 @@ dist/
 *.local
 .wrangler/
 migration-output/
+anonymize-output/
