@@ -48,6 +48,7 @@ function AdminRoute() {
     const check = () => {
       if (isSessionValid()) return
       try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+      adminLogout() // the login token is removed too (here and on the server)
       setUnlocked(false)
       setError('しばらく操作がなかったため、ログアウトしました。PINを再入力してください。')
     }

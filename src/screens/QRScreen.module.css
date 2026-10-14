@@ -54,6 +54,8 @@
     aspect-ratio: auto;
     max-width: none;
     width: auto;
+    /* keeps its size when there is no camera picture (the error message stays visible) */
+    min-width: min(480px, 90vw);
     height: calc(100dvh - 130px);
   }
 }
@@ -76,6 +78,8 @@
   border: none !important;
   padding: 0 !important;
 }
+
+.mirror video { transform: scaleX(-1); }
 
 .scanner video {
   width: 100% !important;

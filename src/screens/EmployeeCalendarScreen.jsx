@@ -316,6 +316,16 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
   async function handleSave(workItemsObj) {
     const session = sessions[editingSessionIdx]
     if (!session?.sessionId) return
+    // work longer than the shift (clock-in → clock-out, minus breaks): ask before saving
+    const toMin = t => { const [h, m] = (t || '').substring(0, 5).split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null }
+    const tin = toMin(session.in), tout = toMin(session.out)
+    if (tin != null && tout != null) {
+      const breaks = (session.breaks || []).reduce((sum, b) => { const a = toMin(b.start), e = toMin(b.end); return a != null && e != null && e > a ? sum + e - a : sum }, 0)
+      const shift = tout - tin - breaks
+      const total = Object.values(workItemsObj).reduce((a, b) => a + b, 0)
+      if (shift >= 0 && total > shift &&
+        !window.confirm(`業務時間の合計（${fmtMins(total)}）が、勤務時間（${fmtMins(shift)}）より長くなっています。\nこのまま保存しますか？`)) return
+    }
     setSaving(true)
     try {
       await saveSessionWorkReport(user.id, dateStr, session.sessionId, workItemsObj)

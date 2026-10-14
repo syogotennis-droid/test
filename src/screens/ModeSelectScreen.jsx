@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getTodayStatuses, getUsers } from '../lib/db'
+import { getTodayStatuses, getUsers, getClockOffsetMs, CLOCK_WARN_MS } from '../lib/db'
 import styles from './ModeSelectScreen.module.css'
 
 
@@ -43,6 +43,14 @@ function Clock() {
 
 export default function ModeSelectScreen({ onSelect }) {
   const [checkedInCount, setCheckedInCount] = useState(0)
+  // this tablet's clock compared with the server's (punch times come from this clock)
+  const [clockOffset, setClockOffset] = useState(getClockOffsetMs)
+  useEffect(() => {
+    const on = e => setClockOffset(e.detail)
+    window.addEventListener('clock-offset', on)
+    return () => window.removeEventListener('clock-offset', on)
+  }, [])
+  const clockOff = Math.abs(clockOffset) > CLOCK_WARN_MS
 
   useEffect(() => {
     async function fetchCount() {
@@ -55,7 +63,13 @@ export default function ModeSelectScreen({ onSelect }) {
   }, [])
 
   return (
-    <div className={styles.screen}>
+    <div className={[styles.screen, clockOff ? styles.screenWarn : ''].join(' ')}>
+
+      {clockOff && (
+        <div className={styles.clockWarn} role="alert">
+          この端末の時計が約{Math.round(Math.abs(clockOffset) / 60000)}分{clockOffset < 0 ? '進んで' : '遅れて'}います。打刻の時刻がずれるため、端末の設定で日付と時刻を合わせてください
+        </div>
+      )}
 
       {/* ヘッダー */}
       <div className={styles.header}>

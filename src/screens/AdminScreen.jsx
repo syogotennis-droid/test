@@ -1410,6 +1410,20 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       return
     }
     setValidationErrors([])
+    // work longer than the shift (clock-in → clock-out, minus breaks): ask before going on
+    if (!isSalaried) {
+      const toMin = t => { const [h, m] = (t || '').split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null }
+      const over = []
+      sessions.forEach((s, si) => {
+        const tin = toMin(sessionTimes[si].inTime), tout = toMin(sessionTimes[si].outTime)
+        if (tin == null || tout == null || s.outNext) return
+        const brk = breakTimes(s).reduce((sum, b) => { const a = toMin(b.start), e = toMin(b.end); return a != null && e != null && e > a ? sum + e - a : sum }, 0)
+        const shift = tout - tin - brk
+        const work = (sessionWorkRows[s.sessionId] || []).reduce((sum, r) => sum + (r.type ? (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0) : 0), 0)
+        if (shift >= 0 && work > shift) over.push(`${sessions.length > 1 ? `${si + 1}回目：` : ''}業務 ${fmtWorkTotal(work)}／勤務 ${fmtWorkTotal(shift)}`)
+      })
+      if (over.length && !window.confirm(`業務時間の合計が勤務時間より長くなっています。\n${over.join('\n')}\nこのまま進みますか？`)) return
+    }
     const { logsToDelete, logsToUpdate, logsToCreate, cleared } = computeLogDiff()
     const logChanged = logsToDelete.length > 0 || logsToUpdate.length > 0 || logsToCreate.length > 0
     const workChanged = !isSalaried && hasWorkDataChanged()
@@ -1418,10 +1432,24 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     setStep('confirm')
   }
 
+  // what this screen was opened with, to notice changes made elsewhere in the meantime
+  const logsSig = logs => (logs || []).map(l => `${l.id}|${l.log_type}|${(l.time || '').substring(0, 5)}|${l.session_id || ''}`).sort().join(';')
+  const openedLogsSig = useRef(logsSig(dayLogs))
+
   async function handleConfirm() {
     if (saving) return
     if (!hasChanges) { onClose(); return }
     setSaving(true)
+    // someone else (another tab / PC, or the punch tablet) changed this day after it was opened:
+    // ask before overwriting (the later save wins otherwise)
+    try {
+      const [freshLogs, freshWork] = await Promise.all([getLogs({ userId: user.id, date: dateStr }), isSalaried ? {} : getSessionWorkReportsForDate(user.id, dateStr)])
+      const workSig = w => JSON.stringify(Object.keys(w || {}).sort().map(k => [k, Object.keys(w[k] || {}).sort().map(t => [t, w[k][t]])]).filter(([, items]) => items.length))
+      const freshSids = new Set((freshLogs || []).map(l => l.session_id).filter(Boolean))
+      const freshShown = Object.fromEntries(Object.entries(freshWork || {}).filter(([sid]) => freshSids.has(sid)))
+      const changedElsewhere = logsSig(freshLogs) !== openedLogsSig.current || (!isSalaried && workSig(freshShown) !== workSig(initialWorkRowsSnapshot.current))
+      if (changedElsewhere && !window.confirm('この日の記録は、この画面を開いたあとに別の画面（または打刻端末）で変更されています。\nこのまま保存すると、その変更を上書きします。保存しますか？')) { setSaving(false); return }
+    } catch { /* could not check: save as before */ }
     try {
       const { logsToDelete, logsToUpdate, logsToCreate } = computeLogDiff()
       const rowsToItems = rows => {
@@ -3092,6 +3120,11 @@ function AddUserModal({ users, onClose, onAdded }) {
     if (/[\/?#%\s]/.test(addId.trim())) { alert('従業員IDに、空白と / ? # % は使えません'); return }
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
     if (employeeType !== 'salaried' && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
+    if (employeeType !== 'salaried') {
+      const mw = minWageForDate(await getMinWageHistory().catch(() => []), getTodayJst())
+      const low = workItems.filter(t => Number(itemRates[t]?.normal) > 0 && Number(itemRates[t].normal) < mw)
+      if (mw > 0 && low.length && !window.confirm(`次の業務の時給が、最低賃金（${mw.toLocaleString()}円）より低くなっています。\n${low.map(t => `・${itemLabel(t)} ${Number(itemRates[t].normal).toLocaleString()}円`).join('\n')}\nこのまま追加しますか？`)) return
+    }
     if (employeeType !== 'salaried' && workItems.length === 0 &&
       !window.confirm('担当業務が未選択です（退勤画面に業務が出ません）。\nこのまま追加しますか？')) return
     setSaving(true)
@@ -3636,8 +3669,8 @@ function CarRateSettings() {
           </tr>
         </tbody>
       </table>
-      <button onClick={add} disabled={!baseStr || rates === null}
-        style={{ marginTop: 10, height: 40, padding: '0 18px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: baseStr ? 1 : 0.4 }}>
+      <button onClick={add} disabled={!(base > 0) || !(carKm > 0) || !(bikeKm > 0) || rates === null}
+        style={{ marginTop: 10, height: 40, padding: '0 18px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: base > 0 && carKm > 0 && bikeKm > 0 ? 1 : 0.4 }}>
         単価を追加
       </button>
       {err && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.9rem', marginTop: 8 }}>{err}</div>}
@@ -4503,14 +4536,19 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [userIdError, setUserIdError] = useState('')
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [isDirty, setIsDirty] = useState(false)
   const [numpad, setNumpad] = useState(null)
-  const isFirstRender = useRef(true)
-
-  useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return }
-    setIsDirty(true)
-  }, [name, pin, newUserId, workItems, transportAmount, commuteForm, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
+  const [minWages, setMinWages] = useState([])
+  useEffect(() => { getMinWageHistory().then(setMinWages).catch(() => {}) }, [])
+  // unsaved changes = the form differs from how it was opened (or last saved)
+  const formSnap = JSON.stringify([name, pin, newUserId, workItems, transportAmount, commuteForm, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
+  const savedSnap = useRef(formSnap)
+  const isDirty = formSnap !== savedSnap.current
+  const setIsDirty = dirty => { if (!dirty) savedSnap.current = formSnap }
+  // closing with unsaved changes asks first (キャンセル / × / outside the window)
+  function requestUserClose() {
+    if (isDirty && !window.confirm('変更が保存されていません。保存せずに閉じますか？')) return
+    onClose()
+  }
 
   function handlePinChange(e) {
     const v = e.target.value
@@ -4576,6 +4614,9 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
     if (date < getTodayJst() &&
       !window.confirm(`${fmtJaDate(date)}は過去の日付です。この日以降の出勤簿も新しい時給で計算します。`)) return
     const normalVal = Number(normalStr)
+    const mw = minWageForDate(minWages, date)
+    if (mw > 0 && normalVal < mw &&
+      !window.confirm(`${itemLabel(item)}の時給 ${normalVal.toLocaleString()}円は、${fmtJaDate(date)}時点の最低賃金（${mw.toLocaleString()}円）より低くなっています。\nこのまま登録しますか？`)) return
     const inherited = getInheritedEntry(item, date)
     const inheritedMult = inherited && inherited.normal && inherited.sunday
       ? Math.round(inherited.sunday / inherited.normal * 100) / 100
@@ -4719,7 +4760,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   )
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} onClick={requestUserClose}>
       <div className={styles.userEditModal} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -4728,7 +4769,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             <div className={styles.userEditTitle}>{user.name} の編集</div>
             <div className={styles.userEditSubtitle}>ID: {user.id}</div>
           </div>
-          <button className={styles.userEditClose} onClick={onClose} aria-label="閉じる"><XIcon /></button>
+          <button className={styles.userEditClose} onClick={requestUserClose} aria-label="閉じる"><XIcon /></button>
         </div>
 
         {/* Body */}
@@ -5139,7 +5180,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             {isDirty ? '未保存の変更があります' : ''}
           </div>
           <div className={styles.userEditFooterBtns}>
-            <button className={styles.userEditCancelBtn} onClick={onClose}>キャンセル</button>
+            <button className={styles.userEditCancelBtn} onClick={requestUserClose}>キャンセル</button>
             <button
               className={styles.userEditSaveBtn}
               onClick={handleSaveAll}

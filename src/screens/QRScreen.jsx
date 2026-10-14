@@ -91,6 +91,7 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
   const [error, setError] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [pinMode, setPinMode] = useState(false)
+  const [mirror, setMirror] = useState(true)
   const processingRef = useRef(false)
 
   useEffect(() => {
@@ -111,17 +112,25 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
 
     const startWithSpec = (spec) => qr.start(spec, config, handleScan, () => {})
 
-    const handleCameraError = (err) => {
+    // the first failure tells why (the later fallbacks only fail because of it)
+    let firstErr = null
+    const keep = err => { if (!firstErr) firstErr = err; throw err }
+    const handleCameraError = () => {
+      const err = firstErr
       console.error(err)
-      const msg = err?.message || ''
-      if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+      const name = typeof err === 'object' && err ? (err.name || '') : ''
+      const msg = typeof err === 'string' ? err : (err?.message || '')
+      if (/NotAllowed|Permission|permission|SecurityError/.test(name + ' ' + msg)) {
         setError('カメラの使用が許可されていません。\nPIN入力、またはブラウザのカメラ権限を確認してください。')
+      } else if (/NotFound|no cameras|Requested device not found/.test(name + ' ' + msg)) {
+        setError('カメラが見つかりません。\nPIN入力を使ってください。')
       } else {
-        setError(`カメラを起動できません。\nPIN入力、または再読み込みしてください。\n(${msg})`)
+        setError('カメラを起動できません。\nPIN入力、または再読み込みしてください。' + (msg ? `\n(${msg})` : ''))
       }
     }
 
-    // Try to enumerate cameras and pick front-facing one explicitly (more reliable on Android)
+    // Front camera (the tablet faces the employee). It is shown mirrored, like a mirror,
+    // so the card moves on screen the same way the hand moves (decoding is not affected).
     Html5Qrcode.getCameras()
       .then(cameras => {
         if (!cameras || cameras.length === 0) throw new Error('no cameras')
@@ -129,11 +138,12 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
         const front = cameras.find(c => /front|selfie|user/i.test(c.label))
           || (cameras.length > 1 ? cameras[cameras.length - 1] : null)
           || cameras[0]
+        setMirror(!/back|rear|environment/i.test(front.label || ''))
         return startWithSpec(front.id)
       })
-      .catch(() => startWithSpec({ facingMode: 'user' }))
-      .catch(() => startWithSpec({ facingMode: 'environment' }))
-      .catch(() => startWithSpec(true))
+      .catch(keep)
+      .catch(() => { setMirror(true); return startWithSpec({ facingMode: 'user' }).catch(keep) })
+      .catch(() => { setMirror(false); return startWithSpec({ facingMode: 'environment' }).catch(keep) })
       .then(() => setScanning(true))
       .catch(handleCameraError)
 
@@ -182,7 +192,7 @@ export default function QRScreen({ mode, onUserScanned, onCancel }) {
       </div>
 
       <div className={styles.scannerWrap}>
-        <div id="qr-reader" className={styles.scanner} ref={scannerRef} />
+        <div id="qr-reader" className={[styles.scanner, mirror ? styles.mirror : ''].join(' ')} ref={scannerRef} />
         {/* ガイド枠 */}
         <svg className={styles.scanGuide} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
           <path d="M25,35 L25,25 L35,25" stroke="white" strokeWidth="1.2" fill="none" strokeLinecap="round"/>

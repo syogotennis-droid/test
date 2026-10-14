@@ -62,6 +62,7 @@ async function api(path, { method = 'GET', query, body } = {}) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS)
   let res
+  const sentAt = Date.now()
   try {
     res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal })
   } catch (e) {
@@ -69,6 +70,7 @@ async function api(path, { method = 'GET', query, body } = {}) {
   } finally {
     clearTimeout(timer)
   }
+  noteServerTime(res.headers.get('X-Server-Time'), sentAt, Date.now())
   if (res.status === 401) {
     const j = await res.json().catch(() => ({}))
     setToken(j.need === 'device' ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, null)
@@ -92,6 +94,23 @@ async function api(path, { method = 'GET', query, body } = {}) {
     throw e
   }
 }
+
+// ─── This device's clock vs the server's ──────────────────────────────────────
+// Punch times come from the tablet's clock, so a wrong clock means wrong times.
+// Every answer of our server carries its time; the difference is kept here and the
+// punch screen warns when it is more than CLOCK_WARN_MS.
+export const CLOCK_WARN_MS = 2 * 60 * 1000
+let clockOffsetMs = 0
+function noteServerTime(header, sentAt, receivedAt) {
+  const server = Number(header)
+  if (!Number.isFinite(server) || server <= 0 || receivedAt - sentAt > 10000) return // slow answer: not reliable
+  const next = server - (sentAt + receivedAt) / 2
+  const changed = (Math.abs(next) > CLOCK_WARN_MS) !== (Math.abs(clockOffsetMs) > CLOCK_WARN_MS)
+  clockOffsetMs = next
+  if (changed && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('clock-offset', { detail: next }))
+}
+// server time − this device's time, in milliseconds (0 until the server answered once)
+export function getClockOffsetMs() { return clockOffsetMs }
 
 // ─── Offline support for punching ─────────────────────────────────────────────
 // Writes go to a localStorage outbox first and are sent in order; the server
@@ -235,6 +254,9 @@ export async function getTodayUserLogs(userId, date = getTodayDate()) {
 }
 
 function cacheUsers(users) {
+  // only a registered punch tablet keeps the roster (with PINs) for offline punching;
+  // an admin PC never stores it (and drops a copy left from before)
+  if (!getToken(DEVICE_TOKEN_KEY)) { try { localStorage.removeItem(USERS_CACHE_KEY) } catch {} return }
   writeJSON(USERS_CACHE_KEY, users.map(u => ({
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
     asksTransport: u.asksTransport ?? getCommute(u).asks, transportOptions: u.transportOptions ?? getCommute(u).options, formerIds: u.formerIds || [],
@@ -544,7 +566,7 @@ export async function resolveUser(qrValue) {
 export async function resolveUserByPin(pin) {
   if (!pin) return null
   try {
-    return await api('/users', { query: { pin } })
+    return await api('/users/by_pin', { method: 'POST', body: { pin } }) // in the body: never in the URL
   } catch (e) {
     if (!e.offline) throw e
     return readJSON(USERS_CACHE_KEY, []).find(u => u.pin && u.pin === pin) || null

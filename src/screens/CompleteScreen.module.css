@@ -171,3 +171,17 @@
 }
 .completeBtn:active { background: rgba(255,255,255,0.3); }
 @media (max-height: 720px) { .completeBtn { min-height: 40px; font-size: 0.95rem; } }
+
+/* 据え置きのタブレットを少し離れて見ても、自分の打刻だと分かるように氏名と時刻を大きく */
+.detail { font-size: 2.6rem; font-weight: 800; color: #fff; }
+.timeLabel { font-size: 1.4rem; }
+.timeValue { font-size: 2.6rem; }
+.checkmark { font-size: 4.5rem; }
+.workSummaryRow { font-size: 1.35rem; }
+@media (max-height: 720px) {
+  .checkmark { font-size: 2.4rem; }
+  .detail { font-size: 2rem; }
+  .timeLabel { font-size: 1.15rem; }
+  .timeValue { font-size: 2rem; }
+  .workSummaryRow { font-size: 1.1rem; }
+}

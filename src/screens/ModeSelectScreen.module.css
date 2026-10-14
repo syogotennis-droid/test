@@ -202,3 +202,18 @@
   .statusLabel { font-size: 14px; }
   .statusValue { font-size: 26px; }
 }
+
+/* 端末の時計がずれているときの警告 */
+.clockWarn {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  background: #b91c1c;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.5;
+}
+/* 警告の帯があるときは1行増やす（時計の行・ボタンの行はそのまま） */
+.screen.screenWarn { grid-template-rows: auto 86px 1fr; }
+@media (max-width: 760px) { .screen.screenWarn { grid-template-rows: auto 64px 1fr; } }

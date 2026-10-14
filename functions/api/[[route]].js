@@ -15,6 +15,7 @@ export async function onRequest(context) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Device-Token',
+    'Access-Control-Expose-Headers': 'X-Server-Time',
   }
 
   if (method === 'OPTIONS') return new Response(null, { headers: cors })
@@ -37,15 +38,16 @@ export async function onRequest(context) {
   }
   const userExists = async id => !!(await DB.prepare('SELECT 1 AS x FROM users WHERE id = ?').bind(id).first())
   const needStr = (v, what) => { if (typeof v !== 'string' || !v) throw new HttpError('bad_' + what, 400); return v }
+  // X-Server-Time: the punch tablet compares it with its own clock and warns when that is off
   function ok(data) {
     return new Response(JSON.stringify(data), {
-      headers: { ...cors, 'Content-Type': 'application/json' },
+      headers: { ...cors, 'Content-Type': 'application/json', 'X-Server-Time': String(Date.now()) },
     })
   }
   function fail(msg, status = 500, extra = {}) {
     return new Response(JSON.stringify({ error: msg, ...extra }), {
       status,
-      headers: { ...cors, 'Content-Type': 'application/json' },
+      headers: { ...cors, 'Content-Type': 'application/json', 'X-Server-Time': String(Date.now()) },
     })
   }
 
@@ -121,12 +123,14 @@ export async function onRequest(context) {
     }
 
     // ── Users ─────────────────────────────────────────────────────────────
+    // PIN lookup: the PIN goes in the request body, never in the URL (URLs end up in logs and history)
+    if (route === 'users/by_pin' && method === 'POST') {
+      const { pin } = await readBody()
+      if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) return ok(null)
+      const u = await DB.prepare('SELECT * FROM users WHERE pin = ?').bind(pin).first()
+      return ok(u ? pubUser(u) : null)
+    }
     if (route === 'users' && method === 'GET') {
-      const pin = sp.get('pin')
-      if (pin) {
-        const u = await DB.prepare('SELECT * FROM users WHERE pin = ?').bind(pin).first()
-        return ok(u ? pubUser(u) : null)
-      }
       // ID order, same as the Firebase version (saving a user must not move it)
       const { results } = await DB.prepare('SELECT * FROM users ORDER BY id').all()
       return ok(results.map(pubUser))
@@ -224,10 +228,13 @@ export async function onRequest(context) {
         ? "(SELECT COUNT(*) FROM logs WHERE user_id = ? AND date = ? AND log_type = '出勤') <= " +
           "(SELECT COUNT(*) FROM logs WHERE user_id = ? AND date = ? AND log_type = '退勤')"
         : b.log_type === '退勤' && b.session_id
-          ? "NOT EXISTS (SELECT 1 FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '退勤')"
-          : '1'
+          ? "NOT EXISTS (SELECT 1 FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '退勤') AND " + HAS_CLOCK_IN
+          : b.session_id ? HAS_CLOCK_IN : '1'
+      // a break / clock-out needs the clock-in of its shift (an offline tablet may have clocked in someone
+      // who was already working: that clock-in is refused, and so are the punches that followed it)
       const condArgs = b.log_type === '出勤' ? [b.user_id, b.date, b.user_id, b.date]
-        : b.log_type === '退勤' && b.session_id ? [b.user_id, b.session_id] : []
+        : b.log_type === '退勤' && b.session_id ? [b.user_id, b.session_id, b.user_id, b.session_id]
+        : b.session_id ? [b.user_id, b.session_id] : []
       const res = await DB.prepare(
         'INSERT OR IGNORE INTO logs (id, user_id, log_type, date, time, timestamp, work_type, session_id, synced, first_work, last_work, transport_count, work_items) ' +
         'SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ? WHERE ' + cond
@@ -243,6 +250,7 @@ export async function onRequest(context) {
         // the same punch sent twice at once: the other request stored it
         if (await DB.prepare('SELECT 1 AS x FROM logs WHERE id = ?').bind(id).first()) return ok({ id, sessionId: b.session_id })
         if (b.log_type === '出勤') throw new HttpError('already_working', 409)
+        if (!(await DB.prepare("SELECT 1 AS x FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '出勤'").bind(b.user_id, b.session_id).first())) throw new HttpError('no_clock_in', 409)
         if (b.log_type === '退勤' && b.session_id) throw new HttpError('already_out', 409)
       }
       return ok({ id, sessionId: b.session_id })
@@ -723,12 +731,14 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'weekly_copy/offer' || route === 'weekly_copies' || route === 'last_week_work' || route === 'recent_work') return !!sp.get('userId')
     return false
   }
-  if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer'
+  if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer' || route === 'users/by_pin'
   if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days'
   // an employee may remove a day prepared by the weekly copy (e.g. off sick); never punches
   if (method === 'DELETE') return route === 'weekly_copies' && !!(sp.get('userId') && sp.get('date'))
   return false
 }
+
+const HAS_CLOCK_IN = "EXISTS (SELECT 1 FROM logs WHERE user_id = ? AND session_id = ? AND log_type = '出勤')"
 
 const LOG_TYPES = new Set(['出勤', '退勤', '休憩開始', '休憩終了'])
 

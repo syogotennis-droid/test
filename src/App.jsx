@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
+import { useIdleTimeout } from './lib/useIdleTimeout'
 import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from './lib/db'
 import { handlePunch, finishClockOut } from './lib/punchFlow'
 import ModeSelectScreen from './screens/ModeSelectScreen'
@@ -25,6 +26,14 @@ const ADMIN_TAP_COUNT = 1
 const ADMIN_SESSION_KEY = 'adminSessionExpiry'
 const ADMIN_SESSION_DURATION = 30 * 60 * 1000 // 30分
 const ADMIN_TAP_TIMEOUT = 3000
+
+// Admin screen opened from ⚙ on the punch tablet: back to the punch screen (logged out)
+// after 30 minutes without a touch, like the admin screen on a PC
+const KIOSK_ADMIN_IDLE_MS = 30 * 60 * 1000
+function KioskAdmin({ onBack }) {
+  useIdleTimeout(onBack, { ms: KIOSK_ADMIN_IDLE_MS })
+  return <AdminScreen isTablet={true} onBack={onBack} />
+}
 
 function AdminPinOverlay({ onSuccess, onClose }) {
   const [pin, setPin] = useState('')
@@ -159,6 +168,29 @@ export default function App() {
     setState(STATE.MODE)
   }
 
+  function leaveAdmin() {
+    try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
+    adminLogout()
+    handleDone()
+  }
+
+  // The tablet's back button / gesture must not close the app: it goes back to the punch screen
+  // (from the admin screen it also logs out). One history entry is kept in front of the app.
+  const backRef = React.useRef(null)
+  backRef.current = () => {
+    if (state === STATE.ADMIN) leaveAdmin()
+    else if (state !== STATE.MODE) handleDone()
+  }
+  useEffect(() => {
+    try { window.history.pushState({ kiosk: true }, '') } catch {}
+    const onPop = () => {
+      try { window.history.pushState({ kiosk: true }, '') } catch {}
+      backRef.current?.()
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   function handleAdminTap() {
     if (adminTapTimer.current) clearTimeout(adminTapTimer.current)
     const newCount = adminTaps + 1
@@ -188,11 +220,7 @@ export default function App() {
   }
 
   if (state === STATE.ADMIN) {
-    return <AdminScreen isTablet={true} onBack={() => {
-      try { localStorage.removeItem(ADMIN_SESSION_KEY) } catch {}
-      adminLogout()
-      handleDone()
-    }} />
+    return <KioskAdmin onBack={leaveAdmin} />
   }
 
   if (state === STATE.CHECK && currentUser) {

@@ -400,6 +400,15 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
       const t = workTimes[id] || { h: 0, m: 0 }
       workItemsObj[id] = t.h * 60 + t.m
     })
+    // work longer than the shift (clock-in → now, minus breaks): ask before registering
+    if (ctx.clockIn?.time) {
+      const [h, m] = ctx.clockIn.time.split(':').map(Number)
+      const now = new Date()
+      const shift = now.getHours() * 60 + now.getMinutes() - (h * 60 + m) - (ctx.slot === 1 ? (ctx.breakTotal || 0) : 0)
+      const total = Object.values(workItemsObj).reduce((a, b) => a + b, 0)
+      if (shift >= 0 && total > shift &&
+        !window.confirm(`業務時間の合計（${fmtMinutes(total)}）が、勤務時間（${fmtMinutes(Math.max(shift, 0))}）より長くなっています。\nこのまま退勤しますか？`)) return
+    }
     setSaving(true)
     setSaveError('')
     try {

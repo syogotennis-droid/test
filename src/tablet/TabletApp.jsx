@@ -1,3 +1,4 @@
+import { useIdleTimeout } from '../lib/useIdleTimeout'
 import React, { useState, useEffect, useRef } from 'react'
 import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from '../lib/db'
 import { handlePunch, finishClockOut } from '../lib/punchFlow'
@@ -69,6 +70,12 @@ function AdminPinOverlay({ onSuccess, onClose }) {
       </div>
     </div>
   )
+}
+
+// Admin screen opened on the punch tablet: back to the punch screen after 30 minutes without a touch
+function KioskAdmin({ onBack }) {
+  useIdleTimeout(onBack, { ms: 30 * 60 * 1000 })
+  return <AdminScreen isTablet={true} onBack={onBack} />
 }
 
 export default function TabletApp() {
@@ -198,7 +205,7 @@ export default function TabletApp() {
   }
 
   if (state === STATE.ADMIN) {
-    return <AdminScreen isTablet={true} onBack={() => { adminLogout(); handleDone() }} />
+    return <KioskAdmin onBack={() => { adminLogout(); handleDone() }} />
   }
 
   if (state === STATE.CHECK && currentUser) {
