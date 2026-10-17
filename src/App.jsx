@@ -174,12 +174,12 @@ export default function App() {
     handleDone()
   }
 
-  // The tablet's back button / gesture must not close the app: it goes back to the punch screen
-  // (from the admin screen it also logs out). One history entry is kept in front of the app.
+  // The tablet's back button / gesture must not close the app (one history entry is kept in front
+  // of it). From the QR / completion screens it goes back to the punch screen; on screens with input
+  // (退勤の入力・勤務確認・管理画面) it does nothing, so nothing typed is lost without the usual questions.
   const backRef = React.useRef(null)
   backRef.current = () => {
-    if (state === STATE.ADMIN) leaveAdmin()
-    else if (state !== STATE.MODE) handleDone()
+    if (state === STATE.QR || state === STATE.COMPLETE) handleDone()
   }
   useEffect(() => {
     try { window.history.pushState({ kiosk: true }, '') } catch {}
