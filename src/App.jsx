@@ -181,14 +181,28 @@ export default function App() {
   backRef.current = () => {
     if (state === STATE.QR || state === STATE.COMPLETE) handleDone()
   }
+  // Several guard entries are kept, and they are topped up whenever the screen is touched:
+  // Chrome skips history entries that were added without a touch, so entries added only from
+  // the back handler would not stop repeated presses of the back button.
   useEffect(() => {
-    try { window.history.pushState({ kiosk: true }, '') } catch {}
-    const onPop = () => {
-      try { window.history.pushState({ kiosk: true }, '') } catch {}
-      backRef.current?.()
+    const GUARD = 3
+    const level = () => (window.history.state && window.history.state.kioskGuard) || 0
+    const topUp = () => {
+      for (let n = level() + 1; n <= GUARD; n++) {
+        try { window.history.pushState({ ...(window.history.state || {}), kioskGuard: n }, '') } catch { break }
+      }
     }
+    topUp()
+    const onPop = () => { backRef.current?.(); topUp() }
+    const onTouch = () => { if (level() < GUARD) topUp() }
     window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
+    window.addEventListener('pointerdown', onTouch, true)
+    window.addEventListener('keydown', onTouch, true)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('pointerdown', onTouch, true)
+      window.removeEventListener('keydown', onTouch, true)
+    }
   }, [])
 
   function handleAdminTap() {
