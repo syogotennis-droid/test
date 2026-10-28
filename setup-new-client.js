@@ -10,6 +10,7 @@
 // 事前に `npx wrangler login` でCloudflareにログインしておくこと。
 
 import { spawnSync } from 'child_process'
+import { pbkdf2Sync, randomBytes } from 'crypto'
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -17,6 +18,21 @@ import { createInterface } from 'readline'
 import { wrangler, parseJson } from './wrangler-cli.js'
 
 const PREFIX = 'kintai-'
+
+// The admin PIN is stored only as a hash, in the same format the server uses
+// (functions/api/[[route]].js: "pbkdf2-sha256$<iterations>$<salt>$<hash>")
+const PIN_LENGTH = 6
+const PIN_ITERATIONS = 2000
+function hashPin(pin) {
+  const salt = randomBytes(16)
+  return `pbkdf2-sha256$${PIN_ITERATIONS}$${salt.toString('hex')}$${pbkdf2Sync(pin, salt, PIN_ITERATIONS, 32, 'sha256').toString('hex')}`
+}
+// 111111 / 123456 / 987654 are the first guesses
+function weakPin(pin) {
+  const d = [...pin].map(Number)
+  const steps = new Set(d.slice(1).map((x, i) => x - d[i]))
+  return steps.size === 1 && [0, 1, -1].includes([...steps][0])
+}
 
 // npm / node helpers (not wrangler) — fixed commands, no user input inside
 function run(cmd) {
@@ -144,11 +160,11 @@ async function setupNew() {
   let pin = ''
   for (;;) {
     pin = (await rl.question(fbProject
-      ? '管理者PIN（4桁。Enterで Firebase の設定を引き継ぐ）: '
-      : '管理者PIN（4桁の数字）: ')).trim()
+      ? `管理者PIN（${PIN_LENGTH}桁。Enterで Firebase の設定を引き継ぐ）: `
+      : `管理者PIN（${PIN_LENGTH}桁の数字）: `)).trim()
     if (fbProject && pin === '') break
-    if (!/^\d{4}$/.test(pin)) { console.log('  4桁の数字で入力してください'); continue }
-    if (pin === '2607') { console.log('  2607 は以前の初期PINで知られているため使えません'); continue }
+    if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) { console.log(`  ${PIN_LENGTH}桁の数字で入力してください`); continue }
+    if (weakPin(pin)) { console.log('  同じ数字の並びや連番は推測されやすいため使えません'); continue }
     const again = (await rl.question('確認のためもう一度入力: ')).trim()
     if (again === pin) break
     console.log('  PINが一致しません')
@@ -168,7 +184,9 @@ async function setupNew() {
     if (r.status !== 0) throw new Error('Firebaseからの引き継ぎに失敗しました。もう一度 node setup-new-client.js を実行すると続きから再開します')
   }
   if (pin) {
-    wr(['d1', 'execute', name, '--remote', '--yes', '--command', `INSERT OR REPLACE INTO config (key, value) VALUES ('adminPin', '${pin}')`], { capture: true })
+    // the hash is only hex digits and '$', so it is safe inside the SQL string
+    wr(['d1', 'execute', name, '--remote', '--yes', '--command',
+      `INSERT OR REPLACE INTO config (key, value) VALUES ('adminPinHash', '${hashPin(pin)}'); DELETE FROM config WHERE key = 'adminPin';`], { capture: true })
     console.log('管理者PINを設定しました')
   }
 

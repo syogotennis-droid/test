@@ -6,7 +6,7 @@ import { Share } from '@capacitor/share'
 import {
   getLogs, getUsers, exportKinmubo, payYen, deleteLog, upsertUser, deleteUser,
   updateLogTime, saveLog, saveLogManual, getTodayStatuses, getClockInTimeForDate,
-  resolveUserByPin, saveAdminPin,
+  resolveUserByPin, saveAdminPin, ADMIN_PIN_LENGTH, adminPinIsShort, getDevices, removeDevice, renameDevice,
   getWorkItems, getRatesForDate, saveOvertimeApp, getOvertimeApp, saveSalariedDay, getSalariedDaysForMonth,
   saveWorkReport, getWorkReport, getWorkReportsForRange,
   generateSessionId, saveSessionWorkReport, getSessionWorkReportsForDate,
@@ -139,6 +139,17 @@ export default function AdminScreen({ onBack, isTablet = false }) {
   const [users, setUsers] = useState([])
   const today = toDateStr(new Date())
   useWorkItemDefs({ load: true }) // re-render everything when item names / order change
+  const [shortPin, setShortPin] = useState(adminPinIsShort)
+
+  // the banner's button opens 設定 with 管理者PIN変更 already open
+  function goChangePin() {
+    try {
+      const list = new Set(JSON.parse(localStorage.getItem('settingsOpen') || '[]') || [])
+      list.add('set-pin')
+      localStorage.setItem('settingsOpen', JSON.stringify([...list]))
+    } catch {}
+    setTab(t => (t === 'settings' ? t : 'settings'))
+  }
 
   useEffect(() => {
     getUsers().then(setUsers)
@@ -176,11 +187,19 @@ export default function AdminScreen({ onBack, isTablet = false }) {
       </aside>
 
       <div className={styles.mainContent}>
+        {shortPin && (
+          <div role="alert" style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 12px', padding: '10px 16px', background: '#fef3c7', borderBottom: '1px solid #f59e0b', color: '#92400e', fontWeight: 700, fontSize: '0.9rem' }}>
+            <span>管理者PINが{ADMIN_PIN_LENGTH}桁になりました。今のPINは短いため、{ADMIN_PIN_LENGTH}桁に変更してください。</span>
+            {tab !== 'settings' && (
+              <button onClick={goChangePin} style={{ height: 32, padding: '0 14px', background: '#b45309', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>PINを変更する</button>
+            )}
+          </div>
+        )}
         {tab === 'qr' && <QRGeneratorScreen onBack={() => setTab('calendar')} />}
         {tab === 'calendar' && <CalendarTab users={users} today={today} isTablet={isTablet} />}
         {tab === 'kinmubo' && <KinmuboTab today={today} />}
         {tab === 'users' && <UsersTab users={users} today={today} onRefresh={() => getUsers().then(setUsers)} isTablet={isTablet} />}
-        {tab === 'settings' && <SettingsTab users={users} onUsersChanged={() => getUsers().then(setUsers)} />}
+        {tab === 'settings' && <SettingsTab users={users} onUsersChanged={() => getUsers().then(setUsers)} onPinChanged={() => setShortPin(false)} />}
       </div>
     </div>
   )
@@ -3153,7 +3172,8 @@ function AddUserModal({ users, onClose, onAdded }) {
       await upsertUser(newUser, { create: true })
       onAdded(newUser)
     } catch(e) {
-      alert(e?.status === 409
+      if (e?.code === 'pin_taken') setPinError('このPINは他の従業員が使用中です')
+      else alert(e?.status === 409
         ? `従業員ID「${addId.trim()}」は使用済みです。別のIDを入力してください（既存の従業員は変更なし）。`
         : '追加に失敗しました: ' + (e?.message || e))
       setSaving(false)
@@ -3681,21 +3701,29 @@ function CarRateSettings() {
 
 // ─── SettingsTab ──────────────────────────────────────────────────────────────
 
-function SettingsTab({ users, onUsersChanged }) {
+function SettingsTab({ users, onUsersChanged, onPinChanged }) {
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
+  const [revokeDevices, setRevokeDevices] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [devicesKey, setDevicesKey] = useState(0)
+  const N = ADMIN_PIN_LENGTH
+  const pinReady = newPin.length === N && confirmPin.length === N
 
   async function handleSave() {
-    if (newPin.length !== 4) { setError('4桁のPINを入力'); return }
+    if (newPin.length !== N) { setError(`${N}桁のPINを入力`); return }
     if (newPin !== confirmPin) { setError('PINが一致しません'); setConfirmPin(''); return }
+    if (revokeDevices && !window.confirm('登録済みの打刻端末をすべて解除します。\nどの端末も、新しいPINで登録し直すまで打刻できません（この端末も含む）。\n変更しますか？')) return
     try {
-      await saveAdminPin(newPin)
+      await saveAdminPin(newPin, { revokeDevices })
       setSaved(true)
       setNewPin('')
       setConfirmPin('')
+      setRevokeDevices(false)
       setError('')
+      onPinChanged?.()
+      if (revokeDevices) setDevicesKey(k => k + 1)
       setTimeout(() => setSaved(false), 3000)
     } catch {
       setError('保存に失敗しました')
@@ -3709,13 +3737,13 @@ function SettingsTab({ users, onUsersChanged }) {
       <SettingsSection id="set-pin" title="管理者PIN変更" summary="管理画面に入るときのPIN">
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={SETTINGS_LABEL}>新しいPIN（4桁）</span>
+            <span style={SETTINGS_LABEL}>新しいPIN（{N}桁）</span>
             <input
               type="password"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={N}
               value={newPin}
-              onChange={e => { setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }}
+              onChange={e => { setNewPin(e.target.value.replace(/\D/g, '').slice(0, N)); setError('') }}
               autoComplete="new-password"
               style={SETTINGS_PIN_INPUT}
             />
@@ -3725,25 +3753,31 @@ function SettingsTab({ users, onUsersChanged }) {
             <input
               type="password"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={N}
               value={confirmPin}
-              onChange={e => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }}
+              onChange={e => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, N)); setError('') }}
               autoComplete="new-password"
               style={SETTINGS_PIN_INPUT}
             />
           </label>
           <button
             onClick={handleSave}
-            disabled={newPin.length !== 4 || confirmPin.length !== 4}
-            style={{ height: 40, padding: '0 20px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer', opacity: (newPin.length !== 4 || confirmPin.length !== 4) ? 0.4 : 1 }}
+            disabled={!pinReady}
+            style={{ height: 40, padding: '0 20px', background: '#1a5fa8', border: 'none', borderRadius: 8, color: '#fff', fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer', opacity: pinReady ? 1 : 0.4 }}
           >
             PINを変更
           </button>
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: '0.88rem', color: '#334155', cursor: 'pointer' }}>
+          <input type="checkbox" checked={revokeDevices} onChange={e => setRevokeDevices(e.target.checked)} style={{ width: 18, height: 18 }} />
+          登録済みの打刻端末もすべて解除する（PINが漏れたときなど。端末は新しいPINで登録し直し）
+        </label>
         {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>{error}</div>}
         {saved && <div style={{ color: '#16a34a', fontWeight: 700, fontSize: '0.88rem', marginTop: 10 }}>PINを変更しました（全端末に反映）</div>}
         <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 10 }}>次回のPIN入力から新しいPINが有効</div>
       </SettingsSection>
+
+      <SettingsSection id="set-devices" title="打刻端末" summary="登録済みの端末の確認・解除"><DeviceSettings key={devicesKey} /></SettingsSection>
 
       <SettingsSection id="set-items" title="業務の管理" summary="業務の追加・名前・グループ・並び順"><WorkItemSettings users={users} /></SettingsSection>
 
@@ -3880,6 +3914,96 @@ function CommuteListSettings({ users, onUsersChanged }) {
     </div>
   )
 }
+
+// ─── Registered punch tablets ───────────────────────────────────────────────
+function fmtDeviceTime(ms) {
+  if (!ms) return '—'
+  const d = new Date(ms)
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function DeviceSettings() {
+  const [devices, setDevices] = useState(null)
+  const [error, setError] = useState('')
+  const [editing, setEditing] = useState(null) // { id, label }
+
+  const load = useCallback(() => {
+    setError('')
+    getDevices().then(setDevices).catch(() => setError('読み込みに失敗しました'))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function handleRemove(d) {
+    const name = d.label || '名前なしの端末'
+    const msg = d.current
+      ? `「${name}」はこの端末です。解除すると、管理画面を閉じたあと打刻できなくなります（管理者PINで登録し直し）。\n解除しますか？`
+      : `「${name}」の登録を解除します。\nその端末は、管理者PINで登録し直すまで打刻できません（端末に残っている従業員名簿も消えます）。\n解除しますか？`
+    if (!window.confirm(msg)) return
+    try { await removeDevice(d.id); load() } catch { setError('解除に失敗しました') }
+  }
+
+  async function handleRename() {
+    try { await renameDevice(editing.id, editing.label); setEditing(null); load() } catch { setError('保存に失敗しました') }
+  }
+
+  if (devices === null && !error) return <div style={{ color: '#64748b', fontSize: '0.88rem' }}>読み込み中</div>
+  return (
+    <div>
+      {error && <div style={{ color: '#dc2626', fontWeight: 700, fontSize: '0.88rem', marginBottom: 8 }}>{error}</div>}
+      {devices && devices.length === 0 && <div style={{ color: '#64748b', fontSize: '0.88rem' }}>登録済みの打刻端末はありません</div>}
+      {devices && devices.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.88rem' }}>
+            <thead>
+              <tr style={{ color: '#475569', textAlign: 'left' }}>
+                <th style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0' }}>名前</th>
+                <th style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>登録</th>
+                <th style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>最後に使った時刻</th>
+                <th style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map(d => (
+                <tr key={d.id}>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                    {editing?.id === d.id ? (
+                      <span style={{ display: 'inline-flex', gap: 6 }}>
+                        <input value={editing.label} maxLength={40} autoFocus onChange={e => setEditing({ ...editing, label: e.target.value })}
+                          onKeyDown={e => { if (e.key === 'Enter') handleRename(); else if (e.key === 'Escape') setEditing(null) }}
+                          style={{ height: 32, border: '1px solid #cbd5e1', borderRadius: 6, padding: '0 8px', fontFamily: 'inherit', fontSize: '0.88rem' }} />
+                        <button onClick={handleRename} style={DEVICE_BTN}>保存</button>
+                        <button onClick={() => setEditing(null)} style={{ ...DEVICE_BTN, background: '#fff', color: '#374151', border: '1px solid #cbd5e1' }}>やめる</button>
+                      </span>
+                    ) : (
+                      <span>
+                        {d.label || <span style={{ color: '#94a3b8' }}>名前なし</span>}
+                        {d.current && <span style={{ marginLeft: 6, fontSize: '0.75rem', color: '#1a5fa8', fontWeight: 700 }}>（この端末）</span>}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{fmtDeviceTime(d.createdAt)}</td>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{fmtDeviceTime(d.lastSeen)}</td>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {editing?.id !== d.id && (
+                      <>
+                        <button onClick={() => setEditing({ id: d.id, label: d.label })} style={{ ...DEVICE_BTN, background: '#fff', color: '#1a5fa8', border: '1px solid #93c5fd', marginRight: 6 }}>名前</button>
+                        <button onClick={() => handleRemove(d)} style={{ ...DEVICE_BTN, background: '#fff', color: '#dc2626', border: '1px solid #fca5a5' }}>解除</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 10, lineHeight: 1.6 }}>
+        なくした・使わなくなった端末は「解除」で打刻できなくします。「最後に使った時刻」は10分ごとに更新します。
+      </div>
+    </div>
+  )
+}
+const DEVICE_BTN = { height: 32, padding: '0 12px', background: '#1a5fa8', border: 'none', borderRadius: 6, color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit' }
 
 // One settings block that opens when its title is clicked (closed by default; this browser remembers which were open)
 function SettingsSection({ id, title, summary, children }) {
@@ -4676,7 +4800,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       setIsDirty(false)
       onSaved()
     } catch(e) {
-      alert('保存に失敗しました: ' + (e?.message || e))
+      if (e?.code === 'pin_taken') setPinError('このPINは他の従業員が使用中です')
+      else alert('保存に失敗しました: ' + (e?.message || e))
       setSaving(false)
     }
   }

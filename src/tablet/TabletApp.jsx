@@ -1,6 +1,6 @@
 import { useIdleTimeout } from '../lib/useIdleTimeout'
 import React, { useState, useEffect, useRef } from 'react'
-import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from '../lib/db'
+import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync, dropAdminToken, ADMIN_PIN_LENGTH } from '../lib/db'
 import { handlePunch, finishClockOut } from '../lib/punchFlow'
 import ModeSelectScreen from '../screens/ModeSelectScreen'
 import QRScreen from '../screens/QRScreen'
@@ -24,6 +24,7 @@ const STATE = {
 
 const ADMIN_TAP_COUNT = 1
 const ADMIN_TAP_TIMEOUT = 3000
+const MIN_ADMIN_PIN = 4 // a PIN set before 6 digits were required
 
 function AdminPinOverlay({ onSuccess, onClose }) {
   const [pin, setPin] = useState('')
@@ -33,12 +34,12 @@ function AdminPinOverlay({ onSuccess, onClose }) {
   function press(k) {
     if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
     if (k === '') return
-    if (pin.length >= 4) return
+    if (pin.length >= ADMIN_PIN_LENGTH) return
     setPin(p => p + k)
     setError('')
   }
   async function confirm() {
-    if (pin.length !== 4) { setError('4桁で入力'); return }
+    if (pin.length < MIN_ADMIN_PIN) { setError(`${ADMIN_PIN_LENGTH}桁で入力`); return }
     if (checking) return
     setChecking(true)
     const r = await adminLogin(pin)
@@ -51,7 +52,7 @@ function AdminPinOverlay({ onSuccess, onClose }) {
       <div style={{background:'#fff',borderRadius:20,padding:'28px 24px 24px',width:'min(340px,92vw)',display:'flex',flexDirection:'column',gap:16}}>
         <div style={{textAlign:'center',fontWeight:800,fontSize:'1.1rem',color:'#1a3f6f'}}>管理者ログイン</div>
         <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
-          {Array.from({length:4}).map((_,i) => (
+          {Array.from({length:ADMIN_PIN_LENGTH}).map((_,i) => (
             <span key={i} style={{width:12,height:12,borderRadius:'50%',border:'2px solid #9baab8',background:i<pin.length?'#1a5fa8':'transparent',display:'inline-block'}}/>
           ))}
         </div>
@@ -65,7 +66,7 @@ function AdminPinOverlay({ onSuccess, onClose }) {
         </div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={onClose} style={{flex:1,height:44,border:'2px solid #d1d5db',borderRadius:10,background:'#fff',color:'#374151',fontWeight:700,cursor:'pointer'}}>キャンセル</button>
-          <button onClick={confirm} disabled={pin.length !== 4} style={{flex:2,height:44,border:'none',borderRadius:10,background:'#1a5fa8',color:'#fff',fontWeight:800,fontSize:'1rem',cursor:'pointer',opacity:pin.length!==4?0.4:1}}>確認 →</button>
+          <button onClick={confirm} disabled={pin.length < MIN_ADMIN_PIN} style={{flex:2,height:44,border:'none',borderRadius:10,background:'#1a5fa8',color:'#fff',fontWeight:800,fontSize:'1rem',cursor:'pointer',opacity:pin.length<MIN_ADMIN_PIN?0.4:1}}>確認 →</button>
         </div>
       </div>
     </div>
@@ -93,6 +94,8 @@ export default function TabletApp() {
   const adminTapTimer = useRef(null)
 
   useEffect(() => {
+    // the punch screen never runs with an admin login left over from an earlier admin screen
+    if (isDeviceRegistered()) dropAdminToken()
     const timer = setTimeout(() => {
       setNetworkError('接続タイムアウト。接続を確認してください')
       setState(STATE.MODE)
@@ -255,7 +258,7 @@ export default function TabletApp() {
         />
       )}
 
-      {/* 管理画面への隠しボタン（打刻画面のみ表示、5回タップで開く） */}
+      {/* 管理画面へのボタン（打刻画面のみ表示。毎回管理者PINを聞く） */}
       {state === STATE.MODE && (
         <button
           className={styles.adminTrigger}

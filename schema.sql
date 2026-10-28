@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER
 );
 
+-- Registered punch tablets: a name and when each was last used (設定 → 登録済みの打刻端末).
+-- token = the device row of sessions (tablets registered earlier get a row when next used)
+CREATE TABLE IF NOT EXISTS device_info (
+  token TEXT PRIMARY KEY,
+  label TEXT,
+  last_seen INTEGER
+);
+
 -- Admin PIN brute-force lockout, per client IP
 CREATE TABLE IF NOT EXISTS login_attempts (
   ip TEXT PRIMARY KEY,

@@ -11,8 +11,12 @@ export async function onRequest(context) {
   const method = request.method
   const sp = url.searchParams
 
+  // Only this site itself and the Android app (Capacitor serves it from localhost) may call the API
+  // from a browser. Other sites get no CORS header, so the browser blocks them.
+  const origin = request.headers.get('Origin')
   const cors = {
-    'Access-Control-Allow-Origin': '*',
+    ...(origin && (origin === url.origin || APP_ORIGINS.has(origin)) ? { 'Access-Control-Allow-Origin': origin } : {}),
+    Vary: 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token, X-Device-Token',
     'Access-Control-Expose-Headers': 'X-Server-Time',
@@ -70,23 +74,30 @@ export async function onRequest(context) {
       }
       if (att.locked_until > now) return fail('locked', 429, { retryAfterSec: Math.ceil((att.locked_until - now) / 1000) })
       if (att.fails > MAX_LOGIN_FAILS) return lockNow()
-      const { pin, device } = await readBody()
-      const cfg = await DB.prepare("SELECT value FROM config WHERE key = 'adminPin'").first()
-      const adminPin = cfg?.value || env.ADMIN_PIN
-      if (!adminPin) return fail('admin_pin_not_configured', 503)
-      if (String(pin) !== String(adminPin)) {
+      const { pin, device, label } = await readBody()
+      const check = await checkAdminPin(DB, env, pin)
+      if (!check) return fail('admin_pin_not_configured', 503)
+      if (!check.ok) {
         if (att.fails >= MAX_LOGIN_FAILS) return lockNow()
         return fail('wrong_pin', 403, { remaining: MAX_LOGIN_FAILS - att.fails })
       }
       const role = device ? 'device' : 'admin'
       const token = newToken()
-      await DB.batch([
+      const stmts = [
         DB.prepare('DELETE FROM login_attempts WHERE ip = ?').bind(ip),
         DB.prepare('DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at < ?').bind(now),
         DB.prepare('INSERT INTO sessions (token, role, created_at, expires_at) VALUES (?, ?, ?, ?)')
           .bind(token, role, now, role === 'admin' ? now + ADMIN_SESSION_MS : null),
-      ])
-      return ok({ token, role })
+      ]
+      if (role === 'device') {
+        stmts.push(DB.prepare('INSERT OR REPLACE INTO device_info (token, label, last_seen) VALUES (?, ?, ?)')
+          .bind(token, typeof label === 'string' ? label.trim().slice(0, 40) : '', now))
+      }
+      // a PIN still stored as it was typed is replaced by its hash at the first correct login
+      if (check.upgrade) stmts.push(...adminPinStmts(DB, await hashPin(String(pin))))
+      await DB.batch(stmts)
+      // shortPin: a PIN set before 6 digits were required (the admin screen asks to change it)
+      return ok({ token, role, shortPin: String(pin).length < 6 })
     }
     if (route === 'auth/logout' && method === 'POST') {
       const t = request.headers.get('X-Admin-Token')
@@ -95,17 +106,56 @@ export async function onRequest(context) {
     }
 
     const role = await resolveRole(DB, request)
+    if (role === 'device') context.waitUntil?.(touchDevice(DB, request.headers.get('X-Device-Token')))
     const deviceOk = isDeviceRoute(route, method, sp)
     if (role !== 'admin' && !(role === 'device' && deviceOk)) {
       return fail('unauthorized', 401, { need: deviceOk ? 'device' : 'admin' })
     }
     const pubUser = u => (role === 'admin' ? parseUser(u) : publicUser(parseUser(u)))
 
+    // ── Admin PIN (stored only as a hash) ─────────────────────────────────
+    if (route === 'auth/admin_pin' && method === 'PUT') {
+      const { pin, revokeDevices } = await readBody()
+      if (typeof pin !== 'string' || !/^\d{6}$/.test(pin)) throw new HttpError('bad_pin', 400)
+      const stmts = adminPinStmts(DB, await hashPin(pin))
+      // optionally sign out every punch tablet (they must be registered again with the new PIN)
+      if (revokeDevices) stmts.push(DB.prepare("DELETE FROM sessions WHERE role = 'device'"), DB.prepare('DELETE FROM device_info'))
+      await DB.batch(stmts)
+      return ok({ ok: true })
+    }
+
+    // ── Registered punch tablets ──────────────────────────────────────────
+    // id = the first part of the token's SHA-256 (the token itself never leaves the server)
+    if (route === 'devices' && method === 'GET') {
+      const { results } = await DB.prepare(
+        "SELECT s.token, s.created_at, d.label, d.last_seen FROM sessions s LEFT JOIN device_info d ON d.token = s.token WHERE s.role = 'device' ORDER BY s.created_at"
+      ).all()
+      const mine = request.headers.get('X-Device-Token')
+      return ok(await Promise.all(results.map(async r => ({
+        id: await deviceId(r.token), label: r.label || '', createdAt: r.created_at, lastSeen: r.last_seen || null, current: r.token === mine,
+      }))))
+    }
+    if (route.startsWith('devices/') && (method === 'DELETE' || method === 'PUT')) {
+      const id = route.slice(8)
+      const { results } = await DB.prepare("SELECT token FROM sessions WHERE role = 'device'").all()
+      let token = null
+      for (const r of results) if (await deviceId(r.token) === id) token = r.token
+      if (!token) throw new HttpError('not_found', 404)
+      if (method === 'DELETE') {
+        await DB.batch([DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token), DB.prepare('DELETE FROM device_info WHERE token = ?').bind(token)])
+      } else {
+        const { label } = await readBody()
+        await DB.prepare('INSERT INTO device_info (token, label) VALUES (?, ?) ON CONFLICT(token) DO UPDATE SET label = excluded.label')
+          .bind(token, typeof label === 'string' ? label.trim().slice(0, 40) : '').run()
+      }
+      return ok({ ok: true })
+    }
+
     // ── Config ────────────────────────────────────────────────────────────
     if (route === 'config' && method === 'GET') {
       const { results } = await DB.prepare('SELECT key, value FROM config').all()
       const cfg = {}
-      results.forEach(r => { if (r.key !== 'adminPin') cfg[r.key] = r.value })
+      results.forEach(r => { if (!SECRET_CONFIG.has(r.key)) cfg[r.key] = r.value })
       return ok(cfg)
     }
     // 業務の管理 (names / groups / order). null = never saved, the app uses its defaults
@@ -117,6 +167,7 @@ export async function onRequest(context) {
     }
     if (route.startsWith('config/') && method === 'PUT') {
       const key = route.slice(7)
+      if (SECRET_CONFIG.has(key)) throw new HttpError('forbidden', 403) // changed only through auth/admin_pin
       const body = await readBody()
       await DB.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').bind(key, String(body.value)).run()
       return ok({ ok: true })
@@ -150,7 +201,13 @@ export async function onRequest(context) {
       if (sp.get('new') === '1' && cur) throw new HttpError('user_exists', 409)
       // an old ID of someone else (their old QR card still opens their record) can't be given to a new person
       if (sp.get('new') === '1' && await DB.prepare("SELECT 1 AS x FROM users WHERE EXISTS (SELECT 1 FROM json_each(users.data, '$.formerIds') WHERE value = ?)").bind(id).first()) throw new HttpError('user_exists', 409)
-      const merged = { ...(cur ? JSON.parse(cur.data || '{}') : {}), ...b }
+      const merged = { ...(cur ? parseJson(cur.data, {}) : {}), ...b }
+      // a PIN calls up exactly one person (checked when the PIN is set, so other changes to someone
+      // who already shares a PIN from earlier data still save)
+      if ('pin' in b && merged.pin) {
+        if (typeof merged.pin !== 'string' || !/^\d{4}$/.test(merged.pin)) throw new HttpError('bad_pin', 400)
+        if (await DB.prepare('SELECT 1 AS x FROM users WHERE pin = ? AND id <> ?').bind(merged.pin, id).first()) throw new HttpError('pin_taken', 409)
+      }
       await DB.prepare('INSERT OR REPLACE INTO users (id, pin, data) VALUES (?, ?, ?)')
         .bind(id, merged.pin || '', JSON.stringify(merged)).run()
       return ok({ ok: true })
@@ -258,6 +315,9 @@ export async function onRequest(context) {
     if (route.startsWith('logs/') && method === 'PATCH') {
       const id = route.slice(5)
       const b = await readBody()
+      if ('time' in b && !isTime(b.time)) throw new HttpError('bad_time', 400)
+      if ('timestamp' in b && (typeof b.timestamp !== 'string' || Number.isNaN(Date.parse(b.timestamp)))) throw new HttpError('bad_datetime', 400)
+      if ('work_items' in b && b.work_items !== null && typeof b.work_items !== 'object') throw new HttpError('bad_work_items', 400)
       const sets = [], args = []
       if ('first_work' in b) { sets.push('first_work = ?'); args.push(b.first_work) }
       if ('last_work' in b) { sets.push('last_work = ?'); args.push(b.last_work) }
@@ -269,7 +329,7 @@ export async function onRequest(context) {
         const log = await DB.prepare('SELECT date FROM logs WHERE id = ?').bind(id).first()
         if (log) {
           sets.push('time = ?', 'timestamp = ?')
-          args.push(b.time + ':00', jstIso(log.date, b.time))
+          args.push(b.time.slice(0, 5) + ':00', jstIso(log.date, b.time))
         }
       } else {
         if ('time' in b) { sets.push('time = ?'); args.push(b.time) }
@@ -298,14 +358,14 @@ export async function onRequest(context) {
       sR.results.forEach(d => {
         const key = `${d.user_id}_${d.date}`
         if (!sessionData[key]) sessionData[key] = {}
-        const items = JSON.parse(d.items || '{}')
+        const items = parseJson(d.items, {})
         Object.entries(items).forEach(([t, m]) => {
           if (m > 0) { sessionData[key][t] = (sessionData[key][t] || 0) + m; sessionHasValid.add(key) }
         })
       })
       const legacyData = {}
       lR.results.forEach(d => {
-        const items = JSON.parse(d.items || '{}')
+        const items = parseJson(d.items, {})
         if (Object.values(items).some(m => m > 0)) legacyData[d.id] = items
       })
       const result = {}
@@ -319,13 +379,13 @@ export async function onRequest(context) {
       const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
       if (userId && date) {
         const r = await DB.prepare('SELECT items FROM work_reports WHERE user_id = ? AND date = ?').bind(userId, date).first()
-        return ok(r ? JSON.parse(r.items || '{}') : {})
+        return ok(r ? parseJson(r.items, {}) : {})
       }
       let stmt = 'SELECT * FROM work_reports', args = []
       if (dateFrom && dateTo) { stmt += ' WHERE date >= ? AND date <= ?'; args = [dateFrom, dateTo] }
       const { results } = await DB.prepare(stmt).bind(...args).all()
       const map = {}
-      results.forEach(r => { map[r.id] = JSON.parse(r.items || '{}') })
+      results.forEach(r => { map[r.id] = parseJson(r.items, {}) })
       return ok(map)
     }
     if (route === 'work_reports' && method === 'PUT') {
@@ -336,7 +396,7 @@ export async function onRequest(context) {
       if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
       const items = cleanItems(b.items)
       // same protection as session_work_reports: an older queued entry must not overwrite a later admin fix
-      const at = typeof b.clientTs === 'string' && !Number.isNaN(Date.parse(b.clientTs)) ? b.clientTs : null
+      const at = clientTime(b.clientTs)
       if (at) {
         const cur = await DB.prepare('SELECT updated_at FROM work_reports WHERE id = ?').bind(`${b.userId}_${b.date}`).first()
         if (cur?.updated_at && cur.updated_at > at) return ok({ ok: true, skipped: true })
@@ -357,7 +417,7 @@ export async function onRequest(context) {
       const map = {}
       results.forEach(d => {
         if (!d.session_id) return
-        map[`${d.user_id}_${d.date}_${d.session_id}`] = JSON.parse(d.items || '{}')
+        map[`${d.user_id}_${d.date}_${d.session_id}`] = parseJson(d.items, {})
       })
       return ok(map)
     }
@@ -370,7 +430,7 @@ export async function onRequest(context) {
       const sessionByDate = {}, sessionItemsByDate = {}
       sR.results.forEach(d => {
         if (d.date < dateFrom || d.date > dateTo) return
-        const items = JSON.parse(d.items || '{}')
+        const items = parseJson(d.items, {})
         if (!Object.values(items).some(m => m > 0)) return
         if (!sessionByDate[d.date]) { sessionByDate[d.date] = []; sessionItemsByDate[d.date] = {} }
         if (d.session_id) sessionByDate[d.date].push(d.session_id)
@@ -379,7 +439,7 @@ export async function onRequest(context) {
       const legacyDates = [], legacyItemsByDate = {}
       lR.results.forEach(d => {
         if (d.date < dateFrom || d.date > dateTo) return
-        const items = JSON.parse(d.items || '{}')
+        const items = parseJson(d.items, {})
         if (!Object.values(items).some(m => m > 0)) return
         legacyDates.push(d.date); legacyItemsByDate[d.date] = items
       })
@@ -401,7 +461,7 @@ export async function onRequest(context) {
           'SELECT session_id, items FROM session_work_reports WHERE user_id = ? AND date = ?'
         ).bind(userId, date).all()
         const map = {}
-        results.forEach(r => { map[r.session_id] = JSON.parse(r.items || '{}') })
+        results.forEach(r => { map[r.session_id] = parseJson(r.items, {}) })
         return ok(map)
       }
       if (userId) {
@@ -412,7 +472,7 @@ export async function onRequest(context) {
         const bySession = {}, sessionsByDate = {}
         sR.results.forEach(d => {
           if (!d.session_id) return
-          const items = JSON.parse(d.items || '{}')
+          const items = parseJson(d.items, {})
           bySession[d.session_id] = items
           if (Object.values(items).some(m => m > 0)) {
             if (!sessionsByDate[d.date]) sessionsByDate[d.date] = []
@@ -421,7 +481,7 @@ export async function onRequest(context) {
         })
         const legacyWorkedDates = []
         lR.results.forEach(d => {
-          const items = JSON.parse(d.items || '{}')
+          const items = parseJson(d.items, {})
           if (Object.values(items).some(m => m > 0)) legacyWorkedDates.push(d.date)
         })
         return ok({ bySession, sessionsByDate, legacyWorkedDates })
@@ -434,7 +494,7 @@ export async function onRequest(context) {
         results.forEach(d => {
           const key = `${d.user_id}_${d.date}`
           if (!map[key]) map[key] = {}
-          const items = JSON.parse(d.items || '{}')
+          const items = parseJson(d.items, {})
           Object.entries(items).forEach(([t, m]) => { map[key][t] = (map[key][t] || 0) + (m || 0) })
         })
         return ok(map)
@@ -451,7 +511,7 @@ export async function onRequest(context) {
       const filtered = cleanItems(b.items)
       // A tablet that was offline sends what the employee entered at clientTs. If an admin
       // changed this session after that moment, the older entry must not overwrite it.
-      const at = typeof b.clientTs === 'string' && !Number.isNaN(Date.parse(b.clientTs)) ? b.clientTs : null
+      const at = clientTime(b.clientTs)
       if (at) {
         const cur = await DB.prepare('SELECT updated_at FROM session_work_reports WHERE id = ?').bind(id).first()
         if (cur?.updated_at && cur.updated_at > at) return ok({ ok: true, skipped: true })
@@ -596,7 +656,7 @@ export async function onRequest(context) {
       if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
       const { results } = await DB.prepare(`SELECT date, slot, items FROM weekly_copies WHERE ${where.join(' AND ')}`).bind(...args).all()
       const map = {}
-      results.forEach(r => { (map[r.date] = map[r.date] || {})[r.slot] = JSON.parse(r.items || '{}') })
+      results.forEach(r => { (map[r.date] = map[r.date] || {})[r.slot] = parseJson(r.items, {}) })
       return ok(map)
     }
     if (route === 'weekly_copies' && method === 'DELETE') {
@@ -622,6 +682,8 @@ export async function onRequest(context) {
       const b = await readBody()
       needStr(b.userId, 'userId')
       if (!isDate(b.date)) throw new HttpError('bad_date', 400)
+      if (tooOldForDevice(b.date, role)) throw new HttpError('too_old', 422)
+      if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
       const now = new Date().toISOString()
       await DB.batch([transportStmt(DB, b.userId, b.date, !!b.eligible, now), transportMethodsStmt(DB, b.userId, b.date, b.eligible ? b.methods : null, now)])
       return ok({ ok: true })
@@ -699,9 +761,84 @@ const MAX_LOGIN_FAILS = 5
 const LOCK_MS = 15 * 60 * 1000
 const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000
 
+// The site itself is allowed separately (same origin); these are the Android app's origins
+const APP_ORIGINS = new Set(['https://localhost', 'http://localhost', 'capacitor://localhost'])
+// never sent to the app, never written through PUT config/:key
+const SECRET_CONFIG = new Set(['adminPin', 'adminPinHash'])
+
+function parseJson(s, fallback) {
+  try { return s ? JSON.parse(s) : fallback } catch { return fallback }
+}
+
+// clientTs of a queued entry (when it was typed on the tablet). A tablet clock that runs ahead
+// must not make its entry look newer than a later fix by the admin, so it is never after now.
+function clientTime(v) {
+  const t = typeof v === 'string' ? Date.parse(v) : NaN
+  if (Number.isNaN(t)) return null
+  return new Date(Math.min(t, Date.now())).toISOString()
+}
+
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+
 function newToken() {
-  const b = crypto.getRandomValues(new Uint8Array(32))
-  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+  return hex(crypto.getRandomValues(new Uint8Array(32)))
+}
+
+// ── Admin PIN hash ─────────────────────────────────────────────────────────────
+// Stored as "pbkdf2-sha256$<iterations>$<salt hex>$<hash hex>" in config.adminPinHash.
+// setup-new-client.js writes the same format. Few iterations: the free plan allows ~10ms of CPU.
+const PIN_ITERATIONS = 2000
+async function pbkdf2Hex(pin, salt, iterations) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits'])
+  return hex(new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256)))
+}
+async function hashPin(pin) {
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  return `pbkdf2-sha256$${PIN_ITERATIONS}$${hex(salt)}$${await pbkdf2Hex(pin, salt, PIN_ITERATIONS)}`
+}
+function sameText(a, b) {
+  if (a.length !== b.length) return false
+  let d = 0
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return d === 0
+}
+// → null (no PIN set) or { ok, upgrade } (upgrade: the PIN is still stored as typed)
+async function checkAdminPin(DB, env, pin) {
+  const { results } = await DB.prepare("SELECT key, value FROM config WHERE key IN ('adminPinHash', 'adminPin')").all()
+  const get = k => results.find(r => r.key === k)?.value
+  const p = typeof pin === 'string' || typeof pin === 'number' ? String(pin) : ''
+  const stored = get('adminPinHash')
+  if (stored) {
+    const [alg, iter, salt, hash] = stored.split('$')
+    const n = Number(iter)
+    if (alg !== 'pbkdf2-sha256' || !Number.isInteger(n) || n < 1 || !/^[0-9a-f]+$/.test(salt || '') || !hash) return { ok: false }
+    const saltBytes = new Uint8Array(salt.match(/../g).map(x => parseInt(x, 16)))
+    return { ok: sameText(await pbkdf2Hex(p, saltBytes, n), hash) }
+  }
+  const plain = get('adminPin') || env.ADMIN_PIN
+  if (!plain) return null
+  const ok = sameText(p, String(plain))
+  return { ok, upgrade: ok && !!get('adminPin') }
+}
+function adminPinStmts(DB, hash) {
+  return [
+    DB.prepare("INSERT OR REPLACE INTO config (key, value) VALUES ('adminPinHash', ?)").bind(hash),
+    DB.prepare("DELETE FROM config WHERE key = 'adminPin'"),
+  ]
+}
+
+// ── Registered punch tablets ───────────────────────────────────────────────────
+async function deviceId(token) {
+  return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)))).slice(0, 16)
+}
+// "last used" for the device list, written at most every 10 minutes
+const DEVICE_SEEN_EVERY_MS = 10 * 60 * 1000
+function touchDevice(DB, token) {
+  const now = Date.now()
+  return DB.prepare(
+    'INSERT INTO device_info (token, last_seen) VALUES (?, ?) ON CONFLICT(token) DO UPDATE SET last_seen = excluded.last_seen ' +
+    'WHERE device_info.last_seen IS NULL OR device_info.last_seen < ?'
+  ).bind(token, now, now - DEVICE_SEEN_EVERY_MS).run().catch(() => {})
 }
 
 async function resolveRole(DB, request) {
@@ -811,7 +948,7 @@ async function workSlots(DB, userId, from, to) {
     DB.prepare('SELECT date, session_id, items FROM session_work_reports WHERE user_id = ? AND date >= ? AND date <= ?').bind(userId, from, to).all(),
   ])
   const reports = {}
-  repR.results.forEach(r => { reports[r.session_id] = cleanItems(JSON.parse(r.items || '{}'), false) })
+  repR.results.forEach(r => { reports[r.session_id] = cleanItems(parseJson(r.items, {}), false) })
   const byDate = {}
   logsR.results.filter(l => l.session_id).forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l) })
   const out = []
@@ -863,7 +1000,7 @@ function jstIso(dateStr, time) {
 }
 
 function parseUser(u) {
-  return { ...JSON.parse(u.data || '{}'), id: u.id }
+  return { ...parseJson(u.data, {}), id: u.id }
 }
 
 function parseLog(l) {
@@ -881,6 +1018,6 @@ function parseLog(l) {
     first_work: l.first_work || null,
     last_work: l.last_work || null,
     transport_count: l.transport_count || null,
-    work_items: l.work_items ? JSON.parse(l.work_items) : null,
+    work_items: l.work_items ? parseJson(l.work_items, null) : null,
   }
 }

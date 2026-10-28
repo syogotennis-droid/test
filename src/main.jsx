@@ -5,7 +5,7 @@ import App from './App.jsx'
 import TabletApp from './tablet/TabletApp.jsx'
 import AdminScreen from './screens/AdminScreen.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
-import { adminLogin, adminLogout, hasAdminSession } from './lib/db.js'
+import { adminLogin, adminLogout, hasAdminSession, ADMIN_PIN_LENGTH } from './lib/db.js'
 import './styles/global.css'
 
 const ADMIN_SESSION_KEY = 'adminSessionExpiry'
@@ -67,7 +67,7 @@ function AdminRoute() {
     const v = e.target.value
       .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
       .replace(/\D/g, '')
-      .slice(0, 4)
+      .slice(0, ADMIN_PIN_LENGTH)
     setPin(v)
     if (error) setError('')
   }
@@ -100,7 +100,8 @@ function AdminRoute() {
   }} />
 
   const hasError = !!error
-  const canSubmit = pin.length === 4 && !checking
+  // 4 digits: a PIN set before 6 digits were required (still accepted until it is changed)
+  const canSubmit = pin.length >= 4 && !checking
   const borderColor = hasError ? '#dc2626' : focused ? '#2563eb' : '#d1d5db'
   const inputShadow = focused
     ? (hasError ? '0 0 0 3px rgba(220,38,38,0.14)' : '0 0 0 3px rgba(37,99,235,0.16)')
@@ -158,7 +159,7 @@ function AdminRoute() {
               if (e.key === 'Enter') { e.preventDefault(); handleSubmit() }
               else if (e.key === 'Escape') { e.preventDefault(); setPin(''); setError('') }
             }}
-            placeholder="4桁"
+            placeholder={`${ADMIN_PIN_LENGTH}桁`}
             style={{
               width: '100%', boxSizing: 'border-box',
               height: 50,

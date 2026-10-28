@@ -74,6 +74,8 @@ async function api(path, { method = 'GET', query, body } = {}) {
   if (res.status === 401) {
     const j = await res.json().catch(() => ({}))
     setToken(j.need === 'device' ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, null)
+    // a tablet whose registration was removed keeps no employee list (PINs)
+    if (j.need === 'device') { try { localStorage.removeItem(USERS_CACHE_KEY) } catch {} }
     window.dispatchEvent(new CustomEvent('auth-required', { detail: { need: j.need } }))
     throw new Error('認証が必要です')
   }
@@ -82,6 +84,7 @@ async function api(path, { method = 'GET', query, body } = {}) {
     e.status = res.status
     // a JSON error body means our own server answered (not a Wi-Fi login page or proxy)
     e.fromServer = (res.headers.get('content-type') || '').includes('application/json')
+    if (e.fromServer) e.code = (await res.json().catch(() => ({}))).error
     throw e
   }
   try {
@@ -111,6 +114,9 @@ function noteServerTime(header, sentAt, receivedAt) {
 }
 // server time − this device's time, in milliseconds (0 until the server answered once)
 export function getClockOffsetMs() { return clockOffsetMs }
+// "now" on the server's clock (as far as known): clientTs of queued entries, so a tablet whose
+// clock is off does not make its entry look newer or older than an admin's fix
+function serverNowIso() { return new Date(Date.now() + clockOffsetMs).toISOString() }
 
 // ─── Offline support for punching ─────────────────────────────────────────────
 // Writes go to a localStorage outbox first and are sent in order; the server
@@ -267,14 +273,15 @@ const enc = encodeURIComponent
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 // Admin PIN is only ever checked on the server. device=true registers this
-// device as a punch tablet (no expiry) instead of opening an admin session.
-export async function adminLogin(pin, { device = false } = {}) {
+// device as a punch tablet (no expiry) instead of opening an admin session; label = its name in
+// the list of registered tablets.
+export async function adminLogin(pin, { device = false, label } = {}) {
   let res, j
   try {
     res = await fetch(apiBase() + '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin, device }),
+      body: JSON.stringify({ pin, device, label }),
     })
     j = await res.json().catch(() => ({}))
   } catch {
@@ -282,6 +289,8 @@ export async function adminLogin(pin, { device = false } = {}) {
   }
   if (res.ok) {
     setToken(device ? DEVICE_TOKEN_KEY : ADMIN_TOKEN_KEY, j.token)
+    // the admin screen asks to change a PIN shorter than 6 digits
+    try { j.shortPin ? localStorage.setItem(SHORT_PIN_KEY, '1') : localStorage.removeItem(SHORT_PIN_KEY) } catch {}
     return { ok: true }
   }
   if (res.status === 429) {
@@ -300,6 +309,19 @@ export function adminLogout() {
   if (t) fetch(apiBase() + '/auth/logout', { method: 'POST', headers: { 'X-Admin-Token': t } }).catch(() => {})
 }
 
+// The admin PIN is 6 digits. One set earlier (4 digits) still works until it is changed.
+export const ADMIN_PIN_LENGTH = 6
+const SHORT_PIN_KEY = 'adminPinShort'
+export function adminPinIsShort() {
+  try { return localStorage.getItem(SHORT_PIN_KEY) === '1' } catch { return false }
+}
+
+// A punch tablet must not keep an admin login (e.g. the app was closed while the admin screen
+// was open): the punch screen starts without it.
+export function dropAdminToken() {
+  setToken(ADMIN_TOKEN_KEY, null)
+}
+
 export function hasAdminSession() {
   return !!getToken(ADMIN_TOKEN_KEY)
 }
@@ -308,8 +330,21 @@ export function isDeviceRegistered() {
   return !!getToken(DEVICE_TOKEN_KEY)
 }
 
-export async function saveAdminPin(newPin) {
-  await api('/config/adminPin', { method: 'PUT', body: { value: newPin } })
+// revokeDevices: every punch tablet must be registered again with the new PIN
+export async function saveAdminPin(newPin, { revokeDevices = false } = {}) {
+  await api('/auth/admin_pin', { method: 'PUT', body: { pin: newPin, revokeDevices } })
+  try { localStorage.removeItem(SHORT_PIN_KEY) } catch {}
+}
+
+// Registered punch tablets → [{ id, label, createdAt, lastSeen, current }] (current = this device)
+export async function getDevices() {
+  return api('/devices')
+}
+export async function removeDevice(id) {
+  await api(`/devices/${enc(id)}`, { method: 'DELETE' })
+}
+export async function renameDevice(id, label) {
+  await api(`/devices/${enc(id)}`, { method: 'PUT', body: { label } })
 }
 
 export const DEFAULT_MIN_WAGE = 1077  // 愛知県 2024年10月改定
@@ -629,7 +664,7 @@ export async function getClockInTimeForDate(userId, date) {
 export async function saveWorkReport(userId, dateStr, items) {
   const filtered = Object.fromEntries(Object.entries(items).filter(([, m]) => m > 0))
   const key = `wr:${userId}_${dateStr}`
-  enqueue({ qid: crypto.randomUUID(), key, path: '/work_reports', method: 'PUT', body: { userId, date: dateStr, items: filtered, clientTs: new Date().toISOString() } })
+  enqueue({ qid: crypto.randomUUID(), key, path: '/work_reports', method: 'PUT', body: { userId, date: dateStr, items: filtered, clientTs: serverNowIso() } })
   await flushOutbox()
 }
 
@@ -648,7 +683,7 @@ export function generateSessionId() {
 export async function saveSessionWorkReport(userId, dateStr, sessionId, items) {
   const key = `swr:${userId}_${dateStr}_${sessionId}`
   // clientTs: when the employee entered it, so an older queued entry can't overwrite a later admin fix
-  enqueue({ qid: crypto.randomUUID(), key, path: '/session_work_reports', method: 'PUT', body: { userId, date: dateStr, sessionId, items, clientTs: new Date().toISOString() } })
+  enqueue({ qid: crypto.randomUUID(), key, path: '/session_work_reports', method: 'PUT', body: { userId, date: dateStr, sessionId, items, clientTs: serverNowIso() } })
   await flushOutbox()
 }
 

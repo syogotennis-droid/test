@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Export every D1 database listed in databases.txt to backups/<db>/<YYYY-MM-DD>.sql.gz,
+# Export every D1 database listed in databases.txt to backups/<db>/<YYYY-MM-DD>.sql.gz.enc,
 # thin out old files, and check the capacity of all databases in one place.
-# Needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in the environment.
+# Needs CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and BACKUP_PASSPHRASE in the environment.
+#
+# Files are encrypted (AES-256, key from BACKUP_PASSPHRASE): the backups hold names, wages and
+# punches, so a copy of this repository alone does not show them. restore.sh decrypts them.
+# Without BACKUP_PASSPHRASE nothing is saved (never unencrypted) and the script fails.
 #
 # Kept files: every day of the last KEEP_DAYS days, and before that only the last file of each month.
 # Capacity: if a database uses more than WARN_PERCENT of MAX_DB_MB, or the account has more than
@@ -20,6 +24,16 @@ WHERE="${WRANGLER_WHERE:---remote}"
 TABLES="users logs work_reports session_work_reports config overtime_apps salaried_days work_plans transport_days transport_day_methods weekly_copies weekly_copy_answers"
 table_args=""
 for t in $TABLES; do table_args="$table_args --table $t"; done
+
+if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+  echo "BACKUP_PASSPHRASE が設定されていません（GitHubの Secrets に登録してください）。暗号化できないため保存しません。"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    echo "### BACKUP_PASSPHRASE が未設定のため、バックアップを保存しませんでした" >> "$GITHUB_STEP_SUMMARY"
+  fi
+  exit 1
+fi
+# same settings in restore.sh
+encrypt() { openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt -pass env:BACKUP_PASSPHRASE -in "$1" -out "$2"; }
 
 today=$(TZ=Asia/Tokyo date +%Y-%m-%d)
 cutoff=$(TZ=Asia/Tokyo date -d "-${KEEP_DAYS} days" +%Y-%m-%d)
@@ -43,7 +57,14 @@ while IFS= read -r line || [ -n "$line" ]; do
   echo "== $db"
   if $WRANGLER d1 export "$db" $WHERE $table_args --output "$out"; then
     gzip -f "$out"
-    echo "   saved $out.gz ($(du -h "$out.gz" | cut -f1))"
+    if ! encrypt "$out.gz" "$out.gz.enc"; then
+      note "   暗号化に失敗: $db"
+      rm -f "$out.gz" "$out.gz.enc"
+      failed=1
+      continue
+    fi
+    rm -f "$out.gz"
+    echo "   saved $out.gz.enc ($(du -h "$out.gz.enc" | cut -f1))"
     bytes=$(db_size "$db")
     if ! [[ "$bytes" =~ ^[0-9]+$ ]]; then
       # the backup is saved, but the capacity could not be checked: report it instead of passing
@@ -81,13 +102,19 @@ else
   fi
 fi
 
+# backups saved before encryption (.sql.gz) are replaced by encrypted copies
+for f in backups/*/*.sql.gz; do
+  [ -f "$f" ] || continue
+  if encrypt "$f" "$f.enc"; then rm -f "$f"; echo "   encrypted $f"; else rm -f "$f.enc"; note "   暗号化に失敗: $f"; failed=1; fi
+done
+
 # thin out: keep every file of the last KEEP_DAYS days; before that only the last file of each month
 for dir in backups/*/; do
   [ -d "$dir" ] || continue
   last_of_month=""
   # newest first: the first file seen for a month is that month's last one
-  for f in $(ls "$dir"*.sql.gz 2>/dev/null | sort -r); do
-    d=$(basename "$f" .sql.gz)
+  for f in $(ls "$dir"*.sql.gz.enc 2>/dev/null | sort -r); do
+    d=$(basename "$f" .sql.gz.enc)
     [[ "$d" < "$cutoff" ]] || continue
     m=${d:0:7}
     if [[ " $last_of_month " == *" $m "* ]]; then

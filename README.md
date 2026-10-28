@@ -1,58 +1,57 @@
-# QR勤怠・作業記録システム
+# QR勤怠システム
 
-QRコードで個人を識別し、作業内容（3択）を記録するPWAアプリです。
+QRコード（またはPIN）で出退勤を打刻し、管理画面で記録の確認・出勤簿（Excel）の作成をするシステムです。
+打刻用タブレット（ブラウザ版・Androidアプリ版）と管理用PCで、同じデータを使います。
 
-## 機能
+詳しい仕様・ファイルの役割は `CLAUDE.md` にまとめています。
 
-- **QR読み取り** — カメラでQRコードをスキャンして個人識別
-- **作業選択** — 事務 / 清掃 / 現場 の3択（大きいボタン）
-- **即時記録** — 確定ボタン押下でIndexedDBに保存
-- **完了画面** — 2秒後に自動で初期画面へ
-- **管理機能** — 記録一覧・日付/ユーザー別フィルタ・CSVエクスポート・ユーザー管理・QRコード印刷
-- **オフライン対応** — IndexedDB + PWA Service Worker
+## 主な機能
 
-## セットアップ
+- **打刻** — 出勤・休憩・戻り・退勤。QRコード（中身は従業員ID）か従業員PIN（4桁）で本人を確認
+- **退勤時の業務入力** — 業務ごとの時間、本日の交通費。先週や過去の日の内容をコピーできる
+- **勤務確認** — 従業員が自分の勤務と業務を確認・修正（今月と先月まで）
+- **管理画面** — 記録一覧と勤務記録の編集、出勤簿・給与（Excel）、従業員管理、QR印刷、設定（管理者PIN・打刻端末・業務・最低賃金・交通費）
+- **オフライン** — 打刻・業務は端末に保存してから送信。通信が戻ると自動で再送（二重登録にならない）
 
-```bash
-npm install
-npm run dev       # 開発サーバー起動
-npm run build     # 本番ビルド
-npm run preview   # ビルド確認
-```
+## 構成
 
-## 操作手順（3タップ完結）
+- 画面：React 18 + Vite（CSS Modules）
+- 公開：Cloudflare Pages、API：Pages Functions（`functions/api/[[route]].js`）
+- データ：Cloudflare D1（テーブル定義は `schema.sql`）
+- Androidアプリ版：Capacitor
+- 案件ごとに Pages プロジェクトと D1 データベースを分ける（案件ID `abc` → `kintai-abc`）
 
-1. QRコードをカメラに向ける → 自動認識
-2. 作業内容を選択（事務・清掃・現場）
-3. 「確定」ボタンを押す → 記録完了
+## セットアップ・デプロイ
 
-## 管理画面へのアクセス
-
-QR画面の右下の「⚙」ボタンを5回タップで管理画面へ移動します。
-
-## QRコードの準備
-
-1. 管理画面 → 「QR印刷」タブ
-2. 各ユーザーのQRコードが一覧表示される
-3. 「🖨 印刷」ボタンで印刷
-
-デフォルトユーザーは USER001〜USER010 の10名が登録済みです。
-
-## データ構造
+事前に `npm install --legacy-peer-deps` と `npx wrangler login` を済ませておきます。
 
 ```
-users: { id, name }
-logs:  { id, user_id, work_type, timestamp, date, time, synced }
+node setup-new-client.js                  新しい案件を作る（DB作成→管理者PIN設定→デプロイ）
+node setup-new-client.js --deploy <案件ID>  1つの案件に最新のコードを反映
+node setup-new-client.js --deploy-all     全案件に最新のコードを反映
 ```
 
-## 技術スタック
+## ローカルで動かす
 
-- **フロント**: React 18 + Vite
-- **DB**: Dexie.js (IndexedDB)
-- **QR**: html5-qrcode
-- **PWA**: vite-plugin-pwa (Workbox)
+```
+npx wrangler d1 execute qr-attendance-db --local --file=./schema.sql
+npm run build
+npx wrangler pages dev dist
+```
 
-## QRコード形式
+管理者PINはサーバーにハッシュで保存します。ローカルでは、初回だけ一時的なPINを入れてログインすると
+自動でハッシュに置き換わります（その後、管理画面の 設定 → 管理者PIN変更 で6桁に変更）。
 
-各QRコードにはユーザーIDのみを格納します（例: `USER001`）。
-管理画面のユーザー管理から追加・編集が可能です。
+```
+npx wrangler d1 execute qr-attendance-db --local --command "INSERT INTO config (key,value) VALUES ('adminPin','123456')"
+```
+
+## 権限
+
+- 管理画面は管理者PIN（6桁）でログイン。PINはサーバー側でのみ照合し、5回続けて間違えると15分ロック
+- 打刻端末は最初に管理者PINで登録する。登録した端末ができるのは打刻・従業員の呼び出し・本人の勤務確認だけ
+- 登録済みの端末は 設定 →「打刻端末」で確認・解除できる
+
+## バックアップ
+
+`backup-repo/` に毎日の自動バックアップ（暗号化）一式があります。使い方は `backup-repo/README.md`。

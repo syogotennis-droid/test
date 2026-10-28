@@ -140,7 +140,8 @@ async function main() {
   }
   const system = data.config.find(c => c.id === 'system') || {}
   // Never replace a PIN / setting that already exists in D1 (set on Cloudflare or by an earlier run)
-  if (system.adminPin) sql.push(`INSERT OR IGNORE INTO config (key, value) VALUES ('adminPin', ${q(String(system.adminPin))});`)
+  // (the Firebase PIN is stored as typed; the server replaces it with a hash at the first login)
+  if (system.adminPin) sql.push(`INSERT INTO config (key, value) SELECT 'adminPin', ${q(String(system.adminPin))} WHERE NOT EXISTS (SELECT 1 FROM config WHERE key IN ('adminPin', 'adminPinHash'));`)
   if (system.minWage) sql.push(`INSERT OR IGNORE INTO config (key, value) VALUES ('minWage', ${q(String(system.minWage))});`)
   for (const r of data.overtime_apps) {
     sql.push(`INSERT OR REPLACE INTO overtime_apps (id, user_id, date, minutes) VALUES (${[rkey(r.id, r.userId), rid(r.userId || ''), r.date || '', Number(r.minutes) || 0].map(q).join(', ')});`)

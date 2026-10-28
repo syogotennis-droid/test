@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { useIdleTimeout } from './lib/useIdleTimeout'
-import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync } from './lib/db'
+import { initDB, adminLogin, adminLogout, isDeviceRegistered, startOutboxSync, dropAdminToken, ADMIN_PIN_LENGTH } from './lib/db'
 import { handlePunch, finishClockOut } from './lib/punchFlow'
 import ModeSelectScreen from './screens/ModeSelectScreen'
 import QRScreen from './screens/QRScreen'
@@ -43,18 +43,23 @@ function AdminPinOverlay({ onSuccess, onClose }) {
 
   React.useEffect(() => { inputRef.current?.focus() }, [])
 
-  async function handleChange(e) {
+  // sent by itself at 6 digits; a PIN set before 6 digits were required (4 digits) is sent with
+  // Enter or the button (sending at 4 would count a wrong try for every 6-digit PIN)
+  async function submit(v) {
+    if (checking || v.length < 4) return
+    setChecking(true)
+    const r = await adminLogin(v)
+    setChecking(false)
+    if (r.ok) onSuccess()
+    else { setError(r.message); setPin('') }
+  }
+
+  function handleChange(e) {
     if (checking) return
-    const v = e.target.value.replace(/\D/g, '').slice(0, 4)
+    const v = e.target.value.replace(/\D/g, '').slice(0, ADMIN_PIN_LENGTH)
     setPin(v)
     setError('')
-    if (v.length === 4) {
-      setChecking(true)
-      const r = await adminLogin(v)
-      setChecking(false)
-      if (r.ok) onSuccess()
-      else { setError(r.message); setPin('') }
-    }
+    if (v.length === ADMIN_PIN_LENGTH) submit(v)
   }
 
   return (
@@ -65,16 +70,17 @@ function AdminPinOverlay({ onSuccess, onClose }) {
           ref={inputRef}
           type="password"
           inputMode="numeric"
-          maxLength={4}
+          maxLength={ADMIN_PIN_LENGTH}
           value={pin}
           onChange={handleChange}
-          onKeyDown={e => { if (e.key === 'Escape') onClose() }}
-          placeholder="●●●●"
+          onKeyDown={e => { if (e.key === 'Escape') onClose(); else if (e.key === 'Enter') submit(pin) }}
+          placeholder="●●●●●●"
           style={{textAlign:'center',fontSize:'1.8rem',letterSpacing:'0.4em',border:'2px solid #d1d5db',borderRadius:10,padding:'12px',outline:'none',fontFamily:'inherit',width:'100%',boxSizing:'border-box'}}
         />
         {error && <div style={{textAlign:'center',color:'#dc2626',fontWeight:700,fontSize:'0.9rem'}}>{error}</div>}
         <div style={{display:'flex',gap:8}}>
           <button onClick={onClose} style={{flex:1,height:44,border:'2px solid #d1d5db',borderRadius:10,background:'#fff',color:'#374151',fontWeight:700,cursor:'pointer'}}>キャンセル</button>
+          <button onClick={() => submit(pin)} disabled={pin.length < 4 || checking} style={{flex:2,height:44,border:'none',borderRadius:10,background:'#1a5fa8',color:'#fff',fontWeight:800,cursor:'pointer',opacity:pin.length < 4 || checking ? 0.4 : 1}}>{checking ? '確認中' : 'ログイン'}</button>
         </div>
       </div>
     </div>
@@ -96,6 +102,8 @@ export default function App() {
 
   useEffect(() => {
     StatusBar.hide().catch(() => {})
+    // the punch screen never runs with an admin login left over from an earlier admin screen
+    if (isDeviceRegistered()) dropAdminToken()
     const timer = setTimeout(() => setDbReady(true), 8000)
     initDB()
       .then(() => { clearTimeout(timer); setDbReady(true) })

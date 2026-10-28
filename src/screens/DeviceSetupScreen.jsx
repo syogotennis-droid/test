@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
-import { adminLogin, needsServerOrigin, getServerOrigin, setServerOrigin } from '../lib/db'
+import { adminLogin, needsServerOrigin, getServerOrigin, setServerOrigin, ADMIN_PIN_LENGTH } from '../lib/db'
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫']
+// 6 digits; a PIN set before that (4 digits) still works until it is changed
+const MIN_PIN = 4
 
 export default function DeviceSetupScreen({ onDone }) {
   const [pin, setPin] = useState('')
@@ -9,21 +11,22 @@ export default function DeviceSetupScreen({ onDone }) {
   const [checking, setChecking] = useState(false)
   const askUrl = needsServerOrigin()
   const [url, setUrl] = useState(getServerOrigin)
+  const [label, setLabel] = useState('')
 
   function press(k) {
     if (checking || k === '') return
     if (k === '⌫') { setPin(p => p.slice(0, -1)); setError(''); return }
-    if (pin.length >= 4) return
+    if (pin.length >= ADMIN_PIN_LENGTH) return
     setPin(p => p + k)
     setError('')
   }
 
   async function confirm() {
-    if (pin.length !== 4 || checking) return
+    if (pin.length < MIN_PIN || checking) return
     if (askUrl && !url.trim()) { setError('サーバーのURLを入力'); return }
     if (askUrl) setUrl(setServerOrigin(url))
     setChecking(true)
-    const r = await adminLogin(pin, { device: true })
+    const r = await adminLogin(pin, { device: true, label })
     setChecking(false)
     if (r.ok) onDone()
     else { setError(askUrl && r.message.startsWith('通信エラー') ? 'サーバーに接続できません。URLとネット接続を確認してください' : r.message); setPin('') }
@@ -51,8 +54,18 @@ export default function DeviceSetupScreen({ onDone }) {
             />
           </label>
         )}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.82rem', fontWeight: 700, color: '#374151' }}>
+          端末の名前（なくても可）
+          <input
+            value={label}
+            maxLength={40}
+            onChange={e => setLabel(e.target.value)}
+            placeholder="例：入口のタブレット"
+            style={{ height: 44, border: '1.5px solid #d1d5db', borderRadius: 8, padding: '0 10px', fontSize: '0.95rem', fontFamily: 'inherit' }}
+          />
+        </label>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: ADMIN_PIN_LENGTH }).map((_, i) => (
             <span key={i} style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #9baab8', background: i < pin.length ? '#1a5fa8' : 'transparent', display: 'inline-block' }} />
           ))}
         </div>
@@ -64,7 +77,7 @@ export default function DeviceSetupScreen({ onDone }) {
             </button>
           ))}
         </div>
-        <button onClick={confirm} disabled={pin.length !== 4 || checking} style={{ height: 48, border: 'none', borderRadius: 10, background: '#1a5fa8', color: '#fff', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', opacity: pin.length !== 4 || checking ? 0.4 : 1 }}>
+        <button onClick={confirm} disabled={pin.length < MIN_PIN || checking} style={{ height: 48, border: 'none', borderRadius: 10, background: '#1a5fa8', color: '#fff', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', opacity: pin.length < MIN_PIN || checking ? 0.4 : 1 }}>
           {checking ? '確認中' : '登録する'}
         </button>
       </div>
