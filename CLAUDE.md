@@ -112,7 +112,7 @@ npx wrangler pages dev dist
 - 計算は `src/lib/db.js` の `computeTransport` / `transportByDate` / `attendanceDates` / `prepTimeRows` を画面とExcelで共用。Excelの出勤簿は、交通費のある人だけ打刻表の退勤打刻の右に「交通費」列（その日の金額は丸めずに入れ、合計行は ROUNDUP(SUM()) で月の支給額と一致。土日の色も付ける）
 
 ## 食費補助
-- 管理画面の勤務記録の編集で、その日の食事の回数（なし・1・2回）を入れる（`meal_days`、`POST /api/batch/day_edit` の `mealCount`。0で削除。管理者のみ）
+- 管理画面の勤務記録の編集で、その日の食事の「あり・なし」を入れる（あり＝1回）（`meal_days`、`POST /api/batch/day_edit` の `mealCount`。0で削除。管理者のみ）
 - 1回の金額は設定「食費補助」の `config.mealPrices`（`[{ from, price }]`、なければ350円）。その日に有効な金額で計算し、給与の表・Excelの表3に「食費補助（N回）」のマイナスの行（金額が違う日があれば金額ごとの行）。社員は給与を計算しないので、Excelの社員のシートの2行目に回数と金額だけ出す
 - 計算は `db.js` の `mealRows` を画面とExcelで共用
 

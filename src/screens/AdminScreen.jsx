@@ -1825,10 +1825,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 <div className={styles.dayEditTransport}>
                   <span className={styles.dayEditTransportLabel}>この日の食費補助</span>
                   <div className={styles.dayEditTransportBtns}>
-                    {[0, 1, 2].map(n => (
-                      <button key={n} className={[styles.dayEditTransportBtn, mealCur === n ? (n ? styles.dayEditTransportOn : styles.dayEditTransportOff) : ''].join(' ')}
-                        onClick={() => setMealCur(n)}>{n ? `${n}回` : 'なし'}</button>
-                    ))}
+                    <button className={[styles.dayEditTransportBtn, mealCur > 0 ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => setMealCur(mealInit > 0 ? mealInit : 1)}>あり</button>
+                    <button className={[styles.dayEditTransportBtn, !mealCur ? styles.dayEditTransportOff : ''].join(' ')} onClick={() => setMealCur(0)}>なし</button>
                   </div>
                 </div>
               )}
@@ -1977,7 +1975,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               })}
               {hasChanges && mealChanged && (
                 <div className={styles.confirmDayTotal}>
-                  <span>この日の食費補助</span><strong>{mealCur ? `${mealCur}回` : 'なし'}</strong>
+                  <span>この日の食費補助</span><strong>{mealCur ? 'あり' : 'なし'}</strong>
                 </div>
               )}
               {hasChanges && transportChanged && (
@@ -3989,7 +3987,7 @@ function MealSettings() {
   return (
     <div>
       <div style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
-        勤務記録の編集で入れた食事の回数 × 1回の金額を、給与から差し引きます。金額の登録がないときは1回 {DEFAULT_MEAL_PRICE}円です。
+        勤務記録の編集で食事「あり」にした日の数 × 1回の金額を、給与から差し引きます。金額の登録がないときは1回 {DEFAULT_MEAL_PRICE}円です。
       </div>
       {sorted.length > 0 && (
         <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: 12 }}>
