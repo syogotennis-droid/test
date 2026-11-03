@@ -78,6 +78,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER
 );
 
+-- 食費補助: meals taken on a day (deducted from pay; price per meal in config.mealPrices)
+CREATE TABLE IF NOT EXISTS meal_days (
+  id TEXT PRIMARY KEY,          -- userId_date
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_meal_date ON meal_days(date);
+
 -- Registered punch tablets: a name and when each was last used (設定 → 登録済みの打刻端末).
 -- token = the device row of sessions (tablets registered earlier get a row when next used)
 CREATE TABLE IF NOT EXISTS device_info (

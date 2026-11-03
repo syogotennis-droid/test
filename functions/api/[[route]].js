@@ -219,7 +219,7 @@ export async function onRequest(context) {
       } else {
         // everything that belongs to the user, so a later user with the same ID starts clean
         await DB.batch(['users WHERE id', ...['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days',
-          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans'].map(t => `${t} WHERE user_id`)]
+          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans', 'meal_days'].map(t => `${t} WHERE user_id`)]
           .map(t => DB.prepare(`DELETE FROM ${t} = ?`).bind(id)))
       }
       return ok({ ok: true })
@@ -703,10 +703,23 @@ export async function onRequest(context) {
       return ok(map)
     }
 
+    // ── 食費補助 (meals per day; admin only) ───────────────────────────────
+    if (route === 'meal_days' && method === 'GET') {
+      const { userId, dateFrom, dateTo } = Object.fromEntries(sp)
+      const where = [], args = []
+      if (userId) { where.push('user_id = ?'); args.push(userId) }
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      const { results } = await DB.prepare('SELECT user_id, date, count FROM meal_days' + (where.length ? ' WHERE ' + where.join(' AND ') : '')).bind(...args).all()
+      const map = {}
+      results.forEach(r => { map[`${r.user_id}_${r.date}`] = r.count })
+      return ok(map)
+    }
+
     // ── Batch Day Edit ─────────────────────────────────────────────────────
     if (route === 'batch/day_edit' && method === 'POST') {
       const body = await readBody()
-      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports } = body
+      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports, mealCount } = body
       needStr(userId, 'userId')
       if (!isDate(dateStr)) throw new HttpError('bad_date', 400)
       if ((logsToCreate || []).some(l => !LOG_TYPES.has(l.logType))) return fail('invalid log_type', 400)
@@ -715,6 +728,13 @@ export async function onRequest(context) {
       const stamp = (time, nextDay) => jstIso(nextDay ? addDays(dateStr, 1) : dateStr, time)
       const now = new Date().toISOString()
       const stmts = []
+      if (mealCount !== undefined) {
+        const c = Number(mealCount)
+        if (!Number.isInteger(c) || c < 0 || c > 9) throw new HttpError('bad_meal_count', 400)
+        stmts.push(c > 0
+          ? DB.prepare('INSERT OR REPLACE INTO meal_days (id, user_id, date, count, updated_at) VALUES (?, ?, ?, ?, ?)').bind(`${userId}_${dateStr}`, userId, dateStr, c, now)
+          : DB.prepare('DELETE FROM meal_days WHERE id = ?').bind(`${userId}_${dateStr}`))
+      }
       if (typeof transportEligible === 'boolean') {
         stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
         stmts.push(transportMethodsStmt(DB, userId, dateStr, transportEligible ? body.transportMethods : null, now))

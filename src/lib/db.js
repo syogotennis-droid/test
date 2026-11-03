@@ -964,8 +964,13 @@ export const COMMUTE_METHODS = [
   { key: 'car', label: '車' },
   { key: 'bike', label: 'バイク' },
   { key: 'public', label: '公共交通機関' },
+  { key: 'pass', label: '定期' },
 ]
 const COMMUTE_KEYS = COMMUTE_METHODS.map(m => m.key)
+// set by an amount (公共交通機関 per day, 定期 per month) instead of a distance
+const AMOUNT_KEYS = new Set(['public', 'pass'])
+// 定期 (commuter pass) is a fixed amount per month: not chosen per day, not asked at clock-out
+const isDaily = m => m.key !== 'pass'
 export const commuteLabel = key => COMMUTE_METHODS.find(m => m.key === key)?.label || (key === 'legacy' ? '交通費' : key)
 
 // Commute settings valid on a date. Changes are kept in commuteHistory with a start date, so
@@ -974,6 +979,7 @@ export const commuteLabel = key => COMMUTE_METHODS.find(m => m.key === key)?.lab
 // on a day they choose which ones they used (transport_day_methods).
 //  car / bike: the day's transport = km × unit price (as in the customer's sheets; not doubled)
 //  public: a fixed amount per day
+//  pass (定期): a fixed amount per month, paid when the month has at least one transport day
 // Older data: a single commuteMethod (bus / train = public; walk = none), oneWayKm (paid ×2),
 // commuteDistanceKm (per day), or no method at all (legacy: itemRates['交通費'].amount per day).
 function commuteEntry(user, dateStr) {
@@ -992,9 +998,9 @@ function commuteEntry(user, dateStr) {
 }
 function methodsOfEntry(e) {
   if (e.methods && typeof e.methods === 'object') {
-    return COMMUTE_KEYS.filter(k => e.methods[k]).map(k => (k === 'public'
+    return COMMUTE_KEYS.filter(k => e.methods[k]).map(k => (AMOUNT_KEYS.has(k)
       ? { key: k, amount: Number(e.methods[k].amount) || 0 }
-      : { key: k, km: Number(e.methods[k].km) || 0 })).filter(m => (m.key === 'public' ? m.amount > 0 : m.km > 0))
+      : { key: k, km: Number(e.methods[k].km) || 0 })).filter(m => (AMOUNT_KEYS.has(m.key) ? m.amount > 0 : m.km > 0))
   }
   const method = e.method === 'bus' || e.method === 'train' ? 'public' : e.method
   if (method === 'none' || method === 'walk') return []
@@ -1022,9 +1028,10 @@ export function commuteOn(user, dateStr) {
 export function getCommute(user) {
   const c = commuteOn(user, getTodayDate())
   const salaried = user?.employeeType === 'salaried'
-  const asks = !salaried && c.list.length > 0
+  const daily = c.list.filter(isDaily)
+  const asks = !salaried && daily.length > 0
   const label = c.list.length ? c.list.map(m => commuteLabel(m.key)).join('・') : c.legacy ? '未設定' : '交通費なし'
-  return { ...c, label, asks, options: asks ? c.list.filter(m => m.key !== 'legacy').map(m => m.key) : [] }
+  return { ...c, label, asks, options: asks ? daily.filter(m => m.key !== 'legacy').map(m => m.key) : [] }
 }
 
 export async function getCarRates() {
@@ -1052,7 +1059,7 @@ export function carRateForDate(carRates, dateStr, kind = 'car') {
 // Methods paid on a day: one registered → that one; two or more → the ones chosen that day
 // (nothing recorded → the first one)
 function methodsUsedOn(user, d, dayMethods) {
-  const { list } = commuteOn(user, d)
+  const list = commuteOn(user, d).list.filter(isDaily)
   if (list.length <= 1) return list
   const picked = (dayMethods[`${user?.id}_${d}`] || []).filter(k => list.some(m => m.key === k))
   return picked.length ? list.filter(m => picked.includes(m.key)) : [list[0]]
@@ -1101,6 +1108,10 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
     given = upTo
     return pay
   }
+  // 定期: the month's fixed amount (the setting valid on the last transport day of the month)
+  const lastDay = [...eligibleDates].sort().pop()
+  const pass = lastDay ? commuteOn(user, lastDay).list.find(m => m.key === 'pass') : null
+  const passRow = pass ? [{ label: '交通費（定期）', excelLabel: '交通費（定期）', days: eligibleDates.length, rate: pass.amount, pay: payYen(pass.amount), pass: true }] : []
   return groups.map(g => {
     // a single row (one way of commuting, one rate all month): just 交通費
     if (groups.length === 1) {
@@ -1126,7 +1137,50 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
       excelLabel: `交通費（${inner ? inner + '・' : ''}${g.days}日）`,
       days: g.days, rate: g.rate, pay: share(g),
     }
-  })
+  }).concat(passRow)
+}
+
+// ─── 食費補助 (meal deduction) ─────────────────────────────────────────────────
+// Meals per day are entered in 勤務記録の編集; each meal is deducted at the price valid on that day
+// (config.mealPrices = [{ from, price }], 350 yen when nothing is saved).
+export const DEFAULT_MEAL_PRICE = 350
+
+export async function getMealDays(dateFrom, dateTo, userId) {
+  return api('/meal_days', { query: { dateFrom, dateTo, userId } })
+}
+
+export async function getMealPrices() {
+  const cfg = await api('/config')
+  let list = []
+  try { list = JSON.parse(cfg.mealPrices || '[]') } catch {}
+  return Array.isArray(list) ? list : []
+}
+
+export async function saveMealPrices(list) {
+  await api('/config/mealPrices', { method: 'PUT', body: { value: JSON.stringify(list) } })
+}
+
+export function mealPriceForDate(prices, dateStr) {
+  const sorted = [...(prices || [])].sort((a, b) => (a.from || '').localeCompare(b.from || ''))
+  let price = DEFAULT_MEAL_PRICE
+  for (const e of sorted) if (!e.from || e.from <= dateStr) price = Number(e.price) || 0
+  return price
+}
+
+// Pay rows of the month's meals for one person: one row per price, negative amounts
+// mealDays = { 'userId_date': count }
+export function mealRows(userId, mealDays, prices) {
+  const groups = []
+  for (const [k, count] of Object.entries(mealDays || {}).sort()) {
+    if (!k.startsWith(userId + '_') || !(count > 0)) continue
+    const price = mealPriceForDate(prices, k.slice(userId.length + 1))
+    const g = groups.find(x => x.price === price)
+    if (g) g.count += count; else groups.push({ price, count })
+  }
+  return groups.filter(g => g.price > 0).map(g => ({
+    label: groups.length > 1 ? `食費補助（${g.price}円・${g.count}回）` : `食費補助（${g.count}回）`,
+    count: g.count, price: g.price, pay: -g.price * g.count,
+  }))
 }
 
 export async function getTransportDays(dateFrom, dateTo) {
@@ -1383,12 +1437,14 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const enc = new TextEncoder()
 
   // Fetch work_reports: prefer session data over legacy, merge correctly
-  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates, transportMethods] = await Promise.all([
+  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices] = await Promise.all([
     getMergedWorkReportsForRange(dateFrom || '', dateTo || ''),
     getSessionWorkReportsWithSessionsForRange(dateFrom || '', dateTo || ''),
     getTransportDays(dateFrom || '', dateTo || '9999-12-31'),
     getCarRates(),
     getTransportDayMethods(dateFrom || '', dateTo || '9999-12-31'),
+    getMealDays(dateFrom || '', dateTo || '9999-12-31'),
+    getMealPrices(),
   ])
   const dayCountCells = (row, cells) => cells.map(([col, text]) =>
     `<c r="${col}${row}" s="${S.username}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`).join('')
@@ -1516,7 +1572,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
       const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
-        dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`]]) + `</row>`
+        dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`],
+          ...mealRows(user.id, mealDays, mealPrices).map((m, i) => [colLetter(3 + i), `${m.label}：${m.pay.toLocaleString()}円`])]) + `</row>`
       const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}</sheetData>`
       const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="${4 + nBreaksSal * 2}" width="14" customWidth="1"/></cols>`
       sheetXmls.push(
@@ -1579,7 +1636,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const commute = getCommute(user)
     const transportRowsX = computeTransport(user, transportDates, carRates, transportMethods)
     // 表1の「交通費」列（交通費のある人だけ）: その日の金額
-    const showTransportCol = commute.asks || transportRowsX.length > 0
+    // (定期 is a monthly amount: not in the daily column, only in the pay table)
+    const showTransportCol = commute.asks || transportRowsX.some(r => !r.pass)
     const transportDay = showTransportCol ? transportByDate(user, transportDates, carRates, transportMethods) : {}
 
     // Table 2 type columns: A=日付, B=曜日, C onwards per type, then 時間計
@@ -1865,6 +1923,20 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         `<c r="B${payRowIdx}" s="${S.prepHrs}"><v>${Math.round(g.count * PREP_HOURS * 100) / 100}</v></c>` +
         `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${g.wage}</v></c>` +
         `<c r="D${payRowIdx}" s="${S.pay.wd}"><f>ROUNDUP(B${payRowIdx}*C${payRowIdx},0)</f></c>` +
+        `</row>`
+      )
+      payRowIdx++
+    }
+
+    // 食費補助行（マイナス）
+    for (const m of mealRows(user.id, mealDays, mealPrices)) {
+      totalPayAmount += m.pay
+      payRows.push(
+        `<row r="${payRowIdx}">` +
+        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(m.label)}</t></is></c>` +
+        `<c r="B${payRowIdx}" s="${S.pay_lbl}"/>` +
+        `<c r="C${payRowIdx}" s="${S.pay_rate}"><v>${-m.price}</v></c>` +
+        `<c r="D${payRowIdx}" s="${S.pay.wd}"><v>${m.pay}</v></c>` +
         `</row>`
       )
       payRowIdx++
