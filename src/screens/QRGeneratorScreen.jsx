@@ -50,7 +50,7 @@ async function openPrintWindow(users) {
   // The Android app cannot open a print window (window.open goes to the outside browser as a
   // blank page, and the cards could end up written over the app's own screen)
   if (window.Capacitor?.isNativePlatform?.()) {
-    alert('アプリからは印刷できません。パソコンのブラウザで管理画面（施設のURL/admin）を開き、「QR印刷」から印刷してください。')
+    alert('アプリからは印刷できません。ブラウザ（Chromeなど）で管理画面（施設のURL/admin）を開き、「QR印刷」から印刷してください。')
     return
   }
   // open before the async QR generation so the browser treats it as a click popup
