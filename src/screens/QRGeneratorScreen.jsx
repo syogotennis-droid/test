@@ -47,9 +47,15 @@ async function cardHtml(user) {
 
 async function openPrintWindow(users) {
   if (users.length === 0) return
+  // The Android app cannot open a print window (window.open goes to the outside browser as a
+  // blank page, and the cards could end up written over the app's own screen)
+  if (window.Capacitor?.isNativePlatform?.()) {
+    alert('アプリからは印刷できません。パソコンのブラウザで管理画面（施設のURL/admin）を開き、「QR印刷」から印刷してください。')
+    return
+  }
   // open before the async QR generation so the browser treats it as a click popup
   const win = window.open('', '_blank', 'width=700,height=500')
-  if (!win) { alert('印刷画面を開けません。ブラウザのポップアップを許可してください。'); return }
+  if (!win || win === window) { alert('印刷画面を開けません。ブラウザのポップアップを許可してください。'); return }
   win.document.write('<p style="font-family:sans-serif;padding:16px">印刷の準備中…</p>')
   const cards = await Promise.all(users.map(cardHtml))
   win.document.open()

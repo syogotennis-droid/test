@@ -3055,7 +3055,10 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
               <QRImage value={qrUser.id} size={200} />
             </div>
             <div className={styles.modalActions}>
-              <button className={styles.saveBtn} onClick={() => { window.print() }}>印刷</button>
+              <button className={styles.saveBtn} onClick={() => {
+                if (Capacitor.isNativePlatform()) alert('アプリからは印刷できません。パソコンのブラウザで管理画面（施設のURL/admin）を開き、「QR印刷」から印刷してください。')
+                else window.print()
+              }}>印刷</button>
               <button className={styles.cancelBtn} onClick={() => setQrUser(null)}>閉じる</button>
             </div>
           </div>
