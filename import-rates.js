@@ -93,7 +93,20 @@ async function main() {
     if (!d) {
       const old = defs.find(x => x.name === name && x.deleted)
       if (old) { delete old.deleted; d = old; added.push(`${name}（削除済みを戻す）`) }
-      else { d = { id: 'w_' + randomBytes(5).toString('hex'), name }; defs.push(d); added.push(name) }
+      else {
+        d = { id: 'w_' + randomBytes(5).toString('hex'), name }
+        // 「スイム祝日」など: 元の業務と同じカードにまとめる（元の業務にグループがなければ、元の業務の名前でグループを作る）
+        const base = name.endsWith('祝日') && defs.filter(x => !x.deleted && name.startsWith(x.name) && name.length > x.name.length)
+          .sort((a, b) => b.name.length - a.name.length)[0]
+        if (base) {
+          if (!base.group) { base.group = base.name; base.variant = '通常' }
+          d.group = base.group
+          d.variant = (name.startsWith(base.group) ? name.slice(base.group.length) : name.slice(base.name.length)) || name
+          const last = defs.reduce((at, x, i) => (x.group === base.group ? i : at), -1)
+          defs.splice(last + 1, 0, d)
+        } else defs.push(d)
+        added.push(name)
+      }
     }
     return d.id
   }
