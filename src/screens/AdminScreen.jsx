@@ -16,6 +16,7 @@ import {
   pairBreaks, breakMinutes, BREAK_START, BREAK_END, getTodayPunchState,
   getCommute, getTransportDays, getTransportDayMethods, getCarRates, saveCarRates, computeTransport, attendanceDates,
   getMealDays, getMealPrices, saveMealPrices, mealRows, mealPriceForDate, DEFAULT_MEAL_PRICE,
+  getPaidLeaves, leaveSessionId, isLeaveSession, paidLeaveSummary, PAID_LEAVE_LABEL,
   COMMUTE_METHODS, carRateForDate, commuteOn, commuteLabel,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
   prepTimeRows, PREP_HOURS, planMinWageChange, withRateFrom, ratePeriods,
@@ -494,6 +495,7 @@ function CalendarTab({ users, today, isTablet }) {
   const [loading, setLoading] = useState(false)
   const [selectedDay, setSelectedDay] = useState(null)
   const [sessionWorkStatus, setSessionWorkStatus] = useState({})
+  const [leaves, setLeaves] = useState({}) // { 'userId_date': 'full' | 'half' } 有給
 
   useEffect(() => {
     if (users.length > 0 && !selectedUser) setSelectedUser(users[0])
@@ -514,10 +516,11 @@ function CalendarTab({ users, today, isTablet }) {
     const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: selectedUser.id }),
-      getSessionWorkStatusForUserRange(selectedUser.id, from, to)
-    ]).then(([data, workStatus]) => {
+      getSessionWorkStatusForUserRange(selectedUser.id, from, to),
+      getPaidLeaves(from, to, selectedUser.id).catch(() => ({})),
+    ]).then(([data, workStatus, leaveMap]) => {
       if (seq !== loadSeq.current) return
-      setLogs(data); setSessionWorkStatus(workStatus); setLoading(false)
+      setLogs(data); setSessionWorkStatus(workStatus); setLeaves(leaveMap || {}); setLoading(false)
     }).catch(() => {
       if (seq !== loadSeq.current) return
       setLogs([]); setSessionWorkStatus({}); setLoading(false)
@@ -664,6 +667,9 @@ function CalendarTab({ users, today, isTablet }) {
                         </div>
                       )}
                     </>
+                  )}
+                  {leaves[`${selectedUser?.id}_${year}-${pad(month + 1)}-${pad(d)}`] && (
+                    <div className={styles.calWorkBadgeBlue}>{leaves[`${selectedUser?.id}_${year}-${pad(month + 1)}-${pad(d)}`] === 'full' ? '有給' : '半日有給'}</div>
                   )}
                   {calWorkBadgeClass && <div className={calWorkBadgeClass}>{calWorkBadgeText}</div>}
                 </div>
@@ -1115,6 +1121,18 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       .catch(() => {})
   }, [user.id, dateStr])
   const mealChanged = mealInit !== null && mealCur !== mealInit
+  // 有給: '' / 'full' (1日: no punches; its work is the shift "leave-<date>") / 'half' (半日)
+  const leaveSid = leaveSessionId(dateStr)
+  const [leaveInit, setLeaveInit] = useState(null) // null = loading
+  const [leaveCur, setLeaveCur] = useState('')
+  useEffect(() => {
+    getPaidLeaves(dateStr, dateStr, user.id)
+      .then(m => { const v = m[`${user.id}_${dateStr}`] || ''; setLeaveInit(v); setLeaveCur(v) })
+      .catch(() => {})
+  }, [user.id, dateStr])
+  const leaveChanged = leaveInit !== null && leaveCur !== leaveInit
+  // the shifts whose work rows are edited here (the 1日有給's work while it is chosen)
+  const workSids = [...sessions.map(s => s.sessionId), ...(leaveCur === 'full' ? [leaveSid] : [])]
 
   useEffect(() => {
     if (isSalaried) { setWorkItemsLoaded(true); return }
@@ -1132,12 +1150,16 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         rows[s.sessionId] = savedRows.length > 0 ? savedRows : [{ type: '', h: 0, m: 0 }]
         snapshot[s.sessionId] = { ...items }
       }
+      const leaveItems = sessionReports[leaveSessionId(dateStr)] || {}
+      const leaveRows = Object.entries(leaveItems).map(([type, mins]) => ({ type, h: Math.floor(mins / 60), m: mins % 60 }))
+      rows[leaveSessionId(dateStr)] = leaveRows.length > 0 ? leaveRows : [{ type: '', h: 0, m: 0 }]
+      snapshot[leaveSessionId(dateStr)] = { ...leaveItems }
       initialWorkRowsSnapshot.current = snapshot
       setSessionWorkRows(rows)
       setLegacyWorkItems(legacyItems)
       // Detect conflict: both session and legacy data exist with different content
       const hasLeg = Object.values(legacyItems).some(m => m > 0)
-      const hasSess = Object.values(sessionReports).some(items => Object.values(items).some(m => m > 0))
+      const hasSess = Object.entries(sessionReports).some(([sid, items]) => !isLeaveSession(sid) && Object.values(items).some(m => m > 0))
       if (hasLeg && hasSess) {
         const sessMerged = {}
         Object.values(sessionReports).forEach(items => {
@@ -1264,10 +1286,10 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   )
   const hasLegacyData = Object.values(legacyWorkItems).some(m => m > 0)
   const hasQrSessions = dayLogs.length > 0
-  const canShowDelete = hasQrSessions || workHasData || hasLegacyData
+  const canShowDelete = hasQrSessions || workHasData || hasLegacyData || !!leaveInit
 
-  const dayTotalMins = sessions.reduce((total, s) => {
-    return total + (sessionWorkRows[s.sessionId] || []).reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
+  const dayTotalMins = workSids.reduce((total, sid) => {
+    return total + (sessionWorkRows[sid] || []).reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
   }, 0)
 
   function fmtWorkTotal(mins) {
@@ -1327,6 +1349,20 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
             typesSeen.add(r.type)
           }
         }
+      }
+    }
+    if (leaveCur === 'full') {
+      if (sessions.some((x, i) => sessionTimes[i].inTime || sessionTimes[i].outTime)) errs.push('1日の有給の日には打刻を入れられません（打刻がある日は「半日」）')
+      if (!isSalaried) {
+        const rows = sessionWorkRows[leaveSid] || [], seen = new Set()
+        rows.forEach((r, ri) => {
+          const rpfx = `有給の業務${ri + 1}行目：`
+          if (!r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0)) errs.push(`${rpfx}業務種別を選択`)
+          if (r.type && (parseInt(r.h) || 0) === 0 && (parseInt(r.m) || 0) === 0) errs.push(`${rpfx}業務時間を入力`)
+          const mv = parseInt(r.m)
+          if (r.m !== '' && r.m !== 0 && !isNaN(mv) && (mv < 0 || mv > 59)) errs.push(`${rpfx}分は0〜59`)
+          if (r.type) { if (seen.has(r.type)) errs.push(`有給の業務：「${itemLabel(r.type)}」が複数行に登録されています`); seen.add(r.type) }
+        })
       }
     }
     // two shifts can't overlap in time
@@ -1402,7 +1438,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         // same test as the save button: something would actually be saved
         const d = computeLogDiff()
         dirty = d.logsToDelete.length > 0 || d.logsToUpdate.length > 0 || d.logsToCreate.length > 0 ||
-          (workItemsLoaded && !isSalaried && hasWorkDataChanged()) || transportChanged || mealChanged
+          (workItemsLoaded && !isSalaried && hasWorkDataChanged()) || transportChanged || mealChanged || leaveChanged
       } catch { dirty = true }
       if (dirty && !window.confirm('入力した内容を破棄して閉じますか？')) return
     }
@@ -1411,15 +1447,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
   function hasWorkDataChanged() {
     const initial = initialWorkRowsSnapshot.current
-    for (const s of sessions) {
-      const rows = sessionWorkRows[s.sessionId] || []
+    for (const sid of workSids) {
+      const rows = sessionWorkRows[sid] || []
       const cur = {}
       for (const r of rows) {
         if (!r.type) continue
         const mins = (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0)
         if (mins > 0) cur[r.type] = mins
       }
-      const init = initial[s.sessionId] || {}
+      const init = initial[sid] || {}
       const ck = Object.keys(cur).sort(), ik = Object.keys(init).sort()
       if (ck.join() !== ik.join() || ck.some(k => cur[k] !== init[k])) return true
     }
@@ -1440,7 +1476,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     }
     setValidationErrors([])
     // work longer than the shift (clock-in → clock-out, minus breaks): ask before going on
-    if (!isSalaried) {
+    // (not on a 半日有給: the paid half is entered together with the work)
+    if (!isSalaried && leaveCur !== 'half') {
       const toMin = t => { const [h, m] = (t || '').split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null }
       const over = []
       sessions.forEach((s, si) => {
@@ -1456,7 +1493,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     const { logsToDelete, logsToUpdate, logsToCreate, cleared } = computeLogDiff()
     const logChanged = logsToDelete.length > 0 || logsToUpdate.length > 0 || logsToCreate.length > 0
     const workChanged = !isSalaried && hasWorkDataChanged()
-    setHasChanges(logChanged || workChanged || transportChanged || mealChanged)
+    setHasChanges(logChanged || workChanged || transportChanged || mealChanged || leaveChanged)
     setClearedPunches([...new Set(cleared)])
     setStep('confirm')
   }
@@ -1497,8 +1534,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         const ak = Object.keys(a).sort(), bk = Object.keys(b).sort()
         return ak.join() === bk.join() && ak.every(k => a[k] === b[k])
       }
-      const sessionWorkData = isSalaried ? [] : sessions
-        .map(s => ({ sessionId: s.sessionId, items: rowsToItems(sessionWorkRows[s.sessionId] || []) }))
+      // (a 1日有給 that is cancelled here takes its work with it on the server)
+      const sessionWorkData = isSalaried ? [] : workSids
+        .map(sid => ({ sessionId: sid, items: rowsToItems(sessionWorkRows[sid] || []) }))
         .filter(x => !sameItems(x.items, initialWork[x.sessionId] || {}))
       await saveDayEditBatch({
         userId: user.id, dateStr,
@@ -1508,6 +1546,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         deletedSessionIds,
         ...(transportChanged ? { transportEligible: transportCur, ...(dayOptions.length > 1 && transportCur ? { transportMethods: methodsCur } : {}) } : {}),
         ...(mealChanged ? { mealCount: mealCur } : {}),
+        ...(leaveChanged ? { paidLeave: leaveCur } : {}),
       })
       onSaved()
     } catch (err) {
@@ -1527,6 +1566,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         isSalaried, sessionWorkData: [], deletedSessionIds: [],
         transportEligible: true, // removes a 支給なし mark of that day too
         mealCount: 0,
+        paidLeave: '',
         deleteAllReports: true,
       })
       if (!isSalaried) { try { await saveWorkReport(user.id, dateStr, {}) } catch {} }
@@ -1633,7 +1673,85 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     )
   }
 
-  const isEmpty = sessions.length === 0 && !hasLegacyData
+  // work rows of one shift (sid) — also used for the work of a 1日有給 (shift "leave-<date>")
+  function renderWorkEditor(sid, slot) {
+    const rows = sessionWorkRows[sid] || []
+    const sessionTotalMins = rows.reduce((sum, r) => sum + (parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0), 0)
+    const selectedSessionTypes = new Set(rows.map(r => r.type).filter(Boolean))
+    const hasMoreSessionTypes = userWorkItems.some(t => !selectedSessionTypes.has(t))
+    return (
+      <>
+      <div className={styles.dayEditWorkRows}>
+        <div className={styles.dayEditWorkTableHeader}>
+          <span className={styles.dayEditWorkColType}>業務</span>
+          <span className={styles.dayEditWorkColTime}>時間</span>
+          <span className={styles.dayEditWorkColOp}></span>
+        </div>
+        {rows.map((row, ri) => {
+          const isLastRow = rows.length === 1
+          const isNewRow = pendingFocusSessionId === sid && ri === rows.length - 1
+          // a saved item that can no longer be chosen (e.g. deleted) stays visible
+          const availableTypes = [
+            ...(row.type && !userWorkItems.includes(row.type) ? [row.type] : []),
+            ...userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t)),
+          ]
+          const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
+          const rowErr = getWorkRowError(row)
+          return (
+            <div key={ri} className={styles.dayEditWorkRow}>
+              <select
+                ref={isNewRow ? lastWorkSelectRef : null}
+                className={styles.dayEditWorkTypeSelect}
+                value={row.type}
+                onChange={e => updateWorkRow(sid, ri, 'type', e.target.value)}
+              >
+                <option value="">業務を選択</option>
+                {availableTypes.map(t => <option key={t} value={t}>{itemLabel(t)}</option>)}
+              </select>
+              <div className={styles.dayEditWorkTimeCell}>
+                <input type="number" min="0" max="23"
+                  className={styles.dayEditWorkNum}
+                  value={row.h === 0 ? '' : row.h} placeholder="0"
+                  onChange={e => updateWorkRow(sid, ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                  onFocus={e => e.target.select()} />
+                <span className={styles.dayEditWorkUnit}>時間</span>
+                <input type="number" min="0" max="59"
+                  className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
+                  value={row.m === 0 ? '' : row.m} placeholder="0"
+                  onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(sid, ri, 'm', isNaN(n) ? 0 : n) }}
+                  onFocus={e => e.target.select()} />
+                <span className={styles.dayEditWorkUnit}>分</span>
+              </div>
+              {!isLastRow && (
+                <button className={styles.dayEditWorkRowDelSmall} onClick={() => removeWorkRow(sid, ri)} title="削除">×</button>
+              )}
+              {rowErr && <div className={styles.dayEditWorkRowErr}>{rowErr}</div>}
+            </div>
+          )
+        })}
+      </div>
+      <div className={styles.dayEditWorkFooter}>
+        <div className={styles.dayEditWorkBtns}>
+          {hasMoreSessionTypes && (
+            <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(sid)}>＋ 業務を追加</button>
+          )}
+          <button className={styles.dayEditAddWorkBtn} onClick={() => setCopyFor({ sessionId: sid, slot })}>日付を選んでコピー</button>
+        </div>
+        {copyFor?.sessionId === sid && (
+          <CopyFromDay userId={user.id} date={dateStr} slot={copyFor.slot} selectable={null}
+            onClose={() => setCopyFor(null)}
+            onPick={({ label, items }) => { if (copyWorkInto(sid, items, label)) setCopyFor(null) }} />
+        )}
+        <div className={styles.dayEditSessionTotal}>
+          <span>今回の合計</span>
+          <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
+        </div>
+      </div>
+      </>
+    )
+  }
+
+  const isEmpty = sessions.length === 0 && !hasLegacyData && leaveCur !== 'full'
 
   return (
     <div className={styles.modalOverlay} onClick={requestClose}>
@@ -1705,72 +1823,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                               <div className={styles.dayEditSectionLoading}>読み込み中</div>
                             ) : (
                               <>
-                                <div className={styles.dayEditWorkRows}>
-                                  <div className={styles.dayEditWorkTableHeader}>
-                                    <span className={styles.dayEditWorkColType}>業務</span>
-                                    <span className={styles.dayEditWorkColTime}>時間</span>
-                                    <span className={styles.dayEditWorkColOp}></span>
-                                  </div>
-                                  {rows.map((row, ri) => {
-                                    const isLastRow = rows.length === 1
-                                    const isNewRow = pendingFocusSessionId === s.sessionId && ri === rows.length - 1
-                                    // a saved item that can no longer be chosen (e.g. deleted) stays visible
-                                    const availableTypes = [
-                                      ...(row.type && !userWorkItems.includes(row.type) ? [row.type] : []),
-                                      ...userWorkItems.filter(t => t === row.type || !selectedSessionTypes.has(t)),
-                                    ]
-                                    const mInvalid = row.m !== '' && row.m !== 0 && (parseInt(row.m) < 0 || parseInt(row.m) > 59)
-                                    const rowErr = getWorkRowError(row)
-                                    return (
-                                      <div key={ri} className={styles.dayEditWorkRow}>
-                                        <select
-                                          ref={isNewRow ? lastWorkSelectRef : null}
-                                          className={styles.dayEditWorkTypeSelect}
-                                          value={row.type}
-                                          onChange={e => updateWorkRow(s.sessionId, ri, 'type', e.target.value)}
-                                        >
-                                          <option value="">業務を選択</option>
-                                          {availableTypes.map(t => <option key={t} value={t}>{itemLabel(t)}</option>)}
-                                        </select>
-                                        <div className={styles.dayEditWorkTimeCell}>
-                                          <input type="number" min="0" max="23"
-                                            className={styles.dayEditWorkNum}
-                                            value={row.h === 0 ? '' : row.h} placeholder="0"
-                                            onChange={e => updateWorkRow(s.sessionId, ri, 'h', parseInt(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                                            onFocus={e => e.target.select()} />
-                                          <span className={styles.dayEditWorkUnit}>時間</span>
-                                          <input type="number" min="0" max="59"
-                                            className={[styles.dayEditWorkNum, mInvalid ? styles.dayEditWorkNumErr : ''].join(' ')}
-                                            value={row.m === 0 ? '' : row.m} placeholder="0"
-                                            onChange={e => { const n = parseInt(e.target.value.replace(/[^\d]/g, '')); updateWorkRow(s.sessionId, ri, 'm', isNaN(n) ? 0 : n) }}
-                                            onFocus={e => e.target.select()} />
-                                          <span className={styles.dayEditWorkUnit}>分</span>
-                                        </div>
-                                        {!isLastRow && (
-                                          <button className={styles.dayEditWorkRowDelSmall} onClick={() => removeWorkRow(s.sessionId, ri)} title="削除">×</button>
-                                        )}
-                                        {rowErr && <div className={styles.dayEditWorkRowErr}>{rowErr}</div>}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                                <div className={styles.dayEditWorkFooter}>
-                                  <div className={styles.dayEditWorkBtns}>
-                                    {hasMoreSessionTypes && (
-                                      <button className={styles.dayEditAddWorkBtn} onClick={() => addWorkRow(s.sessionId)}>＋ 業務を追加</button>
-                                    )}
-                                    <button className={styles.dayEditAddWorkBtn} onClick={() => setCopyFor({ sessionId: s.sessionId, slot: si + 1 })}>日付を選んでコピー</button>
-                                  </div>
-                                  {copyFor?.sessionId === s.sessionId && (
-                                    <CopyFromDay userId={user.id} date={dateStr} slot={copyFor.slot} selectable={null}
-                                      onClose={() => setCopyFor(null)}
-                                      onPick={({ label, items }) => { if (copyWorkInto(s.sessionId, items, label)) setCopyFor(null) }} />
-                                  )}
-                                  <div className={styles.dayEditSessionTotal}>
-                                    <span>今回の合計</span>
-                                    <strong>{fmtWorkTotal(sessionTotalMins)}</strong>
-                                  </div>
-                                </div>
+                                {renderWorkEditor(s.sessionId, si + 1)}
                               </>
                             )
                           )}
@@ -1796,6 +1849,35 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
               {hasConflict && (
                 <div className={styles.dayEditConflictWarning}>
                   ⚠ 旧形式とセッション別の業務時間が両方存在します。集計に使用する内容を確認してください。
+                </div>
+              )}
+
+              {leaveInit !== null && (
+                <div className={styles.dayEditTransport}>
+                  <span className={styles.dayEditTransportLabel}>この日の有給</span>
+                  <div className={styles.dayEditTransportBtns}>
+                    {[['', 'なし'], ['full', '1日'], ['half', '半日']].map(([k, label]) => (
+                      <button key={k || 'none'} className={[styles.dayEditTransportBtn, leaveCur === k ? (k ? styles.dayEditTransportOn : styles.dayEditTransportOff) : ''].join(' ')}
+                        onClick={() => setLeaveCur(k)}>{label}</button>
+                    ))}
+                  </div>
+                  {leaveCur === 'full' && <div className={styles.dayEditWorkSectionHint}>1日の有給は打刻なし。出勤日数・交通費には数えません{!isSalaried ? '。下に有給の日の業務時間を入れてください' : ''}</div>}
+                  {leaveCur === 'half' && <div className={styles.dayEditWorkSectionHint}>半日の有給は通常どおり打刻あり。業務時間は有給の分も含めて入れてください</div>}
+                </div>
+              )}
+
+              {leaveCur === 'full' && !isSalaried && (
+                <div className={styles.dayEditSessionCard}>
+                  <div className={styles.dayEditSessionCardHeader}>
+                    <div className={styles.dayEditSessionBadges}>
+                      <span className={styles.sessionNoBadge}>有給の業務</span>
+                    </div>
+                  </div>
+                  <div className={styles.dayEditSessionCardBody}>
+                    <div className={styles.dayEditColWork} style={{ flex: 1 }}>
+                      {!workItemsLoaded ? <div className={styles.dayEditSectionLoading}>読み込み中</div> : renderWorkEditor(leaveSid, 1)}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1884,7 +1966,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 {(() => {
                   const { logsToDelete: _ld, logsToUpdate: _lu, logsToCreate: _lc } = computeLogDiff()
                   const canSave = _ld.length > 0 || _lu.length > 0 || _lc.length > 0
-                    || (workItemsLoaded && !isSalaried && hasWorkDataChanged()) || transportChanged || mealChanged
+                    || (workItemsLoaded && !isSalaried && hasWorkDataChanged()) || transportChanged || mealChanged || leaveChanged
                   return (
                     <>
                       {validationErrors.length > 0 && (
@@ -1973,6 +2055,26 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                   </div>
                 )
               })}
+              {hasChanges && leaveChanged && (
+                <div className={styles.confirmDayTotal}>
+                  <span>この日の有給</span><strong>{leaveCur ? PAID_LEAVE_LABEL[leaveCur] : 'なし（取り消し）'}</strong>
+                </div>
+              )}
+              {hasChanges && leaveCur === 'full' && !isSalaried && (sessionWorkRows[leaveSid] || []).some(r => r.type) && (
+                <div className={styles.confirmSessionCard}>
+                  <div className={styles.confirmSessionCardBody}>
+                    <div className={styles.confirmSessionRow}><span className={styles.sessionNoBadge}>有給の業務</span></div>
+                    {(sessionWorkRows[leaveSid] || []).filter(r => r.type).map((r, ri) => (
+                      <div key={ri} className={styles.confirmSessionRow}>
+                        <span>{itemLabel(r.type)}</span><strong>{fmtMinutes((parseInt(r.h) || 0) * 60 + (parseInt(r.m) || 0))}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hasChanges && leaveInit === 'full' && leaveCur !== 'full' && Object.keys(initialWorkRowsSnapshot.current[leaveSid] || {}).length > 0 && (
+                <div className={styles.confirmClearedWarn}>有給（1日）を取り消すため、有給の日に入れた業務時間も削除します</div>
+              )}
               {hasChanges && mealChanged && (
                 <div className={styles.confirmDayTotal}>
                   <span>この日の食費補助</span><strong>{mealCur ? 'あり' : 'なし'}</strong>
@@ -2096,28 +2198,30 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates(), getTransportDayMethods(dateFrom, dateTo), getMealDays(dateFrom, dateTo), getMealPrices()])
-      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates(), getTransportDayMethods(dateFrom, dateTo), getMealDays(dateFrom, dateTo), getMealPrices(), getPaidLeaves(dateFrom, dateTo).catch(() => ({}))])
+      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices))
+        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めません。通信を確認し、再読み込みしてください') } })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = [], transportMethods = {}, mealDays = {}, mealPrices = []) {
+  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = [], transportMethods = {}, mealDays = {}, mealPrices = [], paidLeaves = {}) {
     const transportRows = (user, dates) =>
       computeTransport(user, dates.filter(d => transportFlags[`${user.id}_${d}`] !== false), carRates, transportMethods)
         .map(t => ({ label: t.label, parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: t.days, rate: t.rate, pay: t.pay }))
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
     const userEntries = users.filter(u =>
-      logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.slice(0, -11) === u.id)
+      logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.slice(0, -11) === u.id) ||
+      Object.keys(paidLeaves).some(k => k.slice(0, -11) === u.id)
     )
     return userEntries.map(user => {
       const userLogs = logs.filter(l => l.user_id === user.id)
+      const leave = paidLeaveSummary(user.id, paidLeaves) // 有給 of the month (null = none)
       const itemRates = user.itemRates || {}
       const sortedLogs = [...userLogs].sort((a, b) => (a.timestamp || '') < (b.timestamp || '') ? -1 : 1)
       const byDate = {}
@@ -2183,7 +2287,7 @@ function KinmuboTab({ today }) {
         const rows = []
         const totalPay = 0
         const incompleteDays = dailySalariedRows.filter(r => !r.completed).length
-        return { user, workingDays: salWorkingDays, attendanceDays: salWorkingDays, transportDays: null, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows }
+        return { user, workingDays: salWorkingDays, attendanceDays: salWorkingDays, transportDays: null, incompleteDays, totalWorkMins, rows, totalPay, byDate, isSalariedUser: true, dailySalariedRows, leave }
       }
 
       // ─── Hourly employee handling ───
@@ -2226,7 +2330,8 @@ function KinmuboTab({ today }) {
           totalCompletedSessions += completedSess.length
           completedSess.forEach(() => prepSessionDates.push(dateStr))
         }
-        else inconsistentDates.push(dateStr)
+        // a 1日有給 has work without punches on purpose
+        else if (leave?.dates[dateStr] !== 'full') inconsistentDates.push(dateStr)
       })
       // 出勤日数: days with a completed punch (出勤＋退勤). 交通費対象日数: days that
       // count for transport (worked days the employee didn't mark 支給なし).
@@ -2288,6 +2393,8 @@ function KinmuboTab({ today }) {
       mealRows(user.id, mealDays, mealPrices).forEach(m => rows.push({
         label: m.label, parentType: '食費補助', isMultiPeriod: false, dayType: null, mins: null, meals: m.count, days: null, rate: -m.price, pay: m.pay,
       }))
+      // 有給: the number of days only (its work time is paid in the rows above)
+      if (leave) rows.push({ label: `有給（${[leave.full && `1日${leave.full}回`, leave.half && `半日${leave.half}回`].filter(Boolean).join('・')}）`, parentType: '有給', isMultiPeriod: false, dayType: null, mins: null, days: leave.days, rate: null, pay: 0 })
       const totalWorkMins = Object.values(userWorkReports).reduce((s, items) => s + Object.values(items).reduce((ss, m) => ss + m, 0), 0)
       const totalPay = rows.reduce((s, r) => s + (r.pay || 0), 0)
       const transportDays = getCommute(user).asks || rows.some(r => r.parentType === '交通費') ? transportDates.length : null
@@ -2304,7 +2411,7 @@ function KinmuboTab({ today }) {
         if (done.some(se => hasMins(se.perSessionWork))) return n + done.filter(se => !hasMins(se.perSessionWork)).length
         return n + (hasMins(e.workReportItems) ? 0 : done.length)
       }, 0)
-      return { user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, inconsistentDates }
+      return { user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, inconsistentDates, leave }
     })
   }
 
@@ -2581,7 +2688,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当なし</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates }) => {
+            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates, leave }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -2599,6 +2706,12 @@ function KinmuboTab({ today }) {
                         <>
                           <span className={styles.kinmuboAccordionSep}> ｜ </span>
                           <span className={styles.kinmuboAccordionDays}>交通費対象：{transportDays}日</span>
+                        </>
+                      )}
+                      {leave && (
+                        <>
+                          <span className={styles.kinmuboAccordionSep}> ｜ </span>
+                          <span className={styles.kinmuboAccordionDays}>有給：{leave.days}日</span>
                         </>
                       )}
                       <span className={styles.kinmuboAccordionSep}> ｜ </span>

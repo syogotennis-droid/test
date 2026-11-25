@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs, getPaidLeaves, savePaidLeave, leaveSessionId, PAID_LEAVE_LABEL } from '../lib/db'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
 import CopyFromDay from './CopyFromDay'
 import styles from './EmployeeCalendarScreen.module.css'
@@ -287,6 +287,54 @@ function CopySection({ copy, onDelete }) {
   )
 }
 
+// 有給 of the day: register 1日 / 半日, or cancel it
+function LeaveSection({ kind, canChange, hasPunches, isSalaried, onChange }) {
+  const [choosing, setChoosing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  async function apply(next) {
+    if (next === '' && !window.confirm(kind === 'full' && !isSalaried
+      ? '有給を取り消しますか？\n有給の日に入れた業務時間も消えます。'
+      : '有給を取り消しますか？')) return
+    setBusy(true)
+    try { await onChange(next); setChoosing(false) }
+    catch (e) {
+      alert(e?.code === 'has_punches' ? 'この日は打刻があるため、1日の有給にできません。半日を選んでください'
+        : '保存できませんでした。通信を確認して、もう一度お試しください')
+    } finally { setBusy(false) }
+  }
+  if (kind) {
+    return (
+      <div className={styles.leaveSection}>
+        <div className={styles.leaveLine}>
+          <span className={styles.leaveBadge}>{PAID_LEAVE_LABEL[kind]}</span>
+          {canChange && <button className={styles.leaveCancelBtn} onClick={() => apply('')} disabled={busy}>有給を取り消す</button>}
+        </div>
+        {kind === 'half' && !isSalaried && (
+          <div className={styles.leaveHint}>勤務の業務入力に、有給の分も含めた時間を入れてください</div>
+        )}
+      </div>
+    )
+  }
+  if (!canChange) return null
+  return (
+    <div className={styles.leaveSection}>
+      {choosing ? (
+        <>
+          <div className={styles.leaveTitle}>有給の種類を選んでください</div>
+          <div className={styles.leaveChoices}>
+            <button className={styles.leaveChoiceBtn} onClick={() => apply('full')} disabled={busy || hasPunches}>1日</button>
+            <button className={styles.leaveChoiceBtn} onClick={() => apply('half')} disabled={busy}>半日</button>
+            <button className={styles.leaveCancelBtn} onClick={() => setChoosing(false)} disabled={busy}>やめる</button>
+          </div>
+          {hasPunches && <div className={styles.leaveHint}>打刻がある日は、半日だけ選べます</div>}
+        </>
+      ) : (
+        <button className={styles.leaveRegisterBtn} onClick={() => setChoosing(true)}>有給を登録する</button>
+      )}
+    </div>
+  )
+}
+
 // Employees can fix their own work entries for this month and last month only
 function editableFrom() {
   const t = localToday()
@@ -295,9 +343,12 @@ function editableFrom() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onClose, onWorkSaved }) {
+function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onClose, onWorkSaved, leaveKind, onLeaveChange }) {
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   const tooOld = dateStr < editableFrom()
+  // a 1日有給 has no punches: its work time is entered as the shift "leave-<date>"
+  const leaveSid = leaveSessionId(dateStr)
+  const isSalariedUser = user?.employeeType === 'salaried'
   const editableItems = sortByItemOrder((user?.workItems || []).filter(item => !CLOCK_OUT_HIDDEN.has(item) && !isDeletedWorkItem(item)))
   const canEdit = editableItems.length > 0 && user?.employeeType !== 'salaried' && !tooOld
   const dowLabel = DOW_LABELS[new Date(year, month, day).getDay()]
@@ -307,19 +358,21 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
   const [saving, setSaving] = useState(false)
   // last week's same weekday / same shift for the shift being edited (null offline or none)
   const [lastWeek, setLastWeek] = useState(null)
+  // idx = the shift's index, or 'leave' for the work of a 1日有給
   function startEdit(idx) {
     setLastWeek(null)
     setEditingSessionIdx(idx)
-    getLastWeekWork(user.id, dateStr, idx + 1).then(r => setLastWeek(r))
+    getLastWeekWork(user.id, dateStr, idx === 'leave' ? 1 : idx + 1).then(r => setLastWeek(r))
   }
 
   async function handleSave(workItemsObj) {
-    const session = sessions[editingSessionIdx]
+    const session = editingSessionIdx === 'leave' ? { sessionId: leaveSid } : sessions[editingSessionIdx]
     if (!session?.sessionId) return
     // work longer than the shift (clock-in → clock-out, minus breaks): ask before saving
+    // (not on a 半日有給: the paid half is entered together with the work)
     const toMin = t => { const [h, m] = (t || '').substring(0, 5).split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null }
     const tin = toMin(session.in), tout = toMin(session.out)
-    if (tin != null && tout != null) {
+    if (tin != null && tout != null && leaveKind !== 'half') {
       const breaks = (session.breaks || []).reduce((sum, b) => { const a = toMin(b.start), e = toMin(b.end); return a != null && e != null && e > a ? sum + e - a : sum }, 0)
       const shift = tout - tin - breaks
       const total = Object.values(workItemsObj).reduce((a, b) => a + b, 0)
@@ -338,9 +391,12 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
     }
   }
 
-  const editingSession = editingSessionIdx !== null ? sessions[editingSessionIdx] : null
+  const editingSession = editingSessionIdx === 'leave' ? { sessionId: leaveSid } : editingSessionIdx !== null ? sessions[editingSessionIdx] : null
   const editingWork = editingSession?.sessionId ? (sessionWorkItems[editingSession.sessionId] || {}) : {}
-  const sessionLabel = `${month + 1}月${day}日（${dowLabel}）の業務を入力`
+  const sessionLabel = `${month + 1}月${day}日（${dowLabel}）の${editingSessionIdx === 'leave' ? '有給の' : ''}業務を入力`
+  const hasPunches = sessions.some(s => s.in || s.out)
+  const leaveWork = sessionWorkItems[leaveSid] || {}
+  const leaveEntries = sortByItemOrder(Object.keys(leaveWork)).map(t => [t, leaveWork[t]]).filter(([, m]) => m > 0)
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
@@ -351,7 +407,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
             editableItems={editableItems}
             initialWork={editingWork}
             lastWeek={lastWeek}
-            copyFrom={{ userId: user.id, date: dateStr, slot: editingSessionIdx + 1 }}
+            copyFrom={{ userId: user.id, date: dateStr, slot: editingSessionIdx === 'leave' ? 1 : editingSessionIdx + 1 }}
             onCancel={() => setEditingSessionIdx(null)}
             onSave={handleSave}
             saving={saving}
@@ -364,6 +420,34 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
             </div>
 
             <div className={styles.modalBody}>
+              <LeaveSection kind={leaveKind} canChange={!tooOld} hasPunches={hasPunches} isSalaried={isSalariedUser} onChange={onLeaveChange} />
+              {leaveKind === 'full' && !isSalariedUser && (
+                <div className={styles.sessionSingle}>
+                  <div className={styles.workSection}>
+                    <div className={styles.workSectionHeader}>
+                      <span className={styles.workLabel}>有給の業務</span>
+                      {leaveEntries.length > 0
+                        ? <span className={styles.workBadgeEntered}>入力済み</span>
+                        : <span className={styles.workBadgeEmpty}>未入力</span>}
+                    </div>
+                    {leaveEntries.length > 0 && (
+                      <div className={styles.workEntries}>
+                        {leaveEntries.map(([type, mins]) => (
+                          <div key={type} className={styles.workEntry}>
+                            <span className={styles.workEntryType}>{itemLabel(type)}</span>
+                            <span className={styles.workEntryTime}>{fmtMins(mins)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {canEdit ? (
+                      <button className={leaveEntries.length > 0 ? styles.editWorkBtn : styles.inputWorkBtn} onClick={() => startEdit('leave')}>
+                        {leaveEntries.length > 0 ? '業務を編集' : '業務を入力'}
+                      </button>
+                    ) : tooOld ? <span className={styles.legacyHint}>先々月より前の業務は管理者に連絡</span> : null}
+                  </div>
+                </div>
+              )}
               {copy && <CopySection copy={copy} onDelete={onDeleteCopy} />}
               {sessions.map((session, idx) => {
                 const workData = session.sessionId ? (sessionWorkItems[session.sessionId] || null) : null
@@ -468,6 +552,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const [sessionWorkStatus, setSessionWorkStatus] = useState({}) // { dateStr: Set<sessionId> }
   const [legacyWorkedDates, setLegacyWorkedDates] = useState(new Set())
   const [copies, setCopies] = useState({}) // { dateStr: { slot: items } } from the weekly copy
+  const [leaves, setLeaves] = useState({}) // { dateStr: 'full' | 'half' } 有給
   const today = localToday()
 
   const loadLogs = useCallback(() => {
@@ -480,9 +565,13 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       isSal ? Promise.resolve(null) : getSessionWorkReportsForUser(user.id),
       isSal ? Promise.resolve({}) : getWeeklyCopies(user.id, from > today ? from : today, to).catch(() => ({})),
       loadWorkItemDefs(), // latest item names
-    ]).then(([data, workData, copyData]) => {
+      getPaidLeaves(from, to, user.id).catch(() => ({})), // (a server without 有給 yet: none)
+    ]).then(([data, workData, copyData, , leaveMap]) => {
       setLogs(data)
       setCopies(copyData || {})
+      const lv = {}
+      Object.entries(leaveMap || {}).forEach(([k, kind]) => { lv[k.slice(-10)] = kind })
+      setLeaves(lv)
       if (workData) {
         setSessionWorkItems(workData.bySession)
         setSessionWorkStatus(workData.sessionsByDate)
@@ -562,9 +651,16 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const sessionIds = sessions.map(s => s.sessionId).filter(Boolean)
             const copy = !isSalaried && dateStr >= today ? copies[dateStr] : null
             const workedSessions = sessionWorkStatus[dateStr]
+            const leaveKind = leaves[dateStr] || ''
+            // a day of this month or last month can be opened to register paid leave
+            const canOpen = worked || copy || leaveKind || dateStr >= editableFrom()
 
             let workBadgeLabel = null
             let workBadgeClass = null
+            if (!isSalaried && !worked && leaveKind === 'full') {
+              const done = Object.values(sessionWorkItems[leaveSessionId(dateStr)] || {}).some(m => m > 0)
+              workBadgeLabel = done ? '業務入力済' : '業務未入力'; workBadgeClass = done ? styles.calWorkBadgeTeal : styles.calWorkBadgeOrange
+            }
             if (!isSalaried && worked) {
               const sessionsWithIn = sessions.filter(s => s.in)
               const outOnlyBroken = sessions.some(s => !s.in && s.out)
@@ -594,7 +690,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
               <div
                 key={d}
                 className={[styles.cell, inTime ? styles.worked : '', copy && !worked ? styles.planned : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
-                onClick={() => (worked || copy) && setSelectedDay(d)}
+                onClick={() => canOpen && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
                 {multiSession && (
@@ -618,6 +714,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                     {outTime && <div className={styles.outTime}>退 {outTime}</div>}
                   </>
                 )}
+                {leaveKind && <div className={styles.calLeaveBadge}>{leaveKind === 'full' ? '有給' : '半日有給'}</div>}
                 {workBadgeLabel && <div className={workBadgeClass}>{workBadgeLabel}</div>}
                 {copy && !worked && <div className={styles.calCopyBadge}>業務予定あり</div>}
               </div>
@@ -643,6 +740,14 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
           }}
           onClose={() => setSelectedDay(null)}
           onWorkSaved={handleWorkSaved}
+          leaveKind={leaves[`${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`] || ''}
+          onLeaveChange={async kind => {
+            const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`
+            await savePaidLeave(user.id, ds, kind)
+            setLeaves(prev => { const n = { ...prev }; if (kind) n[ds] = kind; else delete n[ds]; return n })
+            // the work of a cancelled 1日有給 is removed on the server too
+            if (kind !== 'full') handleWorkSaved(leaveSessionId(ds), {}, ds)
+          }}
         />
       )}
     </div>

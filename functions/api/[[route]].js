@@ -219,7 +219,7 @@ export async function onRequest(context) {
       } else {
         // everything that belongs to the user, so a later user with the same ID starts clean
         await DB.batch(['users WHERE id', ...['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days',
-          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans', 'meal_days'].map(t => `${t} WHERE user_id`)]
+          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans', 'meal_days', 'paid_leaves'].map(t => `${t} WHERE user_id`)]
           .map(t => DB.prepare(`DELETE FROM ${t} = ?`).bind(id)))
       }
       return ok({ ok: true })
@@ -703,6 +703,35 @@ export async function onRequest(context) {
       return ok(map)
     }
 
+    // ── 有給 (paid leave per day: full = 1日, half = 半日) ──────────────────
+    // A 1日有給 has no punches; its work time is kept as a work entry of the shift
+    // "leave-<date>" so the pay is calculated like any other work.
+    if (route === 'paid_leaves' && method === 'GET') {
+      const { userId, dateFrom, dateTo } = Object.fromEntries(sp)
+      const where = [], args = []
+      if (userId) { where.push('user_id = ?'); args.push(userId) }
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      const { results } = await DB.prepare('SELECT user_id, date, kind FROM paid_leaves' + (where.length ? ' WHERE ' + where.join(' AND ') : '')).bind(...args).all()
+      const map = {}
+      results.forEach(r => { map[`${r.user_id}_${r.date}`] = r.kind })
+      return ok(map)
+    }
+    if (route === 'paid_leaves' && method === 'PUT') {
+      const b = await readBody()
+      needStr(b.userId, 'userId')
+      if (!isDate(b.date)) throw new HttpError('bad_date', 400)
+      if (tooOldForDevice(b.date, role)) throw new HttpError('too_old', 422)
+      if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
+      const kind = b.kind || ''
+      if (!['', 'full', 'half'].includes(kind)) throw new HttpError('bad_kind', 400)
+      // a whole day off can't have punches (half a day off can)
+      if (kind === 'full' && await DB.prepare("SELECT 1 AS x FROM logs WHERE user_id = ? AND date = ? AND log_type = '出勤'").bind(b.userId, b.date).first())
+        throw new HttpError('has_punches', 409)
+      await DB.batch(paidLeaveStmts(DB, b.userId, b.date, kind, new Date().toISOString()))
+      return ok({ ok: true })
+    }
+
     // ── 食費補助 (meals per day; admin only) ───────────────────────────────
     if (route === 'meal_days' && method === 'GET') {
       const { userId, dateFrom, dateTo } = Object.fromEntries(sp)
@@ -719,7 +748,7 @@ export async function onRequest(context) {
     // ── Batch Day Edit ─────────────────────────────────────────────────────
     if (route === 'batch/day_edit' && method === 'POST') {
       const body = await readBody()
-      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports, mealCount } = body
+      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports, mealCount, paidLeave } = body
       needStr(userId, 'userId')
       if (!isDate(dateStr)) throw new HttpError('bad_date', 400)
       if ((logsToCreate || []).some(l => !LOG_TYPES.has(l.logType))) return fail('invalid log_type', 400)
@@ -734,6 +763,12 @@ export async function onRequest(context) {
         stmts.push(c > 0
           ? DB.prepare('INSERT OR REPLACE INTO meal_days (id, user_id, date, count, updated_at) VALUES (?, ?, ?, ?, ?)').bind(`${userId}_${dateStr}`, userId, dateStr, c, now)
           : DB.prepare('DELETE FROM meal_days WHERE id = ?').bind(`${userId}_${dateStr}`))
+      }
+      // paid leave first: dropping a 1日有給 removes its work entry, and work sent in the same
+      // request (below) is written after that
+      if (paidLeave !== undefined) {
+        if (!['', 'full', 'half'].includes(paidLeave || '')) throw new HttpError('bad_kind', 400)
+        stmts.push(...paidLeaveStmts(DB, userId, dateStr, paidLeave || '', now))
       }
       if (typeof transportEligible === 'boolean') {
         stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
@@ -885,11 +920,13 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'logs' || route === 'session_work_reports') return !!sp.get('userId')
     // the employee's own transport choice / weekly copy
     if (route === 'transport_days' || route === 'transport_day_methods') return !!(sp.get('userId') && sp.get('date'))
+    // the employee's own paid leave (勤務確認 calendar)
+    if (route === 'paid_leaves') return !!sp.get('userId')
     if (route === 'weekly_copy/offer' || route === 'weekly_copies' || route === 'last_week_work' || route === 'recent_work') return !!sp.get('userId')
     return false
   }
   if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer' || route === 'users/by_pin'
-  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days'
+  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days' || route === 'paid_leaves'
   // an employee may remove a day prepared by the weekly copy (e.g. off sick); never punches
   if (method === 'DELETE') return route === 'weekly_copies' && !!(sp.get('userId') && sp.get('date'))
   return false
@@ -938,6 +975,18 @@ function transportMethodsStmt(DB, userId, date, methods, now) {
     ? DB.prepare('INSERT OR REPLACE INTO transport_day_methods (id, user_id, date, methods, updated_at) VALUES (?, ?, ?, ?, ?)')
       .bind(`${userId}_${date}`, userId, date, JSON.stringify(list), now)
     : DB.prepare('DELETE FROM transport_day_methods WHERE id = ?').bind(`${userId}_${date}`)
+}
+
+// paid leave of a day ('' removes it). Anything but a 1日有給 drops the work entry kept for the
+// day off (shift "leave-<date>"); a 半日有給's work belongs to the punched shifts.
+function paidLeaveStmts(DB, userId, date, kind, now) {
+  const id = `${userId}_${date}`
+  return [
+    kind
+      ? DB.prepare('INSERT OR REPLACE INTO paid_leaves (id, user_id, date, kind, updated_at) VALUES (?, ?, ?, ?, ?)').bind(id, userId, date, kind, now)
+      : DB.prepare('DELETE FROM paid_leaves WHERE id = ?').bind(id),
+    ...(kind === 'full' ? [] : [DB.prepare('DELETE FROM session_work_reports WHERE id = ?').bind(`${id}_leave-${date}`)]),
+  ]
 }
 
 function transportStmt(DB, userId, date, eligible, now) {

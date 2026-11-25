@@ -1183,6 +1183,36 @@ export function mealRows(userId, mealDays, prices) {
   }))
 }
 
+// ─── 有給 ───────────────────────────────────────────────────────────────────
+// kind: 'full' = 1日有給 (no punches; not an attendance day, no transport; the work time is
+// entered as the shift LEAVE_SESSION of that day and paid like other work),
+// 'half' = 半日有給 (punched as usual; attendance and transport as on any other day)
+export const PAID_LEAVE_LABEL = { full: '有給（1日）', half: '有給（半日）' }
+export const leaveSessionId = dateStr => `leave-${dateStr}`
+export const isLeaveSession = sid => typeof sid === 'string' && sid.startsWith('leave-')
+
+// → { 'userId_date': 'full' | 'half' }
+export async function getPaidLeaves(dateFrom, dateTo, userId) {
+  return api('/paid_leaves', { query: { dateFrom, dateTo, userId } })
+}
+// kind '' removes the paid leave of that day (a 1日有給's work entry goes with it)
+export async function savePaidLeave(userId, date, kind) {
+  await api('/paid_leaves', { method: 'PUT', body: { userId, date, kind: kind || '' } })
+}
+// The month's paid leave of one person: null, or { days, full, half, dates: { date: kind }, label }
+export function paidLeaveSummary(userId, paidLeaves) {
+  const dates = {}
+  for (const [k, kind] of Object.entries(paidLeaves || {})) {
+    if (k.startsWith(userId + '_') && (kind === 'full' || kind === 'half')) dates[k.slice(userId.length + 1)] = kind
+  }
+  const kinds = Object.values(dates)
+  if (kinds.length === 0) return null
+  const full = kinds.filter(k => k === 'full').length, half = kinds.length - full
+  const days = full + half * 0.5
+  const parts = [full && `1日${full}回`, half && `半日${half}回`].filter(Boolean).join('・')
+  return { days, full, half, dates, label: `有給 ${days}日（${parts}）` }
+}
+
 export async function getTransportDays(dateFrom, dateTo) {
   return api('/transport_days', { query: { dateFrom, dateTo } })
 }
@@ -1437,7 +1467,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const enc = new TextEncoder()
 
   // Fetch work_reports: prefer session data over legacy, merge correctly
-  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices] = await Promise.all([
+  const [allWorkReports, allSessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves] = await Promise.all([
     getMergedWorkReportsForRange(dateFrom || '', dateTo || ''),
     getSessionWorkReportsWithSessionsForRange(dateFrom || '', dateTo || ''),
     getTransportDays(dateFrom || '', dateTo || '9999-12-31'),
@@ -1445,13 +1475,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     getTransportDayMethods(dateFrom || '', dateTo || '9999-12-31'),
     getMealDays(dateFrom || '', dateTo || '9999-12-31'),
     getMealPrices(),
+    getPaidLeaves(dateFrom || '', dateTo || '9999-12-31').catch(() => ({})),
   ])
   const dayCountCells = (row, cells) => cells.map(([col, text]) =>
     `<c r="${col}${row}" s="${S.username}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`).join('')
 
   const userEntries = users.filter(u =>
     logs.some(l => l.user_id === u.id) ||
-    Object.keys(allWorkReports).some(k => k.slice(0, -11) === u.id)
+    Object.keys(allWorkReports).some(k => k.slice(0, -11) === u.id) ||
+    Object.keys(paidLeaves).some(k => k.slice(0, -11) === u.id)
   )
   const sheetXmls = []
   const summaryData = { types: {} }
@@ -1459,6 +1491,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
     const itemRates = user.itemRates || {}
+    // 有給 of the month: a 「有給」 column in the punch table (1日 / 半日) and the number of days
+    const leave = paidLeaveSummary(user.id, paidLeaves)
+    const leaveText = ds => ({ full: '1日', half: '半日' })[leave?.dates[ds]] || ''
 
     // Build byDate first so we can compute monthly hours for filtering
     // Sort by timestamp so later 退勤 records overwrite earlier ones (prevents double-count from duplicate punches)
@@ -1506,6 +1541,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const nBreaksSal = Math.max(0, ...Object.keys(byDate).filter(ds => ds.startsWith(`${ym_y_str}-${ym_m_str}`)).map(ds => dayBreaks(ds).length))
       const breakColsSal = Array.from({ length: nBreaksSal * 2 }, (_, i) => colLetter(3 + i))
       const OUT_SAL = colLetter(3 + nBreaksSal * 2)
+      const LV_SAL = leave ? colLetter(4 + nBreaksSal * 2) : null
 
       const t1HdrSal =
         `<row r="${T1_HDR_SAL}" ht="36">` +
@@ -1513,6 +1549,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         hdrCellSal('C', T1_HDR_SAL, '出勤打刻') +
         breakHeaders(nBreaksSal).map((t, i) => hdrCellSal(breakColsSal[i], T1_HDR_SAL, t)).join('') +
         hdrCellSal(OUT_SAL, T1_HDR_SAL, '退勤打刻') +
+        (LV_SAL ? hdrCellSal(LV_SAL, T1_HDR_SAL, '有給') : '') +
         `</row>`
 
       const t1RowsSal = []
@@ -1566,6 +1603,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           brCells.push(timeCell(`${breakColsSal[bi * 2 + 1]}${r1sal}`, S.time[dt], brs[bi]?.end))
         }
         t1c.splice(3, 0, ...brCells)
+        if (LV_SAL) t1c.push(leaveText(ds) ? `<c r="${LV_SAL}${r1sal}" s="${S.dow[dt]}" t="inlineStr"><is><t>${leaveText(ds)}</t></is></c>` : `<c r="${LV_SAL}${r1sal}" s="${S.dow[dt]}"/>`)
         t1RowsSal.push(`<row r="${r1sal}"${rowHtAttr}>${t1c.join('')}</row>`)
         r1sal++
       }
@@ -1573,9 +1611,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
         dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`],
-          ...mealRows(user.id, mealDays, mealPrices).map((m, i) => [colLetter(3 + i), `${m.label}：${m.pay.toLocaleString()}円`])]) + `</row>`
+          ...[...(leave ? [leave.label] : []), ...mealRows(user.id, mealDays, mealPrices).map(m => `${m.label}：${m.pay.toLocaleString()}円`)]
+            .map((text, i) => [colLetter(3 + i), text])]) + `</row>`
       const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}</sheetData>`
-      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="${4 + nBreaksSal * 2}" width="14" customWidth="1"/></cols>`
+      const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="${4 + nBreaksSal * 2 + (LV_SAL ? 1 : 0)}" width="14" customWidth="1"/></cols>`
       sheetXmls.push(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<worksheet xmlns="${WB_NS_SAL}" xmlns:r="${WB_REL_SAL}">` +
@@ -1659,7 +1698,9 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const nBreaks = Math.max(0, ...Object.entries(byDate).filter(([ds]) => ds.startsWith(`${ym_y_str}-${ym_m_str}`))
       .flatMap(([, e]) => e.sessions.map(se => (se.breaks || []).length)))
     const breakCols = Array.from({ length: nBreaks * 2 }, (_, i) => colLetter(3 + i))
-    const OUT_COL = colLetter(3 + nBreaks * 2), TR_COL = colLetter(4 + nBreaks * 2)
+    const OUT_COL = colLetter(3 + nBreaks * 2)
+    const LV_COL = leave ? colLetter(4 + nBreaks * 2) : null
+    const TR_COL = colLetter(4 + nBreaks * 2 + (leave ? 1 : 0))
     const T1_HDR = 4, T1_DATA = 5
     const dayRowsT1 = []
     for (let d = 1; d <= lastDay; d++) {
@@ -1684,6 +1725,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       dayCountCells(2, [
         ['C', `出勤日数：${attendanceDates(byDate).length}日`],
         ...(commute.asks || transportRowsX.length > 0 ? [['D', `交通費対象：${transportDates.length}日`]] : []),
+        ...(leave ? [[commute.asks || transportRowsX.length > 0 ? 'E' : 'D', leave.label]] : []),
       ]) + `</row>`
 
     const hdrCell = (col, rn, text) =>
@@ -1696,6 +1738,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       hdrCell('C', T1_HDR, '出勤打刻') +
       breakHeaders(nBreaks).map((t, i) => hdrCell(breakCols[i], T1_HDR, t)).join('') +
       hdrCell(OUT_COL, T1_HDR, '退勤打刻') +
+      (LV_COL ? hdrCell(LV_COL, T1_HDR, '有給') : '') +
       (showTransportCol ? hdrCell(TR_COL, T1_HDR, '交通費') : '') +
       `</row>`
 
@@ -1742,6 +1785,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           t1c.push(timeCell(`${breakCols[bi * 2 + 1]}${r1}`, S.time[dt], brs[bi]?.end))
         }
         t1c.push(timeCell(`${OUT_COL}${r1}`, S.time[dt], session?.outLog?.time?.substring(0, 5)))
+        if (LV_COL) {
+          const lv = isFirst ? leaveText(dateStr) : ''
+          t1c.push(lv ? `<c r="${LV_COL}${r1}" s="${S.dow[dt]}" t="inlineStr"><is><t>${lv}</t></is></c>` : `<c r="${LV_COL}${r1}" s="${S.dow[dt]}"/>`)
+        }
         if (showTransportCol) {
           const amt = isFirst ? transportDay[dateStr] : 0
           // 15 digits = what Excel keeps (drops 434.59999999999997 style noise)
@@ -1757,7 +1804,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<row r="${T1_TOT}">` +
       `<c r="A${T1_TOT}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
-      ['C', ...breakCols, OUT_COL].map(c => `<c r="${c}${T1_TOT}" s="${S.tot_lbl}"/>`).join('') +
+      ['C', ...breakCols, OUT_COL, ...(LV_COL ? [LV_COL] : [])].map(c => `<c r="${c}${T1_TOT}" s="${S.tot_lbl}"/>`).join('') +
       (showTransportCol ? sumCell(`${TR_COL}${T1_TOT}`, S.tot_pay, TR_COL, T1_DATA, T1_DATA_END, true) : '') +
       `</row>`
 
@@ -1942,6 +1989,17 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       payRowIdx++
     }
 
+    // 有給行（日数だけ。給与は業務の行で計算済み）
+    if (leave) {
+      payRows.push(
+        `<row r="${payRowIdx}">` +
+        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(leave.label)}</t></is></c>` +
+        `<c r="B${payRowIdx}" s="${S.pay_lbl}"/><c r="C${payRowIdx}" s="${S.pay_lbl}"/><c r="D${payRowIdx}" s="${S.pay_lbl}"/>` +
+        `</row>`
+      )
+      payRowIdx++
+    }
+
     // 合計行
     const PTR = payRowIdx
     const payTotRow =
@@ -1954,7 +2012,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 
     const sheetData = `<sheetData>${row1}${row2}${t1Hdr}${t1Rows.join('')}${t1Tot}${t2Hdr}${t2Rows.join('')}${t2Tot}${t3Hdr}${payRows.join('')}${payTotRow}</sheetData>`
     const sheetDataCached = withCachedValues(sheetData)
-    const maxColIdx = Math.max(4 + nBreaks * 2 + (showTransportCol ? 1 : 0), ci) // number of the last column used
+    const maxColIdx = Math.max(4 + nBreaks * 2 + (leave ? 1 : 0) + (showTransportCol ? 1 : 0), ci) // number of the last column used
     // bestFit="1" lets Excel auto-size columns to content on open (no ####### ever)
     const colsXml =
       `<cols>` +

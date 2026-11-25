@@ -88,6 +88,17 @@ CREATE TABLE IF NOT EXISTS meal_days (
 );
 CREATE INDEX IF NOT EXISTS idx_meal_date ON meal_days(date);
 
+-- 有給: paid leave of a day. kind = 'full' (1日: no punches; the work time is kept as the
+-- session_work_reports entry of the shift "leave-<date>") or 'half' (半日: punched as usual)
+CREATE TABLE IF NOT EXISTS paid_leaves (
+  id TEXT PRIMARY KEY,          -- userId_date
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_paid_leave_date ON paid_leaves(date);
+
 -- Registered punch tablets: a name and when each was last used (設定 → 登録済みの打刻端末).
 -- token = the device row of sessions (tablets registered earlier get a row when next used)
 CREATE TABLE IF NOT EXISTS device_info (
