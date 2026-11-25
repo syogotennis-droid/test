@@ -631,14 +631,12 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const days = getCalendarDays(year, month)
   const dayMap = buildDayMap(logs, year, month)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
-  const isNextMonth = (year * 12 + month) === (now.getFullYear() * 12 + now.getMonth() + 1)
 
   function prevMonth() {
     if (month === 0) { setYear(y => y - 1); setMonth(11) }
     else setMonth(m => m - 1)
   }
   function nextMonth() {
-    if (isNextMonth) return
     if (month === 11) { setYear(y => y + 1); setMonth(0) }
     else setMonth(m => m + 1)
   }
@@ -654,7 +652,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       <div className={styles.monthNav}>
         <button onClick={prevMonth} className={styles.navBtn}>◀</button>
         <span className={styles.monthLabel}>{year}年{month + 1}月</span>
-        <button onClick={nextMonth} className={styles.navBtn} disabled={isNextMonth}>▶</button>
+        <button onClick={nextMonth} className={styles.navBtn}>▶</button>
       </div>
       <div className={styles.calGuide}>{leaveSupported ? '日付を押すと、業務の入力・修正や有給の登録ができます' : '日付を押すと、業務の入力・修正ができます'}</div>
 
