@@ -1383,6 +1383,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     timeWrap: 25,
     trDay: { wd: 26, sa: 27, su: 28 }, // 打刻表の交通費（その日の金額。土日は色付き）
     prepHrs: 29,                       // 準備時間（0.17時間×回数）
+    leave: { wd: 30, sa: 31, su: 32 }, // 打刻表の有給（1.0 / 0.5。土日は色付き）
+    tot_leave: 33,                     // 有給の合計
   }
 
   const STYLES_XML = [
@@ -1416,7 +1418,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>',
     '</borders>',
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>',
-    '<cellXfs count="30">',
+    '<cellXfs count="34">',
     // 0 default
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
     // 1 title
@@ -1465,6 +1467,12 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
     // 29 準備時間 in hours (0.17 per shift; shown with one decimal, the cell keeps 0.51)
     '<xf numFmtId="169" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    // 30-32 有給 of the day wd/sa/su (1.0 / 0.5)
+    '<xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="166" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    '<xf numFmtId="166" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>',
+    // 33 有給 total
+    '<xf numFmtId="166" fontId="1" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="center"/></xf>',
     '</cellXfs>',
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',
     '</styleSheet>',
@@ -1516,7 +1524,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const itemRates = user.itemRates || {}
     // 有給 of the month: a 「有給」 column in the punch table (1日 / 半日) and the number of days
     const leave = paidLeaveSummary(user.id, paidLeaves)
-    const leaveText = ds => ({ full: '1日', half: '半日' })[leave?.dates[ds]] || ''
+    // 1.0 = 1日, 0.5 = 半日 (a number, so the column adds up)
+    const leaveVal = ds => ({ full: 1, half: 0.5 })[leave?.dates[ds]] || 0
+    const leaveCell = (ref, dt, v) => v ? `<c r="${ref}" s="${S.leave[dt]}"><v>${v}</v></c>` : `<c r="${ref}" s="${S.leave[dt]}"/>`
+    const leaveDaysText = leave ? `有給 ${leave.days}日` : ''
 
     // Build byDate first so we can compute monthly hours for filtering
     // Sort by timestamp so later 退勤 records overwrite earlier ones (prevents double-count from duplicate punches)
@@ -1626,7 +1637,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           brCells.push(timeCell(`${breakColsSal[bi * 2 + 1]}${r1sal}`, S.time[dt], brs[bi]?.end))
         }
         t1c.splice(3, 0, ...brCells)
-        if (LV_SAL) t1c.push(leaveText(ds) ? `<c r="${LV_SAL}${r1sal}" s="${S.dow[dt]}" t="inlineStr"><is><t>${leaveText(ds)}</t></is></c>` : `<c r="${LV_SAL}${r1sal}" s="${S.dow[dt]}"/>`)
+        if (LV_SAL) t1c.push(leaveCell(`${LV_SAL}${r1sal}`, dt, leaveVal(ds)))
         t1RowsSal.push(`<row r="${r1sal}"${rowHtAttr}>${t1c.join('')}</row>`)
         r1sal++
       }
@@ -1634,9 +1645,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
         dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`],
-          ...[...(leave ? [leave.label] : []), ...mealRows(user.id, mealDays, mealPrices).map(m => `${m.label}：${m.pay.toLocaleString()}円`)]
+          ...[...(leave ? [leaveDaysText] : []), ...mealRows(user.id, mealDays, mealPrices).map(m => `${m.label}：${m.pay.toLocaleString()}円`)]
             .map((text, i) => [colLetter(3 + i), text])]) + `</row>`
-      const sheetDataSal = `<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}</sheetData>`
+      // 合計 row (only the 有給 column has a total)
+      const totSal = LV_SAL
+        ? `<row r="${r1sal}"><c r="A${r1sal}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
+          ['B', 'C', ...breakColsSal, OUT_SAL].map(c => `<c r="${c}${r1sal}" s="${S.tot_lbl}"/>`).join('') +
+          sumCell(`${LV_SAL}${r1sal}`, S.tot_leave, LV_SAL, T1_DATA_SAL, r1sal - 1) + `</row>`
+        : ''
+      const sheetDataSal = withCachedValues(`<sheetData>${row1sal}${row2sal}${t1HdrSal}${t1RowsSal.join('')}${totSal}</sheetData>`)
       const colsXmlSal = `<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="8" customWidth="1"/><col min="3" max="${4 + nBreaksSal * 2 + (LV_SAL ? 1 : 0)}" width="14" customWidth="1"/></cols>`
       sheetXmls.push(
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -1749,7 +1766,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       dayCountCells(2, [
         ['C', `出勤日数：${attendanceDates(byDate).length}日`],
         ...(commute.asks || transportRowsX.length > 0 ? [['D', `交通費対象：${transportDaysLabel(transportDates)}`]] : []),
-        ...(leave ? [[commute.asks || transportRowsX.length > 0 ? 'E' : 'D', leave.label]] : []),
+        ...(leave ? [[commute.asks || transportRowsX.length > 0 ? 'E' : 'D', leaveDaysText]] : []),
       ]) + `</row>`
 
     const hdrCell = (col, rn, text) =>
@@ -1809,10 +1826,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
           t1c.push(timeCell(`${breakCols[bi * 2 + 1]}${r1}`, S.time[dt], brs[bi]?.end))
         }
         t1c.push(timeCell(`${OUT_COL}${r1}`, S.time[dt], session?.outLog?.time?.substring(0, 5)))
-        if (LV_COL) {
-          const lv = isFirst ? leaveText(dateStr) : ''
-          t1c.push(lv ? `<c r="${LV_COL}${r1}" s="${S.dow[dt]}" t="inlineStr"><is><t>${lv}</t></is></c>` : `<c r="${LV_COL}${r1}" s="${S.dow[dt]}"/>`)
-        }
+        if (LV_COL) t1c.push(leaveCell(`${LV_COL}${r1}`, dt, isFirst ? leaveVal(dateStr) : 0))
         if (showTransportCol) {
           const amt = isFirst ? transportDay[dateStr] : 0
           // 15 digits = what Excel keeps (drops 434.59999999999997 style noise)
@@ -1828,7 +1842,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<row r="${T1_TOT}">` +
       `<c r="A${T1_TOT}" s="${S.tot_lbl}" t="inlineStr"><is><t>合計</t></is></c>` +
       `<c r="B${T1_TOT}" s="${S.tot_lbl}"/>` +
-      ['C', ...breakCols, OUT_COL, ...(LV_COL ? [LV_COL] : [])].map(c => `<c r="${c}${T1_TOT}" s="${S.tot_lbl}"/>`).join('') +
+      ['C', ...breakCols, OUT_COL].map(c => `<c r="${c}${T1_TOT}" s="${S.tot_lbl}"/>`).join('') +
+      (LV_COL ? sumCell(`${LV_COL}${T1_TOT}`, S.tot_leave, LV_COL, T1_DATA, T1_DATA_END) : '') +
       (showTransportCol ? sumCell(`${TR_COL}${T1_TOT}`, S.tot_pay, TR_COL, T1_DATA, T1_DATA_END, true) : '') +
       `</row>`
 
