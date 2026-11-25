@@ -2918,7 +2918,9 @@ function KinmuboTab({ today }) {
                                   return [(
                                     <tr key={ds} className={rowClass}>
                                       <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>{dateLabel}</td>
-                                      <td className={styles.kinmuboDailyTd} colSpan={2} style={{ color: '#78716c', fontStyle: 'italic', fontSize: '0.8rem' }}>旧データ（1日合計）</td>
+                                      {leave?.dates[ds] === 'full'
+                                        ? <td className={styles.kinmuboDailyTd} colSpan={2} style={{ color: '#6b21a8', fontWeight: 700, fontSize: '0.8rem' }}>有給（1日）</td>
+                                        : <td className={styles.kinmuboDailyTd} colSpan={2} style={{ color: '#78716c', fontStyle: 'italic', fontSize: '0.8rem' }}>旧データ（1日合計）</td>}
                                       <td className={styles.kinmuboDailyTd} style={{ fontSize: '0.82rem', color: '#475569' }}>{legacyContent}</td>
                                       <td className={styles.kinmuboDailyTd} style={{ fontWeight: 600 }}>{legacyTotal > 0 ? fmtMins(legacyTotal) : '—'}</td>
                                     </tr>
