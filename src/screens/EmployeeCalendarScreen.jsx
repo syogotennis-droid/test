@@ -719,7 +719,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             return (
               <div
                 key={d}
-                className={[styles.cell, inTime ? styles.worked : '', copy && !worked ? styles.planned : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
+                className={[styles.cell, inTime ? styles.worked : '', copy && !worked && leaveKind !== 'full' ? styles.planned : '', dow === 0 ? styles.sun : dow === 6 ? styles.sat : ''].join(' ')}
                 onClick={() => canOpen && setSelectedDay(d)}
               >
                 <div className={styles.dayNum}>{d}</div>
@@ -746,7 +746,8 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
                 )}
                 {leaveKind && <div className={styles.calLeaveBadge}>{leaveKind === 'full' ? '有給' : '半日有給'}</div>}
                 {workBadgeLabel && <div className={workBadgeClass}>{workBadgeLabel}</div>}
-                {copy && !worked && <div className={styles.calCopyBadge}>業務予定あり</div>}
+                {/* a 1日有給 has used the plan (its work is the paid day's work) */}
+                {copy && !worked && leaveKind !== 'full' && <div className={styles.calCopyBadge}>業務予定あり</div>}
               </div>
             )
           })}
