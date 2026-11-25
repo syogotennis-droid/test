@@ -317,7 +317,7 @@ function LeaveSection({ kind, canChange, hasPunches, isSalaried, onChange }) {
   }
   if (!canChange) return null
   return (
-    <div className={styles.leaveSection}>
+    <div className={choosing ? styles.leaveSection : styles.leaveQuiet}>
       {choosing ? (
         <>
           <div className={styles.leaveTitle}>有給の種類を選んでください</div>
@@ -420,7 +420,6 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
             </div>
 
             <div className={styles.modalBody}>
-              <LeaveSection kind={leaveKind} canChange={!tooOld} hasPunches={hasPunches} isSalaried={isSalariedUser} onChange={onLeaveChange} />
               {leaveKind === 'full' && !isSalariedUser && (
                 <div className={styles.sessionSingle}>
                   <div className={styles.workSection}>
@@ -530,6 +529,8 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                   </div>
                 )
               })}
+              {/* 有給: kept low-key below the work (entering work is what this screen is mostly for) */}
+              <LeaveSection kind={leaveKind} canChange={!tooOld} hasPunches={hasPunches} isSalaried={isSalariedUser} onChange={onLeaveChange} />
             </div>
           </>
         )}

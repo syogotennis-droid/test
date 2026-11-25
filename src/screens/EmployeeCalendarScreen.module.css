@@ -1577,14 +1577,14 @@
 }
 
 .leaveSection {
-  border: 1.5px solid #e9d5ff;
+  border: 1px solid #e9d5ff;
   background: #faf5ff;
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 10px;
+  margin: 8px 20px 12px;
 }
 
 .leaveLine { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1601,7 +1601,8 @@
   font-size: 0.95rem;
   cursor: pointer;
 }
-.leaveRegisterBtn { align-self: flex-start; border: 1.5px solid #a855f7; background: #fff; color: #7e22ce; }
+.leaveQuiet { display: flex; justify-content: flex-end; padding: 4px 20px 12px; }
+.leaveRegisterBtn { min-height: 40px; padding: 0 14px; font-size: 0.85rem; font-weight: 700; border: 1px solid #cbd5e1; background: #fff; color: #64748b; }
 .leaveChoiceBtn { border: none; background: #9333ea; color: #fff; min-width: 88px; }
 .leaveChoiceBtn:disabled { background: #d8b4fe; cursor: not-allowed; }
 .leaveCancelBtn { border: 1.5px solid #cbd5e1; background: #fff; color: #475569; }
