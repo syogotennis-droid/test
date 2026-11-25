@@ -284,7 +284,7 @@ function CopySection({ copy, onDelete, onEdit }) {
           </button>
         </div>
       ) : (
-        <button className={styles.copyDeleteOutline} onClick={() => setConfirming(true)}>この日の予定を削除（休みなど）</button>
+        <button className={styles.copyDeleteOutline} onClick={() => setConfirming(true)}>この日の予定を削除</button>
       )}
     </div>
   )
