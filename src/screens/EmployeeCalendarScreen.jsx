@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs, getPaidLeaves, savePaidLeave, leaveSessionId, PAID_LEAVE_LABEL } from '../lib/db'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, saveWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs, getPaidLeaves, savePaidLeave, leaveSessionId, PAID_LEAVE_LABEL } from '../lib/db'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
 import CopyFromDay from './CopyFromDay'
 import styles from './EmployeeCalendarScreen.module.css'
@@ -82,14 +82,16 @@ function objsEqual(a, b) {
 }
 
 /* ─── 業務入力・編集フォーム（カード＋テンキー） ─── */
-function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, lastWeek, copyFrom, onCancel, onSave, saving }) {
+// prefill: a draft put in at the start (e.g. the day's 業務予定) — saving is still needed
+function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, prefill, prefillLabel, lastWeek, copyFrom, onCancel, onSave, saving }) {
   // items already entered stay editable even if no longer selectable (e.g. deleted)
   const [editableItems] = useState(() => sortByItemOrder([...new Set([
     ...selectable, ...Object.keys(initialWork).filter(t => initialWork[t] > 0),
   ])]))
   const [inputs, setInputs] = useState(() => {
     const init = {}
-    Object.entries(initialWork).forEach(([type, mins]) => {
+    Object.entries(prefill || initialWork).forEach(([type, mins]) => {
+      if (prefill && !editableItems.includes(type)) return
       if (mins > 0) init[type] = { h: Math.floor(mins / 60), m: mins % 60 }
     })
     return init
@@ -138,7 +140,7 @@ function WorkEditMode({ sessionLabel, editableItems: selectable, initialWork, la
   const lastWeekItems = Object.fromEntries(Object.entries(lastWeek?.items || {}).filter(([t, m]) => m > 0 && editableItems.includes(t)))
   const lastWeekDow = lastWeek ? DOW_LABELS[new Date(lastWeek.date.replace(/-/g, '/')).getDay()] : ''
   // where the input was copied from (先週の水曜日 / 10/1（水）…) for the banner, or ''
-  const [copiedFrom, setCopiedFrom] = useState('')
+  const [copiedFrom, setCopiedFrom] = useState(prefill ? prefillLabel || '' : '')
   const [pickingDay, setPickingDay] = useState(false)
   function copyIn(items, label) {
     if (Object.keys(currentObj).length > 0 && !window.confirm(`入力中の内容を、${label}の内容に置き換えますか？`)) return false
@@ -256,21 +258,22 @@ function fmtCopyItems(items) {
   return sortByItemOrder(Object.keys(items)).map(t => `${itemLabel(t)} ${fmtMins(items[t])}`).join('・')
 }
 
-// Work prepared for an upcoming day by the weekly copy; the employee may remove it
-function CopySection({ copy, onDelete }) {
+// 業務予定 of an upcoming day (from the weekly copy, or entered here); the employee may change or remove it
+function CopySection({ copy, onDelete, onEdit }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const slots = Object.keys(copy).map(Number).sort((a, b) => a - b)
   return (
     <div className={styles.copySection}>
-      <div className={styles.copyTitle}>先週からコピーした業務</div>
+      <div className={styles.copyTitle}>業務予定</div>
       {slots.map(n => (
         <div key={n} className={styles.copyLine}>
           {slots.length > 1 && <span className={styles.copySlot}>{n}回目</span>}
           <span>{fmtCopyItems(copy[n])}</span>
         </div>
       ))}
-      <div className={styles.copyHint}>退勤時の業務入力に、この内容が入ります</div>
+      <div className={styles.copyHint}>退勤時の業務入力に、この内容が最初から入ります（退勤登録で確定）</div>
+      {onEdit && !confirming && <button className={styles.copyEditBtn} onClick={onEdit}>予定を編集</button>}
       {confirming ? (
         <div className={styles.copyConfirm}>
           <span>この日の業務予定を削除しますか？</span>
@@ -342,7 +345,7 @@ function editableFrom() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onClose, onWorkSaved, leaveKind, onLeaveChange }) {
+function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onPlanSaved, onClose, onWorkSaved, leaveKind, onLeaveChange }) {
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   const tooOld = dateStr < editableFrom()
   // a 1日有給 has no punches: its work time is entered as the shift "leave-<date>"
@@ -357,14 +360,21 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
   const [saving, setSaving] = useState(false)
   // last week's same weekday / same shift for the shift being edited (null offline or none)
   const [lastWeek, setLastWeek] = useState(null)
-  // idx = the shift's index, or 'leave' for the work of a 1日有給
+  // idx = the shift's index, 'leave' for the work of a 1日有給, or 'plan' for the 業務予定 (1回目)
   function startEdit(idx) {
     setLastWeek(null)
     setEditingSessionIdx(idx)
-    getLastWeekWork(user.id, dateStr, idx === 'leave' ? 1 : idx + 1).then(r => setLastWeek(r))
+    getLastWeekWork(user.id, dateStr, typeof idx === 'number' ? idx + 1 : 1).then(r => setLastWeek(r))
   }
 
   async function handleSave(workItemsObj) {
+    if (editingSessionIdx === 'plan') {
+      setSaving(true)
+      try { await saveWeeklyCopy(user.id, dateStr, 1, workItemsObj); onPlanSaved(workItemsObj); setEditingSessionIdx(null) }
+      catch { alert('保存できませんでした。通信を確認して、もう一度お試しください') }
+      finally { setSaving(false) }
+      return
+    }
     const session = editingSessionIdx === 'leave' ? { sessionId: leaveSid } : sessions[editingSessionIdx]
     if (!session?.sessionId) return
     // work longer than the shift (clock-in → clock-out, minus breaks): ask before saving
@@ -390,12 +400,18 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
     }
   }
 
-  const editingSession = editingSessionIdx === 'leave' ? { sessionId: leaveSid } : editingSessionIdx !== null ? sessions[editingSessionIdx] : null
-  const editingWork = editingSession?.sessionId ? (sessionWorkItems[editingSession.sessionId] || {}) : {}
-  const sessionLabel = `${month + 1}月${day}日（${dowLabel}）の${editingSessionIdx === 'leave' ? '有給の' : ''}業務を入力`
+  const editingSession = editingSessionIdx === 'leave' ? { sessionId: leaveSid } : typeof editingSessionIdx === 'number' ? sessions[editingSessionIdx] : null
+  const editingWork = editingSessionIdx === 'plan' ? (copy?.[1] || {}) : editingSession?.sessionId ? (sessionWorkItems[editingSession.sessionId] || {}) : {}
+  const sessionLabel = `${month + 1}月${day}日（${dowLabel}）の${editingSessionIdx === 'leave' ? '有給の業務を入力' : editingSessionIdx === 'plan' ? '業務予定を入力' : '業務を入力'}`
   const hasPunches = sessions.some(s => s.in || s.out)
   const leaveWork = sessionWorkItems[leaveSid] || {}
   const leaveEntries = sortByItemOrder(Object.keys(leaveWork)).map(t => [t, leaveWork[t]]).filter(([, m]) => m > 0)
+  // 業務予定 (all shifts together) — a draft for the 1日有給's work when nothing is entered yet
+  const planItems = {}
+  Object.values(copy || {}).forEach(items => Object.entries(items || {}).forEach(([t, m]) => { if (m > 0) planItems[t] = (planItems[t] || 0) + m }))
+  const leavePrefill = editingSessionIdx === 'leave' && leaveEntries.length === 0 && Object.keys(planItems).length > 0 ? planItems : null
+  // a plan can be entered for today or later, before the day's first punch
+  const canPlan = canEdit && dateStr >= localToday() && leaveKind !== 'full' && !hasPunches
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
@@ -405,8 +421,10 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
             sessionLabel={sessionLabel}
             editableItems={editableItems}
             initialWork={editingWork}
+            prefill={leavePrefill}
+            prefillLabel="業務予定"
             lastWeek={lastWeek}
-            copyFrom={{ userId: user.id, date: dateStr, slot: editingSessionIdx === 'leave' ? 1 : editingSessionIdx + 1 }}
+            copyFrom={{ userId: user.id, date: dateStr, slot: typeof editingSessionIdx === 'number' ? editingSessionIdx + 1 : 1 }}
             onCancel={() => setEditingSessionIdx(null)}
             onSave={handleSave}
             saving={saving}
@@ -446,7 +464,13 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                   </div>
                 </div>
               )}
-              {copy && <CopySection copy={copy} onDelete={onDeleteCopy} />}
+              {copy && leaveKind !== 'full' && <CopySection copy={copy} onDelete={onDeleteCopy} onEdit={canPlan ? () => startEdit('plan') : null} />}
+              {!copy && canPlan && (
+                <div className={styles.planEmpty}>
+                  <button className={styles.inputWorkBtn} onClick={() => startEdit('plan')}>業務の予定を入れる</button>
+                  <div className={styles.copyHint}>入れておくと、退勤時の業務入力に最初から入ります（退勤登録で確定）</div>
+                </div>
+              )}
               {sessions.map((session, idx) => {
                 const workData = session.sessionId ? (sessionWorkItems[session.sessionId] || null) : null
                 const workEntries = workData ? sortByItemOrder(Object.keys(workData)).map(t => [t, workData[t]]).filter(([, m]) => m > 0) : []
@@ -733,6 +757,16 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
           user={user}
           sessionWorkItems={sessionWorkItems}
           copy={(() => { const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`; return user?.employeeType !== 'salaried' && ds >= today ? copies[ds] : null })()}
+          onPlanSaved={items => {
+            const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`
+            setCopies(prev => {
+              const day = { ...(prev[ds] || {}) }
+              if (Object.values(items).some(m => m > 0)) day[1] = items; else delete day[1]
+              const n = { ...prev }
+              if (Object.keys(day).length) n[ds] = day; else delete n[ds]
+              return n
+            })
+          }}
           onDeleteCopy={async () => {
             const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`
             await deleteWeeklyCopy(user.id, ds)

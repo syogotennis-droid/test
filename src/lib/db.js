@@ -954,6 +954,10 @@ export async function getWeeklyCopyForSlot(userId, date, slot) {
   } catch { return null }
 }
 
+// 業務予定 entered ahead in 勤務確認 (a draft for the clock-out screen; empty items remove it)
+export async function saveWeeklyCopy(userId, date, slot, items) {
+  await api('/weekly_copies', { method: 'PUT', body: { userId, date, slot, items } })
+}
 export async function deleteWeeklyCopy(userId, date) {
   await api('/weekly_copies', { method: 'DELETE', query: { userId, date } })
 }

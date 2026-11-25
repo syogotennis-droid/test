@@ -659,6 +659,24 @@ export async function onRequest(context) {
       results.forEach(r => { (map[r.date] = map[r.date] || {})[r.slot] = parseJson(r.items, {}) })
       return ok(map)
     }
+    // 業務予定 entered ahead in 勤務確認 (same place as the weekly copy; used at clock-out as a draft).
+    // Only today or later; empty items remove that shift's plan.
+    if (route === 'weekly_copies' && method === 'PUT') {
+      const b = await readBody()
+      needStr(b.userId, 'userId')
+      if (!isDate(b.date)) throw new HttpError('bad_date', 400)
+      if (b.date < todayStr()) throw new HttpError('past_date', 422)
+      const slot = b.slot === undefined ? 1 : Number(b.slot)
+      if (!Number.isInteger(slot) || slot < 1 || slot > 9) throw new HttpError('bad_slot', 400)
+      if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
+      const items = cleanItems(b.items)
+      const id = `${b.userId}_${b.date}_${slot}`
+      await (Object.keys(items).length
+        ? DB.prepare('INSERT OR REPLACE INTO weekly_copies (id, user_id, date, slot, items, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(id, b.userId, b.date, slot, JSON.stringify(items), new Date().toISOString())
+        : DB.prepare('DELETE FROM weekly_copies WHERE id = ?').bind(id)).run()
+      return ok({ ok: true })
+    }
     if (route === 'weekly_copies' && method === 'DELETE') {
       await DB.prepare('DELETE FROM weekly_copies WHERE user_id = ? AND date = ?').bind(sp.get('userId'), sp.get('date')).run()
       return ok({ ok: true })
@@ -923,7 +941,7 @@ function isDeviceRoute(route, method, sp) {
     return false
   }
   if (method === 'POST') return route === 'logs' || route === 'weekly_copy/answer' || route === 'users/by_pin'
-  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days' || route === 'paid_leaves'
+  if (method === 'PUT') return route === 'session_work_reports' || route === 'work_reports' || route === 'transport_days' || route === 'paid_leaves' || route === 'weekly_copies'
   // an employee may remove a day prepared by the weekly copy (e.g. off sick); never punches
   if (method === 'DELETE') return route === 'weekly_copies' && !!(sp.get('userId') && sp.get('date'))
   return false

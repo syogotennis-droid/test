@@ -1614,3 +1614,24 @@
   color: #64748b;
   padding: 0 16px 6px;
 }
+
+/* 業務予定（勤務確認から前もって入れる） */
+.planEmpty {
+  padding: 16px 20px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.copyEditBtn {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1.5px solid #16a34a;
+  background: #fff;
+  color: #166534;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
