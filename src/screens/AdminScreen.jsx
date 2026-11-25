@@ -544,8 +544,8 @@ function CalendarTab({ users, today, isTablet }) {
     if (month === 0) { setYear(y => y - 1); setMonth(11) }
     else setMonth(m => m - 1)
   }
+  // any month ahead (有給 can be entered in advance)
   function nextMonth() {
-    if (isCurrentMonth) return
     if (month === 11) { setYear(y => y + 1); setMonth(0) }
     else setMonth(m => m + 1)
   }
@@ -573,7 +573,7 @@ function CalendarTab({ users, today, isTablet }) {
           <div className={styles.calMonthGroup}>
             <button className={styles.navBtn} onClick={prevMonth}>◀</button>
             <span className={styles.navDate}>{year}年{month + 1}月</span>
-            <button className={styles.navBtn} onClick={nextMonth} disabled={isCurrentMonth}>▶</button>
+            <button className={styles.navBtn} onClick={nextMonth}>▶</button>
           </div>
         </div>
 
