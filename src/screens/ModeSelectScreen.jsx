@@ -102,7 +102,10 @@ export default function ModeSelectScreen({ onSelect }) {
             className={`${styles.modeBtn} ${styles.clockCheck}`}
             onClick={() => onSelect('確認')}
           >
-            <span className={styles.scanHintText}>勤務確認</span>
+            {/* on a narrow button it wraps only between 勤務確認 and ・有給設定 */}
+            <span className={[styles.scanHintText, styles.checkLabel].join(' ')}>
+              <span className={styles.noWrap}>勤務確認</span><span className={styles.noWrap}>・有給設定</span>
+            </span>
           </button>
           <button
             type="button"

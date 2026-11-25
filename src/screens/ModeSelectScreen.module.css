@@ -86,11 +86,12 @@
 
 .clockCheck {
   flex: 0 0 34%;
+  min-width: 0;
   height: 100%;
   background: #374151;
   border-radius: 10px 0 0 10px;
   border-right: 1px solid #d6d9de;
-  gap: 16px;
+  gap: 6px;
   touch-action: manipulation;
 }
 
@@ -150,6 +151,17 @@
   font-weight: 700;
 }
 
+/* 勤務確認・有給設定（狭いときは「・有給設定」から2行に） */
+.checkLabel {
+  max-width: 100%;
+  padding: 0 8px;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.25;
+  font-size: clamp(20px, 2.4vw, 28px);
+}
+.noWrap { white-space: nowrap; display: inline-block; }
+
 /* 下部右：本日の状況 */
 .statusPanel {
   flex: 1;
@@ -198,6 +210,8 @@
   .clockBreak { border-radius: 0 10px 0 0; border-right: none; }
   .statusPanel { flex: 1 1 100%; padding: 10px; gap: 12px; }
   .scanHintText { font-size: 20px; }
+  .clockCheck { min-width: 0; }
+  .checkLabel { font-size: 18px; }
   .statusIconLarge { font-size: 32px; }
   .statusLabel { font-size: 14px; }
   .statusValue { font-size: 26px; }
