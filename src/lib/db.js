@@ -2032,7 +2032,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     if (leave) {
       payRows.push(
         `<row r="${payRowIdx}">` +
-        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(leave.label)}</t></is></c>` +
+        `<c r="A${payRowIdx}" s="${S.pay_lbl}" t="inlineStr"><is><t>${esc(`有給（${leave.days}日）`)}</t></is></c>` +
         `<c r="B${payRowIdx}" s="${S.pay_lbl}"/><c r="C${payRowIdx}" s="${S.pay_lbl}"/><c r="D${payRowIdx}" s="${S.pay_lbl}"/>` +
         `</row>`
       )
@@ -2055,7 +2055,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // bestFit="1" lets Excel auto-size columns to content on open (no ####### ever)
     const colsXml =
       `<cols>` +
-      `<col min="1" max="1" width="13" customWidth="1"/>` +
+      `<col min="1" max="1" width="${colAWidth(payRows.join(''), 13)}" customWidth="1"/>` +
       `<col min="2" max="${maxColIdx}" width="20" bestFit="1"/>` +
       `</cols>`
     const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -2098,7 +2098,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<worksheet xmlns="${WB_NS_S}" xmlns:r="${WB_REL_S}">` +
       `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
-      `<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="3" width="20" bestFit="1"/></cols>` +
+      `<cols><col min="1" max="1" width="${colAWidth(sumRows.replace(/^<row r="1".*?<\/row>/, ''), 16)}" customWidth="1"/><col min="2" max="3" width="20" bestFit="1"/></cols>` +
       `${withCachedValues(`<sheetData>${sumRows}</sheetData>`)}</worksheet>`
     sheetXmls.unshift(summarySheetXml)
   }
@@ -2184,6 +2184,18 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
 // 数式は上から順に並んでいて、参照先は必ず手前の行にある。
 // Total of a column range. An empty range (no data rows) is written as 0: SUM(D71:D70) would be
 // read by Excel as D70:D71, i.e. include the total cell itself (circular reference warning).
+// Width of column A wide enough for its longest text (a label hidden behind the next cell's number
+// otherwise, e.g. 「フロント（日曜）」). Full-width characters count double.
+function colAWidth(xml, min) {
+  let longest = 0
+  for (const m of xml.matchAll(/<c r="A\d+"[^>]*t="inlineStr"><is><t[^>]*>(.*?)<\/t><\/is><\/c>/g)) {
+    const text = m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    const w = [...text].reduce((n, ch) => n + (ch.charCodeAt(0) > 0xff ? 2.1 : 1.1), 0)
+    longest = Math.max(longest, w)
+  }
+  return Math.max(min, Math.ceil(longest + 2))
+}
+
 function sumCell(ref, style, col, from, to, round = false) {
   if (to < from) return `<c r="${ref}" s="${style}"><v>0</v></c>`
   const f = `SUM(${col}${from}:${col}${to})`
