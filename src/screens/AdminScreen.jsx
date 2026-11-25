@@ -1903,7 +1903,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                       <button type="button" className={styles.dayEditTransportBtn} aria-label="回数を減らす" disabled={countCur <= 1} onClick={() => setCountCur(c => Math.max(1, c - 1))}>−</button>
                       <strong style={{ minWidth: 64, textAlign: 'center' }}>{countCur === 1 ? '1日分' : `${countCur}回分`}</strong>
                       <button type="button" className={styles.dayEditTransportBtn} aria-label="回数を増やす" disabled={countCur >= 9} onClick={() => setCountCur(c => Math.min(9, c + 1))}>＋</button>
-                      <span style={{ fontSize: '0.78rem', color: '#64748b' }}>ふだんは1日分。この日だけ複数回分払うときに増やす</span>
                     </div>
                   )}
                   {transportCur && dayOptions.length > 1 && (
