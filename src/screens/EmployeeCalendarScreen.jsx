@@ -341,7 +341,7 @@ function editableFrom() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onPlanSaved, onClose, onWorkSaved, leaveKind, onLeaveChange }) {
+function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, onDeleteCopy, onPlanSaved, onClose, onWorkSaved, leaveKind, onLeaveChange, leaveSupported = true }) {
   const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   const tooOld = dateStr < editableFrom()
   // a 1日有給 has no punches: its work time is entered as the shift "leave-<date>"
@@ -416,7 +416,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
     }
   }
   // a plan can be entered for today or later, before the day's first punch
-  const canPlan = canEdit && dateStr >= localToday() && leaveKind !== 'full' && !hasPunches
+  const canPlan = leaveSupported && canEdit && dateStr >= localToday() && leaveKind !== 'full' && !hasPunches
 
   return (
     <div className={styles.modalOverlay} onClick={editingSessionIdx === null ? onClose : undefined}>
@@ -557,7 +557,7 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                 )
               })}
               {/* 有給: kept low-key below the work (entering work is what this screen is mostly for) */}
-              <LeaveSection kind={leaveKind} canChange={!tooOld} hasPunches={hasPunches} isSalaried={isSalariedUser} onChange={changeLeave} />
+              {leaveSupported && <LeaveSection kind={leaveKind} canChange={!tooOld} hasPunches={hasPunches} isSalaried={isSalariedUser} onChange={changeLeave} />}
             </div>
           </>
         )}
@@ -581,6 +581,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const [legacyWorkedDates, setLegacyWorkedDates] = useState(new Set())
   const [copies, setCopies] = useState({}) // { dateStr: { slot: items } } from the weekly copy
   const [leaves, setLeaves] = useState({}) // { dateStr: 'full' | 'half' } 有給
+  const [leaveSupported, setLeaveSupported] = useState(true) // false: this place's server has no 有給 / 業務予定 yet
   const today = localToday()
 
   const loadLogs = useCallback(() => {
@@ -593,10 +594,12 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       isSal ? Promise.resolve(null) : getSessionWorkReportsForUser(user.id),
       isSal ? Promise.resolve({}) : getWeeklyCopies(user.id, from > today ? from : today, to).catch(() => ({})),
       loadWorkItemDefs(), // latest item names
-      getPaidLeaves(from, to, user.id).catch(() => ({})), // (a server without 有給 yet: none)
+      // a server not updated yet refuses (401/404): no 有給 or 業務予定 there (the app is shared by all places)
+      getPaidLeaves(from, to, user.id).catch(e => (e?.status === 401 || e?.status === 404 ? null : {})),
     ]).then(([data, workData, copyData, , leaveMap]) => {
       setLogs(data)
       setCopies(copyData || {})
+      setLeaveSupported(leaveMap !== null)
       const lv = {}
       Object.entries(leaveMap || {}).forEach(([k, kind]) => { lv[k.slice(-10)] = kind })
       setLeaves(lv)
@@ -653,7 +656,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
         <span className={styles.monthLabel}>{year}年{month + 1}月</span>
         <button onClick={nextMonth} className={styles.navBtn} disabled={isNextMonth}>▶</button>
       </div>
-      <div className={styles.calGuide}>日付を押すと、業務の入力・修正や有給の登録ができます</div>
+      <div className={styles.calGuide}>{leaveSupported ? '日付を押すと、業務の入力・修正や有給の登録ができます' : '日付を押すと、業務の入力・修正ができます'}</div>
 
       {loading ? (
         <div className={styles.loading}>読み込み中</div>
@@ -682,7 +685,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const workedSessions = sessionWorkStatus[dateStr]
             const leaveKind = leaves[dateStr] || ''
             // a day of this month or last month can be opened to register paid leave
-            const canOpen = worked || copy || leaveKind || dateStr >= editableFrom()
+            const canOpen = worked || copy || leaveKind || (leaveSupported && dateStr >= editableFrom())
 
             let workBadgeLabel = null
             let workBadgeClass = null
@@ -754,6 +757,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
 
       {selectedDay !== null && (
         <DayModal
+          leaveSupported={leaveSupported}
           day={selectedDay}
           year={year}
           month={month}

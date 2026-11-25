@@ -77,7 +77,9 @@ async function api(path, { method = 'GET', query, body } = {}) {
     // a tablet whose registration was removed keeps no employee list (PINs)
     if (j.need === 'device') { try { localStorage.removeItem(USERS_CACHE_KEY) } catch {} }
     window.dispatchEvent(new CustomEvent('auth-required', { detail: { need: j.need } }))
-    throw new Error('認証が必要です')
+    const e = new Error('認証が必要です')
+    e.status = 401 // (the outbox waits on a 401; a screen may tell "not allowed / not on this server")
+    throw e
   }
   if (!res.ok) {
     const e = new Error(`API ${method} ${path} failed (${res.status})`)

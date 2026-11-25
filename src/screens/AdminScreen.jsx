@@ -1115,10 +1115,11 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   // 交通費の回数（複数回分を払う日だけ管理者が入れる。ふだんは1日分）
   const [countInit, setCountInit] = useState(1)
   const [countCur, setCountCur] = useState(1)
+  const [countSupported, setCountSupported] = useState(false) // a server not updated yet has no 回数
   useEffect(() => {
     if (!asksTransport) return
     getTransportCounts(dateStr, dateStr, user.id)
-      .then(m => { const c = Number(m[`${user.id}_${dateStr}`]) || 1; setCountInit(c); setCountCur(c) })
+      .then(m => { const c = Number(m[`${user.id}_${dateStr}`]) || 1; setCountInit(c); setCountCur(c); setCountSupported(true) })
       .catch(() => {})
   }, [user.id, dateStr, asksTransport])
   const countChanged = transportCur && countCur !== countInit
@@ -1910,7 +1911,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                     <button className={[styles.dayEditTransportBtn, transportCur ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => setTransportCur(true)}>あり</button>
                     <button className={[styles.dayEditTransportBtn, !transportCur ? styles.dayEditTransportOff : ''].join(' ')} onClick={() => setTransportCur(false)}>なし</button>
                   </div>
-                  {transportCur && (
+                  {transportCur && countSupported && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 8 }}>
                       <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 700 }}>回数</span>
                       <button type="button" className={styles.dayEditTransportBtn} aria-label="回数を減らす" disabled={countCur <= 1} onClick={() => setCountCur(c => Math.max(1, c - 1))}>−</button>
