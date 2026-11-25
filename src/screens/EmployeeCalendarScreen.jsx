@@ -410,6 +410,14 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
   const planItems = {}
   Object.values(copy || {}).forEach(items => Object.entries(items || {}).forEach(([t, m]) => { if (m > 0) planItems[t] = (planItems[t] || 0) + m }))
   const leavePrefill = editingSessionIdx === 'leave' && leaveEntries.length === 0 && Object.keys(planItems).length > 0 ? planItems : null
+  // 1日有給 with nothing entered yet but a 業務予定: register the plan as the paid day's work in one tap
+  const planForLeave = Object.fromEntries(Object.entries(planItems).filter(([t]) => editableItems.includes(t)))
+  async function savePlanAsLeaveWork() {
+    setSaving(true)
+    try { await saveSessionWorkReport(user.id, dateStr, leaveSid, planForLeave); onWorkSaved(leaveSid, planForLeave, dateStr) }
+    catch { alert('保存に失敗しました') }
+    finally { setSaving(false) }
+  }
   // a plan can be entered for today or later, before the day's first punch
   const canPlan = canEdit && dateStr >= localToday() && leaveKind !== 'full' && !hasPunches
 
@@ -446,6 +454,13 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                         ? <span className={styles.workBadgeEntered}>入力済み</span>
                         : <span className={styles.workBadgeEmpty}>未入力</span>}
                     </div>
+                    {leaveEntries.length === 0 && canEdit && Object.keys(planForLeave).length > 0 && (
+                      <div className={styles.leavePlan}>
+                        <div className={styles.leavePlanTitle}>業務予定（まだ登録されていません）</div>
+                        <div className={styles.leavePlanItems}>{fmtCopyItems(planForLeave)}</div>
+                        <button className={styles.inputWorkBtn} onClick={savePlanAsLeaveWork} disabled={saving}>{saving ? '保存中' : 'この内容で登録'}</button>
+                      </div>
+                    )}
                     {leaveEntries.length > 0 && (
                       <div className={styles.workEntries}>
                         {leaveEntries.map(([type, mins]) => (
@@ -457,8 +472,8 @@ function DayModal({ day, year, month, sessions, user, sessionWorkItems, copy, on
                       </div>
                     )}
                     {canEdit ? (
-                      <button className={leaveEntries.length > 0 ? styles.editWorkBtn : styles.inputWorkBtn} onClick={() => startEdit('leave')}>
-                        {leaveEntries.length > 0 ? '業務を編集' : '業務を入力'}
+                      <button className={leaveEntries.length > 0 || Object.keys(planForLeave).length > 0 ? styles.editWorkBtn : styles.inputWorkBtn} onClick={() => startEdit('leave')}>
+                        {leaveEntries.length > 0 ? '業務を編集' : Object.keys(planForLeave).length > 0 ? '直して登録' : '業務を入力'}
                       </button>
                     ) : tooOld ? <span className={styles.legacyHint}>先々月より前の業務は管理者に連絡</span> : null}
                   </div>
