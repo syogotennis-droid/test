@@ -534,7 +534,7 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
           <div className={styles.skipHint}>業務が未設定です。そのまま退勤できます（管理者に連絡）</div>
         )}
         {displayCards.length > 0 && activeItems.length === 0 && (
-          <div className={styles.skipHint}>業務時間は後から「勤務確認」で入力できます</div>
+          <div className={styles.skipHint}>業務時間は後から「勤務確認・編集」で入力できます</div>
         )}
 
         {ctx.asksTransport && (

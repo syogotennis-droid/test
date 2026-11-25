@@ -1606,3 +1606,11 @@
 .leaveChoiceBtn { border: none; background: #9333ea; color: #fff; min-width: 88px; }
 .leaveChoiceBtn:disabled { background: #d8b4fe; cursor: not-allowed; }
 .leaveCancelBtn { border: 1.5px solid #cbd5e1; background: #fff; color: #475569; }
+
+/* カレンダーの上の案内（何ができるか） */
+.calGuide {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #64748b;
+  padding: 0 16px 6px;
+}

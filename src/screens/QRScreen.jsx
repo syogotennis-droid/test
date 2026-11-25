@@ -6,7 +6,7 @@ import styles from './QRScreen.module.css'
 
 const PIN_KEYS = ['1','2','3','4','5','6','7','8','9','','0','⌫']
 
-const MODE_LABEL = { '休憩': '休憩・戻り', '確認': '勤務確認' }
+const MODE_LABEL = { '休憩': '休憩・戻り', '確認': '勤務確認・編集' }
 const MODE_ICON = { '出勤': '🟢', '休憩': '☕', '確認': '📅' }
 
 function PinOverlay({ mode, onSubmit, onClose }) {

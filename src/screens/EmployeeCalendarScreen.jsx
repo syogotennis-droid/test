@@ -625,6 +625,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
         <span className={styles.monthLabel}>{year}年{month + 1}月</span>
         <button onClick={nextMonth} className={styles.navBtn} disabled={isNextMonth}>▶</button>
       </div>
+      <div className={styles.calGuide}>日付を押すと、業務の入力・修正や有給の登録ができます</div>
 
       {loading ? (
         <div className={styles.loading}>読み込み中</div>
