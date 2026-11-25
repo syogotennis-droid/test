@@ -4,7 +4,7 @@ import {
   getTodayPunchState, saveLog, BREAK_START, BREAK_END, pairBreaks, breakMinutes,
   getWeeklyCopyForSlot, getWeeklyCopyOffer, getLastWeekWork, getTransportDay, getTransportDayChoice, saveTransportDay,
   saveSessionWorkReport, saveWorkReport, localToday, getCommute, loadWorkItemDefs, answerWeeklyCopy,
-  getSessionWorkReportsForDate, getTransportPerShift,
+  getSessionWorkReportsForDate,
 } from './db.js'
 
 function nowHM() {
@@ -82,16 +82,14 @@ async function handlePunchNow(mode, user) {
   // last week's work (null when already answered, nothing to copy or offline)
   // registered commute methods (two or more → the screen asks which ones were used today)
   const transportOptions = asks ? (user.transportOptions ?? getCommute(user).options) : []
-  // 交通費を出退勤ごとに払う施設: the answer is for this shift (each shift starts at あり)
-  const perShift = asks && ps.sessionId ? await getTransportPerShift() : false
   const [copyPrefill, savedTransport, offer, saved, , savedMethods, lastWeek] = await Promise.all([
     getWeeklyCopyForSlot(user.id, date, slot),
-    asks && !perShift ? getTransportDay(user.id, date) : null,
+    asks ? getTransportDay(user.id, date) : null,
     getWeeklyCopyOffer(user.id, date),
     // work already entered for this shift (e.g. from 勤務確認 during the shift) comes first
     ps.sessionId ? getSessionWorkReportsForDate(user.id, date).then(r => r[ps.sessionId] || null).catch(() => null) : null,
     loadWorkItemDefs(), // latest names / order for the work cards
-    transportOptions.length > 1 && !perShift ? getTransportDayChoice(user.id, date).catch(() => null) : null,
+    transportOptions.length > 1 ? getTransportDayChoice(user.id, date).catch(() => null) : null,
     // same weekday / same shift last week, for the "先週の◯曜日と同じ内容を入れる" button (null offline)
     getLastWeekWork(user.id, date, slot),
   ])
@@ -104,7 +102,7 @@ async function handlePunchNow(mode, user) {
       user, date, sessionId: ps.sessionId, clockIn: ps.clockIn, onBreak: ps.state === 'break',
       breakTotal, prefill, prefillIsSaved: !!hasSaved, slot, weeklyOffer: offer?.offer ? offer : null,
       lastWeek: lastWeek && Object.values(lastWeek.items || {}).some(m => m > 0) ? lastWeek : null,
-      asksTransport: asks, transportDefault: savedTransport ?? true, transportPerShift: perShift,
+      asksTransport: asks, transportDefault: savedTransport ?? true,
       transportOptions, transportMethodsDefault: methodsDefault.length ? methodsDefault : transportOptions.slice(0, 1),
       sessionCount: ps.logs.filter(l => l.log_type === '退勤').length + 1,
     },
@@ -134,7 +132,7 @@ async function finishClockOutNow(ctx, workItems, { transportEligible, transportM
   else await saveWorkReport(userId, ctx.date, workItems)
   if (ctx.asksTransport && typeof transportEligible === 'boolean') {
     const methods = transportEligible && (ctx.transportOptions || []).length > 1 && Array.isArray(transportMethods) && transportMethods.length ? transportMethods : null
-    await saveTransportDay(userId, ctx.date, transportEligible, methods, ctx.transportPerShift ? ctx.sessionId : null)
+    await saveTransportDay(userId, ctx.date, transportEligible, methods)
   }
   return { logType: '退勤', workItems, user: ctx.user, clockInTime: ctx.clockIn?.time, breakInfo: { totalMins: ctx.breakTotal } }
 }

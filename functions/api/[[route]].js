@@ -219,7 +219,7 @@ export async function onRequest(context) {
       } else {
         // everything that belongs to the user, so a later user with the same ID starts clean
         await DB.batch(['users WHERE id', ...['logs', 'work_reports', 'session_work_reports', 'overtime_apps', 'salaried_days',
-          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans', 'meal_days', 'paid_leaves', 'transport_shifts'].map(t => `${t} WHERE user_id`)]
+          'transport_days', 'transport_day_methods', 'weekly_copies', 'weekly_copy_answers', 'work_plans', 'meal_days', 'paid_leaves'].map(t => `${t} WHERE user_id`)]
           .map(t => DB.prepare(`DELETE FROM ${t} = ?`).bind(id)))
       }
       return ok({ ok: true })
@@ -703,32 +703,8 @@ export async function onRequest(context) {
       if (tooOldForDevice(b.date, role)) throw new HttpError('too_old', 422)
       if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
       const now = new Date().toISOString()
-      // 出退勤ごと: the answer belongs to this shift only
-      if (b.sessionId) {
-        needStr(b.sessionId, 'sessionId')
-        await transportShiftStmt(DB, b.userId, b.date, b.sessionId, !!b.eligible, b.methods, now).run()
-        return ok({ ok: true })
-      }
       await DB.batch([transportStmt(DB, b.userId, b.date, !!b.eligible, now), transportMethodsStmt(DB, b.userId, b.date, b.eligible ? b.methods : null, now)])
       return ok({ ok: true })
-    }
-    // 出退勤ごと: { 'userId_date#sessionId': { eligible, methods } }
-    if (route === 'transport_shifts' && method === 'GET') {
-      const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
-      const where = [], args = []
-      if (userId) { where.push('user_id = ?'); args.push(userId) }
-      if (date) { where.push('date = ?'); args.push(date) }
-      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
-      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
-      const { results } = await DB.prepare('SELECT user_id, date, session_id, eligible, methods FROM transport_shifts' + (where.length ? ' WHERE ' + where.join(' AND ') : '')).bind(...args).all()
-      const map = {}
-      results.forEach(r => { map[`${r.user_id}_${r.date}#${r.session_id}`] = { eligible: !!r.eligible, methods: parseJson(r.methods, null) } })
-      return ok(map)
-    }
-    // whether this place pays transport per shift (the punch tablet needs it; not secret)
-    if (route === 'transport_mode' && method === 'GET') {
-      const r = await DB.prepare("SELECT value FROM config WHERE key = 'transportPerShift'").first()
-      return ok({ perShift: r?.value === '1' })
     }
     // methods used on each day (people with two or more commute methods)
     if (route === 'transport_day_methods' && method === 'GET') {
@@ -787,7 +763,7 @@ export async function onRequest(context) {
     // ── Batch Day Edit ─────────────────────────────────────────────────────
     if (route === 'batch/day_edit' && method === 'POST') {
       const body = await readBody()
-      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports, mealCount, paidLeave, transportShifts } = body
+      const { userId, dateStr, logsToDelete, logsToCreate, logsToUpdate, isSalaried, sessionWorkData, deletedSessionIds, transportEligible, deleteAllReports, mealCount, paidLeave } = body
       needStr(userId, 'userId')
       if (!isDate(dateStr)) throw new HttpError('bad_date', 400)
       if ((logsToCreate || []).some(l => !LOG_TYPES.has(l.logType))) return fail('invalid log_type', 400)
@@ -813,12 +789,6 @@ export async function onRequest(context) {
         stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
         stmts.push(transportMethodsStmt(DB, userId, dateStr, transportEligible ? body.transportMethods : null, now))
       }
-      // 出退勤ごと: [{ sessionId, eligible, methods }]
-      for (const t of (Array.isArray(transportShifts) ? transportShifts : [])) {
-        needStr(t.sessionId, 'sessionId')
-        stmts.push(transportShiftStmt(DB, userId, dateStr, t.sessionId, !!t.eligible, t.methods, now))
-      }
-      if (deleteAllReports) stmts.push(DB.prepare('DELETE FROM transport_shifts WHERE user_id = ? AND date = ?').bind(userId, dateStr))
       for (const log of (logsToDelete || []))
         stmts.push(DB.prepare('DELETE FROM logs WHERE id = ?').bind(log.id))
       for (const { id, time, nextDay } of (logsToUpdate || []))
@@ -967,8 +937,6 @@ function isDeviceRoute(route, method, sp) {
     if (route === 'transport_days' || route === 'transport_day_methods') return !!(sp.get('userId') && sp.get('date'))
     // the employee's own paid leave (勤務確認 calendar)
     if (route === 'paid_leaves') return !!sp.get('userId')
-    if (route === 'transport_mode') return true
-    if (route === 'transport_shifts') return !!(sp.get('userId') && sp.get('date'))
     if (route === 'weekly_copy/offer' || route === 'weekly_copies' || route === 'last_week_work' || route === 'recent_work') return !!sp.get('userId')
     return false
   }
@@ -1034,12 +1002,6 @@ function paidLeaveStmts(DB, userId, date, kind, now) {
       : DB.prepare('DELETE FROM paid_leaves WHERE id = ?').bind(id),
     ...(kind === 'full' ? [] : [DB.prepare('DELETE FROM session_work_reports WHERE id = ?').bind(`${id}_leave-${date}`)]),
   ]
-}
-
-function transportShiftStmt(DB, userId, date, sessionId, eligible, methods, now) {
-  const list = eligible && Array.isArray(methods) ? [...new Set(methods.filter(m => COMMUTE_KEYS.includes(m)))] : []
-  return DB.prepare('INSERT OR REPLACE INTO transport_shifts (id, user_id, date, session_id, eligible, methods, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(`${userId}_${date}_${sessionId}`, userId, date, sessionId, eligible ? 1 : 0, list.length ? JSON.stringify(list) : null, now)
 }
 
 function transportStmt(DB, userId, date, eligible, now) {
