@@ -725,9 +725,6 @@ export async function onRequest(context) {
       if (!(await userExists(b.userId))) throw new HttpError('unknown_user', 400)
       const kind = b.kind || ''
       if (!['', 'full', 'half'].includes(kind)) throw new HttpError('bad_kind', 400)
-      // a whole day off can't have punches (half a day off can)
-      if (kind === 'full' && await DB.prepare("SELECT 1 AS x FROM logs WHERE user_id = ? AND date = ? AND log_type = '出勤'").bind(b.userId, b.date).first())
-        throw new HttpError('has_punches', 409)
       await DB.batch(paidLeaveStmts(DB, b.userId, b.date, kind, new Date().toISOString()))
       return ok({ ok: true })
     }

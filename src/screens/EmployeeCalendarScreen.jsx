@@ -292,14 +292,14 @@ function LeaveSection({ kind, canChange, hasPunches, isSalaried, onChange }) {
   const [choosing, setChoosing] = useState(false)
   const [busy, setBusy] = useState(false)
   async function apply(next) {
+    if (next === 'full' && hasPunches && !window.confirm('この日は打刻があります。1日の有給にしますか？\n（打刻はそのまま残ります）')) return
     if (next === '' && !window.confirm(kind === 'full' && !isSalaried
       ? '有給を取り消しますか？\n有給の日に入れた業務時間も消えます。'
       : '有給を取り消しますか？')) return
     setBusy(true)
     try { await onChange(next); setChoosing(false) }
-    catch (e) {
-      alert(e?.code === 'has_punches' ? 'この日は打刻があるため、1日の有給にできません。半日を選んでください'
-        : '保存できませんでした。通信を確認して、もう一度お試しください')
+    catch {
+      alert('保存できませんでした。通信を確認して、もう一度お試しください')
     } finally { setBusy(false) }
   }
   if (kind) {
@@ -322,11 +322,10 @@ function LeaveSection({ kind, canChange, hasPunches, isSalaried, onChange }) {
         <>
           <div className={styles.leaveTitle}>有給の種類を選んでください</div>
           <div className={styles.leaveChoices}>
-            <button className={styles.leaveChoiceBtn} onClick={() => apply('full')} disabled={busy || hasPunches}>1日</button>
+            <button className={styles.leaveChoiceBtn} onClick={() => apply('full')} disabled={busy}>1日</button>
             <button className={styles.leaveChoiceBtn} onClick={() => apply('half')} disabled={busy}>半日</button>
             <button className={styles.leaveCancelBtn} onClick={() => setChoosing(false)} disabled={busy}>やめる</button>
           </div>
-          {hasPunches && <div className={styles.leaveHint}>打刻がある日は、半日だけ選べます</div>}
         </>
       ) : (
         <button className={styles.leaveRegisterBtn} onClick={() => setChoosing(true)}>有給を登録する</button>

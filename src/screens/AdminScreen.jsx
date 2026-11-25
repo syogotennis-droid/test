@@ -1352,7 +1352,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       }
     }
     if (leaveCur === 'full') {
-      if (sessions.some((x, i) => sessionTimes[i].inTime || sessionTimes[i].outTime)) errs.push('1日の有給の日には打刻を入れられません（打刻がある日は「半日」）')
       if (!isSalaried) {
         const rows = sessionWorkRows[leaveSid] || [], seen = new Set()
         rows.forEach((r, ri) => {
