@@ -1778,7 +1778,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
 
             <div className={styles.modalBody}>
               {/* ── Per-session cards ── */}
-              {sessions.length === 0 ? (
+              {/* a 1日有給 has no punches: no "打刻を追加" (punches already there are still shown) */}
+              {sessions.length === 0 && leaveCur === 'full' ? null : sessions.length === 0 ? (
                 <div className={styles.dayEditEmptyState}>
                   
                   <div className={styles.dayEditEmptyText}>打刻記録なし</div>
@@ -1871,8 +1872,6 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                         onClick={() => setLeaveCur(k)}>{label}</button>
                     ))}
                   </div>
-                  {leaveCur === 'full' && <div className={styles.dayEditWorkSectionHint}>1日の有給は打刻なし。出勤日数・交通費には数えません{!isSalaried ? '。下に有給の日の業務時間を入れてください' : ''}</div>}
-                  {leaveCur === 'half' && <div className={styles.dayEditWorkSectionHint}>半日の有給は通常どおり打刻あり。業務時間は有給の分も含めて入れてください</div>}
                 </div>
               )}
 
