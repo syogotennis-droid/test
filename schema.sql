@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS paid_leaves (
 );
 CREATE INDEX IF NOT EXISTS idx_paid_leave_date ON paid_leaves(date);
 
+-- 交通費を出退勤ごとに払う施設（config.transportPerShift = '1'）: each shift's 交通費 あり/なし and
+-- the methods used. No row = あり with the first method.
+CREATE TABLE IF NOT EXISTS transport_shifts (
+  id TEXT PRIMARY KEY,          -- userId_date_sessionId
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  eligible INTEGER NOT NULL,
+  methods TEXT,                 -- JSON array (people with two or more methods)
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_transport_shift_date ON transport_shifts(date);
+
 -- Registered punch tablets: a name and when each was last used (設定 → 登録済みの打刻端末).
 -- token = the device row of sessions (tablets registered earlier get a row when next used)
 CREATE TABLE IF NOT EXISTS device_info (

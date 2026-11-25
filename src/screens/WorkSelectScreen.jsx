@@ -538,8 +538,8 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
         )}
 
         {ctx.asksTransport && (
-          <div className={styles.transportRow} role="radiogroup" aria-label="本日の交通費">
-            <span className={styles.transportLabel}>本日の交通費</span>
+          <div className={styles.transportRow} role="radiogroup" aria-label={ctx.transportPerShift ? '今回の交通費' : '本日の交通費'}>
+            <span className={styles.transportLabel}>{ctx.transportPerShift ? '今回の交通費' : '本日の交通費'}</span>
             <button
               type="button"
               role="radio"
@@ -557,8 +557,8 @@ export default function WorkSelectScreen({ user, ctx = {}, onComplete, onCancel 
           </div>
         )}
         {ctx.asksTransport && transportEligible && transportOptions.length > 1 && (
-          <div className={styles.transportMethods} role="group" aria-label="今日使った通勤方法">
-            <span className={styles.transportMethodsLabel}>今日使ったもの</span>
+          <div className={styles.transportMethods} role="group" aria-label={ctx.transportPerShift ? '今回使った通勤方法' : '今日使った通勤方法'}>
+            <span className={styles.transportMethodsLabel}>{ctx.transportPerShift ? '今回使ったもの' : '今日使ったもの'}</span>
             {transportOptions.map(k => (
               <button key={k} type="button" role="checkbox" aria-checked={transportMethods.includes(k)}
                 className={[styles.transportMethodBtn, transportMethods.includes(k) ? styles.transportMethodOn : ''].join(' ')}

@@ -17,6 +17,7 @@ import {
   getCommute, getTransportDays, getTransportDayMethods, getCarRates, saveCarRates, computeTransport, attendanceDates,
   getMealDays, getMealPrices, saveMealPrices, mealRows, mealPriceForDate, DEFAULT_MEAL_PRICE,
   getPaidLeaves, leaveSessionId, isLeaveSession, paidLeaveSummary, PAID_LEAVE_LABEL,
+  transportUnits, getTransportPerShift, saveTransportPerShift, getTransportShifts,
   COMMUTE_METHODS, carRateForDate, commuteOn, commuteLabel,
   getMinWageHistory, saveMinWageHistory, minWageForDate, getMinWageItems, saveMinWageItems,
   prepTimeRows, PREP_HOURS, planMinWageChange, withRateFrom, ratePeriods,
@@ -1111,7 +1112,32 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
       })
       .catch(() => {})
   }, [user.id, dateStr, asksTransport])
-  const transportChanged = transportInit !== null && (transportCur !== transportInit || (dayOptions.length > 1 && [...methodsCur].sort().join() !== [...methodsInit].sort().join()))
+  // 交通費を出退勤ごとに払う施設: あり／なし (and the methods) per shift instead of per day
+  const [perShift, setPerShift] = useState(false)
+  const [shiftInit, setShiftInit] = useState({}) // { sessionId: { eligible, methods } } (no entry = あり)
+  const [shiftCur, setShiftCur] = useState({})
+  useEffect(() => {
+    if (!asksTransport) return
+    getTransportPerShift().then(on => {
+      setPerShift(on)
+      if (!on) return
+      getTransportShifts(undefined, undefined, user.id, dateStr).then(map => {
+        const init = {}
+        Object.entries(map || {}).forEach(([k, v]) => { const sid = k.split('#').slice(1).join('#'); if (sid) init[sid] = v })
+        setShiftInit(init); setShiftCur(init)
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [user.id, dateStr, asksTransport])
+  const shiftOf = (map, sid) => {
+    const v = map[sid] || {}
+    const methods = (v.methods || []).filter(k => dayOptions.includes(k))
+    return { eligible: v.eligible !== false, methods: methods.length ? methods : dayOptions.slice(0, 1) }
+  }
+  const shiftSig = (map, sid) => { const v = shiftOf(map, sid); return `${v.eligible}|${dayOptions.length > 1 && v.eligible ? [...v.methods].sort().join() : ''}` }
+  const changedShiftIds = perShift ? sessions.map(s => s.sessionId).filter(sid => shiftSig(shiftCur, sid) !== shiftSig(shiftInit, sid)) : []
+  const setShift = (sid, patch) => setShiftCur(prev => ({ ...prev, [sid]: { ...shiftOf(prev, sid), ...patch } }))
+  const transportChanged = (!perShift && transportInit !== null && (transportCur !== transportInit || (dayOptions.length > 1 && [...methodsCur].sort().join() !== [...methodsInit].sort().join())))
+    || changedShiftIds.length > 0
   // 食費補助: meals of the day (deducted from pay)
   const [mealInit, setMealInit] = useState(null) // null = loading
   const [mealCur, setMealCur] = useState(0)
@@ -1543,7 +1569,8 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
         isSalaried,
         sessionWorkData,
         deletedSessionIds,
-        ...(transportChanged ? { transportEligible: transportCur, ...(dayOptions.length > 1 && transportCur ? { transportMethods: methodsCur } : {}) } : {}),
+        ...(transportChanged && !perShift ? { transportEligible: transportCur, ...(dayOptions.length > 1 && transportCur ? { transportMethods: methodsCur } : {}) } : {}),
+        ...(changedShiftIds.length ? { transportShifts: changedShiftIds.map(sid => { const v = shiftOf(shiftCur, sid); return { sessionId: sid, eligible: v.eligible, ...(v.eligible && dayOptions.length > 1 ? { methods: v.methods } : {}) } }) } : {}),
         ...(mealChanged ? { mealCount: mealCur } : {}),
         ...(leaveChanged ? { paidLeave: leaveCur } : {}),
       })
@@ -1812,6 +1839,29 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                           <div className={styles.dayEditColTime}>
                             {renderSessionPunchInputs(s, si)}
                             {renderBreakRows(s, si)}
+                            {asksTransport && perShift && (() => {
+                              const v = shiftOf(shiftCur, s.sessionId)
+                              return (
+                                <div style={{ marginTop: 10 }}>
+                                  <div className={styles.dayEditTransportBtns} style={{ alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 700, marginRight: 6 }}>この回の交通費</span>
+                                    <button className={[styles.dayEditTransportBtn, v.eligible ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => setShift(s.sessionId, { eligible: true })}>あり</button>
+                                    <button className={[styles.dayEditTransportBtn, !v.eligible ? styles.dayEditTransportOff : ''].join(' ')} onClick={() => setShift(s.sessionId, { eligible: false })}>なし</button>
+                                  </div>
+                                  {v.eligible && dayOptions.length > 1 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', marginTop: 6 }}>
+                                      {dayOptions.map(k => (
+                                        <label key={k} className={styles.commuteCheck} style={{ minWidth: 0 }}>
+                                          <input type="checkbox" checked={v.methods.includes(k)}
+                                            onChange={e => setShift(s.sessionId, { methods: e.target.checked ? [...v.methods, k] : (v.methods.length > 1 ? v.methods.filter(x => x !== k) : v.methods) })} />
+                                          {commuteLabel(k)}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                           {!isSalaried && <div className={styles.dayEditColWork}>
                           {!inTime && (workItemsLoaded || isNewSession) && (
@@ -1880,7 +1930,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 </div>
               )}
 
-              {asksTransport && transportInit !== null && (
+              {asksTransport && !perShift && transportInit !== null && (
                 <div className={styles.dayEditTransport}>
                   <span className={styles.dayEditTransportLabel}>この日の交通費</span>
                   <div className={styles.dayEditTransportBtns}>
@@ -2079,7 +2129,15 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                   <span>この日の食費補助</span><strong>{mealCur ? 'あり' : 'なし'}</strong>
                 </div>
               )}
-              {hasChanges && transportChanged && (
+              {hasChanges && perShift && changedShiftIds.map(sid => {
+                const si = sessions.findIndex(x => x.sessionId === sid), v = shiftOf(shiftCur, sid)
+                return (
+                  <div key={`t${sid}`} className={styles.confirmDayTotal}>
+                    <span>{si + 1}回目の交通費</span><strong>{v.eligible ? `あり${dayOptions.length > 1 ? `（${v.methods.map(commuteLabel).join('・')}）` : ''}` : 'なし'}</strong>
+                  </div>
+                )
+              })}
+              {hasChanges && transportChanged && !perShift && (
                 <div className={styles.confirmDayTotal}>
                   <span>この日の交通費</span><strong>{transportCur ? `あり${dayOptions.length > 1 ? `（${methodsCur.map(commuteLabel).join('・')}）` : ''}` : 'なし'}</strong>
                 </div>
@@ -2197,22 +2255,28 @@ function KinmuboTab({ today }) {
     const dateFrom = `${selectedYM}-01`
     const lastDay = new Date(y, m, 0).getDate()
     const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates(), getTransportDayMethods(dateFrom, dateTo), getMealDays(dateFrom, dateTo), getMealPrices(), getPaidLeaves(dateFrom, dateTo).catch(() => ({}))])
-      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves]) => {
+    Promise.all([getLogs({ dateFrom, dateTo }), getUsers(), getMinWageHistory(), getSalariedDaysForMonth(dateFrom, dateTo), getMergedWorkReportsForRange(dateFrom, dateTo), getSessionWorkReportsWithSessionsForRange(dateFrom, dateTo), getTransportDays(dateFrom, dateTo), getCarRates(), getTransportDayMethods(dateFrom, dateTo), getMealDays(dateFrom, dateTo), getMealPrices(), getPaidLeaves(dateFrom, dateTo).catch(() => ({})),
+      getTransportPerShift().then(perShift => perShift ? getTransportShifts(dateFrom, dateTo).catch(() => ({})).then(shiftFlags => ({ perShift, shiftFlags })) : { perShift: false, shiftFlags: {} })])
+      .then(([logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves, transportMode]) => {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves))
+        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves, transportMode))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めません。通信を確認し、再読み込みしてください') } })
     return () => { cancelled = true }
   }, [selectedYM])
 
-  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = [], transportMethods = {}, mealDays = {}, mealPrices = [], paidLeaves = {}) {
-    const transportRows = (user, dates) =>
-      computeTransport(user, dates.filter(d => transportFlags[`${user.id}_${d}`] !== false), carRates, transportMethods)
-        .map(t => ({ label: t.label, parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: t.days, rate: t.rate, pay: t.pay }))
+  function buildPreview(logs, users, minWageHistory, salariedDays = {}, workReports = {}, sessionWorkBySession = {}, transportFlags = {}, carRates = [], transportMethods = {}, mealDays = {}, mealPrices = [], paidLeaves = {}, { perShift = false, shiftFlags = {} } = {}) {
+    // 交通費: per day, or per shift where the place pays transport per shift (出退勤ごと)
+    const unitsOf = (user, workingDates, byDate) =>
+      transportUnits(user, workingDates, byDate, { perShift, dayFlags: transportFlags, dayMethods: transportMethods, shiftFlags })
+    const transportRows = (user, workingDates, byDate) => {
+      const { units, methods } = unitsOf(user, workingDates, byDate)
+      return computeTransport(user, units, carRates, methods, { perShift })
+        .map(t => ({ label: t.label, parentType: '交通費', isMultiPeriod: false, dayType: null, mins: null, days: t.days, unit: perShift && !t.pass ? '回' : '日', rate: t.rate, pay: t.pay }))
+    }
     const EXCL = new Set(['休憩', '準備', '有給', '固定手当', '交通費'])
     const userEntries = users.filter(u =>
       logs.some(l => l.user_id === u.id) || Object.keys(workReports).some(k => k.slice(0, -11) === u.id) ||
@@ -2335,7 +2399,7 @@ function KinmuboTab({ today }) {
       // 出勤日数: days with a completed punch (出勤＋退勤). 交通費対象日数: days that
       // count for transport (worked days the employee didn't mark 支給なし).
       const attendanceDays = attendanceDates(byDate).length
-      const transportDates = workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false)
+      const transportDates = unitsOf(user, workingDates, byDate).units
 
       // Build daily type minutes split from work_reports
       const dailyTypeMinsSplit = {}
@@ -2383,7 +2447,7 @@ function KinmuboTab({ today }) {
           }
         }
       }
-      rows.push(...transportRows(user, workingDates))
+      rows.push(...transportRows(user, workingDates, byDate))
       const prepGroups = prepTimeRows(prepSessionDates, minWageHistory)
       prepGroups.forEach(g => rows.push({
         label: prepGroups.length > 1 ? `準備時間（${g.wage}円）` : '準備時間', parentType: '準備時間',
@@ -2410,7 +2474,7 @@ function KinmuboTab({ today }) {
         if (done.some(se => hasMins(se.perSessionWork))) return n + done.filter(se => !hasMins(se.perSessionWork)).length
         return n + (hasMins(e.workReportItems) ? 0 : done.length)
       }, 0)
-      return { user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, inconsistentDates, leave }
+      return { user, workingDays, attendanceDays, transportDays, transportUnit: perShift ? '回' : '日', incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, inconsistentDates, leave }
     })
   }
 
@@ -2423,7 +2487,7 @@ function KinmuboTab({ today }) {
 
   function fmtTimeOrDays(row) {
     if (row.meals != null) return `${row.meals}回`
-    if (row.mins === null && row.days != null) return `${row.days}日`
+    if (row.mins === null && row.days != null) return `${row.days}${row.unit || '日'}`
     if (row.prepHours != null) return `${(Math.round(row.prepHours * 10) / 10).toFixed(1)}時間` // shown with one decimal; pay uses 0.17 per shift
     return fmtMins(row.mins)
   }
@@ -2687,7 +2751,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当なし</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates, leave }) => {
+            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, transportUnit, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates, leave }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -2704,7 +2768,7 @@ function KinmuboTab({ today }) {
                       {transportDays != null && (
                         <>
                           <span className={styles.kinmuboAccordionSep}> ｜ </span>
-                          <span className={styles.kinmuboAccordionDays}>交通費対象：{transportDays}日</span>
+                          <span className={styles.kinmuboAccordionDays}>交通費対象：{transportDays}{transportUnit || '日'}</span>
                         </>
                       )}
                       {leave && (
@@ -3932,6 +3996,7 @@ function SettingsTab({ users, onUsersChanged, onPinChanged }) {
       <SettingsSection id="set-meal" title="食費補助" summary="1回の金額（給与から差し引く）"><MealSettings /></SettingsSection>
 
       <SettingsSection id="set-car" title="交通費">
+        <TransportModeSettings />
         <CarRateSettings />
         <CommuteListSettings users={users} onUsersChanged={onUsersChanged} />
       </SettingsSection>
@@ -4068,6 +4133,40 @@ function CommuteListSettings({ users, onUsersChanged }) {
 }
 
 // ─── 食費補助 (price per meal, with start dates) ──────────────────────────────
+// 交通費の数え方: 1日分（1日に何回勤務しても1日分）or 出退勤ごと（勤務回ごとに1回分）
+function TransportModeSettings() {
+  const [perShift, setPerShift] = useState(null)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+  useEffect(() => { getTransportPerShift().then(setPerShift).catch(() => setErr('読み込みに失敗しました')) }, [])
+  async function choose(on) {
+    if (on === perShift) return
+    if (!window.confirm(on
+      ? '交通費を「出退勤ごと」にします。\n1日に2回勤務した日は、2回分の交通費を払います（退勤のたびに「今回の交通費」を聞きます）。\n変更しますか？'
+      : '交通費を「1日ごと」にします。\n1日に何回勤務しても、1日分の交通費を払います。\n変更しますか？')) return
+    try { await saveTransportPerShift(on); setPerShift(on); setMsg(on ? '出退勤ごとにしました' : '1日ごとにしました'); setErr('') }
+    catch { setErr('保存に失敗しました') }
+  }
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>交通費の数え方</div>
+      {perShift === null ? <div style={{ color: '#64748b' }}>{err || '読み込み中'}</div> : (
+        <>
+          <div className={styles.dayEditTransportBtns}>
+            <button className={[styles.dayEditTransportBtn, !perShift ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => choose(false)}>1日ごと</button>
+            <button className={[styles.dayEditTransportBtn, perShift ? styles.dayEditTransportOn : ''].join(' ')} onClick={() => choose(true)}>出退勤ごと</button>
+          </div>
+          <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 6 }}>
+            {perShift ? '1日に2回出勤・退勤した日は、2回分の交通費を払います。' : '1日に何回出勤・退勤しても、1日分の交通費を払います。'}
+          </div>
+          {msg && <div style={{ color: '#15803d', fontSize: '0.85rem', marginTop: 4 }}>{msg}</div>}
+          {err && <div style={{ color: '#b91c1c', fontSize: '0.85rem', marginTop: 4 }}>{err}</div>}
+        </>
+      )}
+    </div>
+  )
+}
+
 function MealSettings() {
   const [prices, setPrices] = useState(null)
   const [from, setFrom] = useState(getTodayJst())
