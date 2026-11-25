@@ -706,6 +706,18 @@ export async function onRequest(context) {
       await DB.batch([transportStmt(DB, b.userId, b.date, !!b.eligible, now), transportMethodsStmt(DB, b.userId, b.date, b.eligible ? b.methods : null, now)])
       return ok({ ok: true })
     }
+    // 交通費を複数回分にした日: { 'userId_date': count (2〜9) }
+    if (route === 'transport_counts' && method === 'GET') {
+      const { userId, dateFrom, dateTo } = Object.fromEntries(sp)
+      const where = ['eligible >= 2'], args = []
+      if (userId) { where.push('user_id = ?'); args.push(userId) }
+      if (dateFrom) { where.push('date >= ?'); args.push(dateFrom) }
+      if (dateTo) { where.push('date <= ?'); args.push(dateTo) }
+      const { results } = await DB.prepare('SELECT user_id, date, eligible FROM transport_days WHERE ' + where.join(' AND ')).bind(...args).all()
+      const map = {}
+      results.forEach(r => { map[`${r.user_id}_${r.date}`] = r.eligible })
+      return ok(map)
+    }
     // methods used on each day (people with two or more commute methods)
     if (route === 'transport_day_methods' && method === 'GET') {
       const { userId, date, dateFrom, dateTo } = Object.fromEntries(sp)
@@ -787,6 +799,14 @@ export async function onRequest(context) {
       }
       if (typeof transportEligible === 'boolean') {
         stmts.push(transportStmt(DB, userId, dateStr, transportEligible, now))
+        // 交通費の回数（管理者だけ）: 1 = 通常（1日分）, 2〜9 = その回数分
+        if (transportEligible && body.transportCount !== undefined) {
+          const c = Number(body.transportCount)
+          if (!Number.isInteger(c) || c < 1 || c > 9) throw new HttpError('bad_transport_count', 400)
+          stmts.push(c > 1
+            ? DB.prepare('INSERT OR REPLACE INTO transport_days (id, user_id, date, eligible, updated_at) VALUES (?, ?, ?, ?, ?)').bind(`${userId}_${dateStr}`, userId, dateStr, c, now)
+            : DB.prepare('DELETE FROM transport_days WHERE id = ?').bind(`${userId}_${dateStr}`))
+        }
         stmts.push(transportMethodsStmt(DB, userId, dateStr, transportEligible ? body.transportMethods : null, now))
       }
       for (const log of (logsToDelete || []))
@@ -1005,9 +1025,10 @@ function paidLeaveStmts(DB, userId, date, kind, now) {
 }
 
 function transportStmt(DB, userId, date, eligible, now) {
-  // eligible is the default, so only "not eligible" needs a row
+  // eligible is the default, so only "not eligible" needs a row (eligible = 0). A row with eligible ≥ 2
+  // is the number of trips the admin set for that day (交通費を複数回分): an あり from the tablet keeps it.
   return eligible
-    ? DB.prepare('DELETE FROM transport_days WHERE id = ?').bind(`${userId}_${date}`)
+    ? DB.prepare('DELETE FROM transport_days WHERE id = ? AND eligible = 0').bind(`${userId}_${date}`)
     : DB.prepare('INSERT OR REPLACE INTO transport_days (id, user_id, date, eligible, updated_at) VALUES (?, ?, ?, 0, ?)')
       .bind(`${userId}_${date}`, userId, date, now)
 }

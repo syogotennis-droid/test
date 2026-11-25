@@ -1075,9 +1075,23 @@ export function transportByDate(user, eligibleDates, carRates = [], dayMethods =
   for (const d of eligibleDates) {
     const amount = methodsUsedOn(user, d, dayMethods)
       .reduce((s, m) => s + (m.key === 'car' || m.key === 'bike' ? m.km * carRateForDate(carRates, d, m.key) : m.amount), 0)
-    if (amount > 0) out[d] = amount
+    if (amount > 0) out[d] = (out[d] || 0) + amount // a day paid for 2 trips appears twice
   }
   return out
+}
+
+// 交通費を複数回分にした日（管理者が勤務記録の編集で入れる）: { 'userId_date': count }
+export async function getTransportCounts(dateFrom, dateTo, userId) {
+  return api('/transport_counts', { query: { dateFrom, dateTo, userId } })
+}
+// The transport days with each day repeated as many times as its trips (count 2 → the day twice)
+export function withTransportCounts(userId, dates, counts = {}) {
+  return dates.flatMap(d => Array(Math.max(1, Number(counts[`${userId}_${d}`]) || 1)).fill(d))
+}
+// 「20日」, or 「20日・22回分」 when some days were paid for more than one trip
+export function transportDaysLabel(units) {
+  const days = new Set(units).size
+  return units.length > days ? `${days}日・${units.length}回分` : `${days}日`
 }
 
 // Yen amounts are rounded UP, like the customer's payroll sheets (ROUNDUP).
@@ -1097,8 +1111,8 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
         g = { key: `${m.key}|${m.amount}`, vehicle: false, m, rate: m.amount, daily: m.amount }
       }
       const found = groups.find(x => x.key === g.key)
-      if (found) found.days++
-      else groups.push({ ...g, days: 1 })
+      if (found) { found.days++; found.dates.add(d) }
+      else groups.push({ ...g, days: 1, dates: new Set([d]) })
     }
   }
   const amountGroups = groups.filter(g => !g.vehicle).length
@@ -1115,13 +1129,15 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
   // 定期: the month's fixed amount (the setting valid on the last transport day of the month)
   const lastDay = [...eligibleDates].sort().pop()
   const pass = lastDay ? commuteOn(user, lastDay).list.find(m => m.key === 'pass') : null
-  const passRow = pass ? [{ label: '交通費（定期）', excelLabel: '交通費（定期）', days: eligibleDates.length, rate: pass.amount, pay: payYen(pass.amount), pass: true }] : []
+  const passRow = pass ? [{ label: '交通費（定期）', excelLabel: '交通費（定期）', days: new Set(eligibleDates).size, rate: pass.amount, pay: payYen(pass.amount), pass: true }] : []
+  // 「（20日）」, or 「（20日・22回分）」 when a day was paid for several trips
+  const cnt = g => g.days > g.dates.size ? `${g.dates.size}日・${g.days}回分` : `${g.days}日`
   return groups.map(g => {
     // a single row (one way of commuting, one rate all month): just 交通費
     if (groups.length === 1) {
       return {
-        label: '交通費', excelLabel: `交通費（${g.days}日）`,
-        days: g.days, rate: g.vehicle ? Math.round(g.daily * 100) / 100 : g.rate, pay: share(g),
+        label: '交通費', excelLabel: `交通費（${cnt(g)}）`,
+        days: g.days, daysLabel: cnt(g), rate: g.vehicle ? Math.round(g.daily * 100) / 100 : g.rate, pay: share(g),
       }
     }
     if (g.vehicle) {
@@ -1129,8 +1145,8 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
       const r3 = Math.round(g.rate * 1000) / 1000
       return {
         label: `交通費（${vehicle} ${g.m.km}km × ${r3}円）`,
-        excelLabel: `交通費（${vehicle} ${g.m.km}km×${r3}円/km・${g.days}日）`,
-        days: g.days, rate: Math.round(g.daily * 100) / 100, pay: share(g),
+        excelLabel: `交通費（${vehicle} ${g.m.km}km×${r3}円/km・${cnt(g)}）`,
+        days: g.days, daysLabel: cnt(g), rate: Math.round(g.daily * 100) / 100, pay: share(g),
       }
     }
     // the method name only when the month has more than one kind of transport row
@@ -1138,8 +1154,8 @@ export function computeTransport(user, eligibleDates, carRates = [], dayMethods 
     const inner = [name, amountGroups > 1 ? `${g.rate}円` : ''].filter(Boolean).join(' ')
     return {
       label: inner ? `交通費（${inner}）` : '交通費',
-      excelLabel: `交通費（${inner ? inner + '・' : ''}${g.days}日）`,
-      days: g.days, rate: g.rate, pay: share(g),
+      excelLabel: `交通費（${inner ? inner + '・' : ''}${cnt(g)}）`,
+      days: g.days, daysLabel: cnt(g), rate: g.rate, pay: share(g),
     }
   }).concat(passRow)
 }
@@ -1481,6 +1497,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     getMealPrices(),
     getPaidLeaves(dateFrom || '', dateTo || '9999-12-31').catch(() => ({})),
   ])
+  const transportCounts = await getTransportCounts(dateFrom || '', dateTo || '9999-12-31').catch(() => ({}))
   const dayCountCells = (row, cells) => cells.map(([col, text]) =>
     `<c r="${col}${row}" s="${S.username}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`).join('')
 
@@ -1675,7 +1692,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       }
     })
     // 交通費対象日 = 勤務日のうち、本人が「支給なし」にしていない日
-    const transportDates = workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false)
+    // a day the admin set to several trips (交通費の回数) counts that many times
+    const transportDates = withTransportCounts(user.id, workingDates.filter(d => transportFlags[`${user.id}_${d}`] !== false), transportCounts)
     const commute = getCommute(user)
     const transportRowsX = computeTransport(user, transportDates, carRates, transportMethods)
     // 表1の「交通費」列（交通費のある人だけ）: その日の金額
@@ -1728,7 +1746,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     const row2 = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
       dayCountCells(2, [
         ['C', `出勤日数：${attendanceDates(byDate).length}日`],
-        ...(commute.asks || transportRowsX.length > 0 ? [['D', `交通費対象：${transportDates.length}日`]] : []),
+        ...(commute.asks || transportRowsX.length > 0 ? [['D', `交通費対象：${transportDaysLabel(transportDates)}`]] : []),
         ...(leave ? [[commute.asks || transportRowsX.length > 0 ? 'E' : 'D', leave.label]] : []),
       ]) + `</row>`
 
