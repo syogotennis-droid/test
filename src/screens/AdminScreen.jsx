@@ -1234,10 +1234,23 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
     setSessions(prev => prev.map((s, i) => i === si ? { ...s, breaks: s.breaks.filter((_, j) => j !== bi) } : s))
   }
 
+  // the work of a 1日有給 that was switched off here goes to the day's first shift (see chooseLeave)
+  const hasRows = rows => (rows || []).some(r => r.type && ((parseInt(r.h) || 0) > 0 || (parseInt(r.m) || 0) > 0))
   function addSession() {
     const sessionId = generateSessionId()
+    const carry = sessions.length === 0 && leaveCur !== 'full' && hasRows(sessionWorkRows[leaveSid])
+      ? sessionWorkRows[leaveSid].filter(r => r.type).map(r => ({ ...r })) : null
     setSessions(prev => [...prev, { inH: '', inM: '', outH: '', outM: '', outNext: false, origOutNext: false, origInTime: '', origOutTime: '', sessionId, breaks: [] }])
-    setSessionWorkRows(prev => ({ ...prev, [sessionId]: [{ type: '', h: 0, m: 0 }] }))
+    setSessionWorkRows(prev => ({ ...prev, [sessionId]: carry || [{ type: '', h: 0, m: 0 }] }))
+  }
+  // switching a 1日有給 off: its work moves to the first shift (now, when that shift has no work yet,
+  // or when the first punch is added)
+  function chooseLeave(k) {
+    if (leaveCur === 'full' && k !== 'full' && sessions.length > 0 && hasRows(sessionWorkRows[leaveSid]) && !hasRows(sessionWorkRows[sessions[0].sessionId])) {
+      const first = sessions[0].sessionId
+      setSessionWorkRows(prev => ({ ...prev, [first]: prev[leaveSid].filter(r => r.type).map(r => ({ ...r })) }))
+    }
+    setLeaveCur(k)
   }
 
   function tryRemoveSession(sessionId) {
@@ -1869,7 +1882,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                   <div className={styles.dayEditTransportBtns}>
                     {[['', 'なし'], ['full', '1日'], ['half', '半日']].map(([k, label]) => (
                       <button key={k || 'none'} className={[styles.dayEditTransportBtn, leaveCur === k ? (k ? styles.dayEditTransportOn : styles.dayEditTransportOff) : ''].join(' ')}
-                        onClick={() => setLeaveCur(k)}>{label}</button>
+                        onClick={() => chooseLeave(k)}>{label}</button>
                     ))}
                   </div>
                 </div>
