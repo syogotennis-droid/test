@@ -22,7 +22,7 @@ Firebase 版はデモ用として `firebase-demo` ブランチに残している
 node setup-new-client.js                  新しい案件を作る（DB作成→管理者PIN設定→デプロイ）
 node setup-new-client.js --deploy <案件ID>  1つの案件に最新のコードを反映
 node setup-new-client.js --deploy-all     全案件に最新のコードを反映
-node setup-new-client.js --enable-contract <案件ID>   その案件で種別「委託」を使えるようにする（今は kamiyashiro だけ）
+node setup-new-client.js --enable-contract <案件ID>   その案件で種別「委託」を使えるようにする（今は kamiyashiro と test）
 node setup-new-client.js --disable-contract <案件ID>  「委託」を選べないようにする（登録済みの委託の人はそのまま）
 ```
 - 同じ案件IDで新規作成しようとするとエラーになり、既存データは上書きされない
@@ -142,7 +142,7 @@ npx wrangler pages dev dist
 - 同じ `group` の業務は退勤画面で1つのカードにまとまる（カード内の表示は `variant`）
 - 交通費・準備・休憩・有給・固定手当は計算用の項目で、管理対象外（「有給」は業務名には使えない。有給そのものは「有給」の節）
 
-## 委託（上社のみ）
+## 委託（上社・テストのみ）
 - 種別 `employeeType: 'contract'`（画面の名前は「委託」）。`config.contractEnabled = '1'` の施設だけ選べる（`--enable-contract`。サーバーも、設定がなければ新しく委託にする保存を 400 `contract_disabled`）。他施設の画面には出ない
 - 判定は `db.js` の `isContractUser` / `isHourlyUser`（アルバイト・パート＝社員でも委託でもない人。給与を計算するのはこれだけ）。「社員以外」をアルバイト扱いしていた所はすべて `isHourlyUser` にした
 - 打刻は社員と同じく、退勤ですぐ完了（業務・交通費・週コピーの質問なし。`punchFlow.js`）。サーバーの `asksTransport` も false。勤務確認は時刻の確認だけ（有給・業務予定なし）、管理画面の勤務記録の編集も打刻だけ（有給・交通費・食費補助・業務なし）
