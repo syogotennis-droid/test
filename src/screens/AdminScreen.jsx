@@ -2773,7 +2773,7 @@ function KinmuboTab({ today }) {
                     onClick={() => toggleExpand(user.id)}
                     aria-expanded={isOpen}
                   >
-                    <span className={styles.kinmuboAccordionName}>{user.name}{contractUser && <span className={styles.contractTag}>委託</span>}</span>
+                    <span className={styles.kinmuboAccordionName}>{user.name}</span>
                     {contractUser ? (
                     <span className={styles.kinmuboAccordionMeta}>
                       <span className={styles.kinmuboAccordionDays}>出勤日数：{attendanceDays}日</span>
