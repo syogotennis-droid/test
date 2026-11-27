@@ -3033,6 +3033,33 @@ function KinmuboTab({ today }) {
 // ─── 業務の絞り込み（従業員管理） ───────────────────────────────────────────────
 // Choices come from 業務の管理 (config.workItemDefs). Items of the same group are
 // listed together; the group's checkbox picks all of them at once.
+function workFilterEntries() {
+  const entries = []   // { group, ids } or { id }
+  const groups = new Map()
+  for (const d of activeWorkItemDefs()) {
+    if (SYSTEM_ITEMS.has(d.id)) continue
+    if (d.group) {
+      if (!groups.has(d.group)) { const g = { group: d.group, ids: [] }; groups.set(d.group, g); entries.push(g) }
+      groups.get(d.group).ids.push(d.id)
+    } else entries.push({ id: d.id })
+  }
+  return entries
+}
+
+// The chosen items as conditions that must all hold: a group chosen as a whole
+// is one condition (any of its items), every other chosen item is one condition.
+function workFilterUnits(value) {
+  const units = []
+  const left = new Set(value)
+  for (const e of workFilterEntries()) {
+    if (e.ids && e.ids.length > 1 && e.ids.every(id => left.has(id))) {
+      units.push({ label: e.group, ids: e.ids }); e.ids.forEach(id => left.delete(id))
+    }
+  }
+  sortByItemOrder([...left]).forEach(id => units.push({ label: itemLabel(id), ids: [id] }))
+  return units
+}
+
 function WorkFilter({ value, onChange }) {
   const [open, setOpen] = useState(false)
   const boxRef = useRef(null)
@@ -3045,15 +3072,7 @@ function WorkFilter({ value, onChange }) {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
   }, [open])
 
-  const entries = []   // { group, ids } or { id }
-  const groups = new Map()
-  for (const d of activeWorkItemDefs()) {
-    if (SYSTEM_ITEMS.has(d.id)) continue
-    if (d.group) {
-      if (!groups.has(d.group)) { const g = { group: d.group, ids: [] }; groups.set(d.group, g); entries.push(g) }
-      groups.get(d.group).ids.push(d.id)
-    } else entries.push({ id: d.id })
-  }
+  const entries = workFilterEntries()
   const sel = new Set(value)
   const setIds = (ids, on) => {
     const next = new Set(sel)
@@ -3062,13 +3081,7 @@ function WorkFilter({ value, onChange }) {
   }
   const label = value.length === 0 ? '全業務'
     : (() => {
-        // a fully chosen group is shown by its name
-        const names = []
-        const left = new Set(value)
-        for (const e of entries) {
-          if (e.ids && e.ids.length > 1 && e.ids.every(id => left.has(id))) { names.push(e.group); e.ids.forEach(id => left.delete(id)) }
-        }
-        sortByItemOrder([...left]).forEach(id => names.push(itemLabel(id)))
+        const names = workFilterUnits(value).map(u => u.label)
         return names.length <= 2 ? names.join('・') : `${names.slice(0, 2).join('・')} ほか${names.length - 2}件`
       })()
 
@@ -3152,6 +3165,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
   }
 
   const q = searchQuery.toLowerCase()
+  const workUnits = workFilterUnits(workFilter)
   const filtered = users.filter(u => {
     const matchSearch = !q || u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q)
     const isIn = statuses[u.id] === true
@@ -3162,10 +3176,10 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
     const matchType = typeFilter === 'all'
       || (typeFilter === 'salaried' && isSal)
       || (typeFilter === 'hourly' && !isSal)
-    // 担当業務 (u.workItems) of one of the chosen items. 社員 have no 業務 in use
-    // (the items kept from their アルバイト days are not their current work).
-    const matchWork = workFilter.length === 0
-      || (!isSal && (u.workItems || []).some(id => workFilter.includes(id)))
+    // 担当業務 (u.workItems) covering every chosen item / group. 社員 have no 業務 in
+    // use (the items kept from their アルバイト days are not their current work).
+    const matchWork = workUnits.length === 0
+      || (!isSal && workUnits.every(unit => unit.ids.some(id => (u.workItems || []).includes(id))))
     return matchSearch && matchStatus && matchType && matchWork
   })
   const isFiltering = !!searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || workFilter.length > 0
