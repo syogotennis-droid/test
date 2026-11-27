@@ -3322,8 +3322,9 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
               <thead>
                 <tr>
                   <th className={styles.usersTh}>氏名</th>
-                  <th className={styles.usersTh} style={{width:'22%'}}>従業員ID</th>
-                  <th className={styles.usersTh} style={{width:'18%'}}>本日の状態</th>
+                  <th className={styles.usersTh} style={{width:'17%'}}>従業員ID</th>
+                  <th className={styles.usersTh} style={{width:'19%'}}>種別</th>
+                  <th className={styles.usersTh} style={{width:'15%'}}>本日の状態</th>
                   <th className={styles.usersTh} style={{width:90}}>操作</th>
                 </tr>
               </thead>
@@ -3342,11 +3343,13 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
                         <div className={styles.usersNameCell}>
                           <div className={styles.usersAvatar}>{user.name.charAt(0)}</div>
                           <span className={styles.usersName}>{user.name}</span>
-                          {isContractUser(user) && <span className={styles.contractTag}>委託</span>}
                         </div>
                       </td>
                       <td className={styles.usersTd}>
                         <span className={styles.usersId}>{user.id}</span>
+                      </td>
+                      <td className={styles.usersTd}>
+                        <span className={styles.usersType}>{(EMPLOYEE_TYPE_LABELS[user.employeeType] || EMPLOYEE_TYPE_LABELS.hourly).split('・').map((w, i, all) => <span key={i} className={styles.usersTypePart}>{w}{i < all.length - 1 ? '・' : ''}</span>)}</span>
                       </td>
                       <td className={styles.usersTd}>
                         <span className={[styles.statusBadge, isIn ? styles.statusIn : styles.statusOut].join(' ')}>

@@ -3355,6 +3355,17 @@
   color: #111827;
 }
 
+.usersType {
+  font-size: 0.82rem;
+  color: #374151;
+}
+
+/* 「アルバイト・パート」は「・」の後でだけ折り返す */
+.usersTypePart {
+  white-space: nowrap;
+  display: inline-block;
+}
+
 .usersId {
   font-size: 0.78rem;
   color: #6b7280;
