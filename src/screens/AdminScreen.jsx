@@ -25,6 +25,7 @@ import {
   saveWorkItemDefs, newWorkItemId,
   isContractUser, isHourlyUser, employeeTypeFor, userAsOf, typeHistoryWith, getContractEnabled, EMPLOYEE_TYPE_LABELS,
 } from '../lib/db'
+import { nextUserId } from '../lib/userIds'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import CopyFromDay from './CopyFromDay'
 import WorkItemSettings from './WorkItemSettings'
@@ -3414,20 +3415,8 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
 
 // ─── AddUserModal ─────────────────────────────────────────────────────────────
 
-// Next free employee ID: part-timers USER001…USER099, salaried staff and 委託 USER101…
-// (the number after the highest one in use, so a retired person's old QR card never matches a new person)
-export function nextUserId(users, employeeType) {
-  const salaried = employeeType === 'salaried' || employeeType === 'contract'
-  const ids = (users || []).flatMap(u => [u.id, ...(u.formerIds || [])])
-  const nums = ids.map(id => /^USER(\d+)$/i.exec(id || '')).filter(Boolean).map(m => Number(m[1]))
-    .filter(n => (salaried ? n >= 101 : n >= 1 && n <= 99))
-  let n = nums.length ? Math.max(...nums) + 1 : salaried ? 101 : 1
-  const used = new Set(ids.map(id => String(id).toUpperCase()))
-  while (used.has(`USER${String(n).padStart(3, '0')}`)) n++
-  // part-timers stop at USER099 (USER100 on is for salaried staff): then the ID is entered by hand
-  if (!salaried && n > 99) return ''
-  return `USER${String(n).padStart(3, '0')}`
-}
+// Next free employee ID (rules in src/lib/userIds.js)
+export { nextUserId }
 
 function AddUserModal({ users, contractOn, onClose, onAdded }) {
   const [addId, setAddId] = useState(() => nextUserId(users, 'hourly'))
@@ -3603,9 +3592,7 @@ function AddUserModal({ users, contractOn, onClose, onAdded }) {
                   onChange={e => { setAddId(e.target.value); setIdEdited(true) }}
                   autoFocus
                 />
-                {!idEdited && (addId
-                  ? <div className={styles.userEditHintText}>次の番号を自動で入れています（アルバイト・パート 001〜099、社員{contractOn ? '・委託' : ''} 101〜。変更もできます）</div>
-                  : <div className={styles.userEditHintText}>アルバイト・パートの番号（001〜099）が埋まっています。IDを入力してください</div>)}
+                {!idEdited && addId && <div className={styles.userEditHintText}>次の番号を自動で入れています（変更もできます）</div>}
               </div>
               <div>
                 <label className={styles.userEditLabel}>氏名 <span className={styles.userEditRequired}>必須</span></label>
