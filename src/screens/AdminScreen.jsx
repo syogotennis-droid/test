@@ -3030,6 +3030,96 @@ function KinmuboTab({ today }) {
   )
 }
 
+// ─── 業務の絞り込み（従業員管理） ───────────────────────────────────────────────
+// Choices come from 業務の管理 (config.workItemDefs). Items of the same group are
+// listed together; the group's checkbox picks all of them at once.
+function WorkFilter({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const close = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
+    const esc = e => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
+  }, [open])
+
+  const entries = []   // { group, ids } or { id }
+  const groups = new Map()
+  for (const d of activeWorkItemDefs()) {
+    if (SYSTEM_ITEMS.has(d.id)) continue
+    if (d.group) {
+      if (!groups.has(d.group)) { const g = { group: d.group, ids: [] }; groups.set(d.group, g); entries.push(g) }
+      groups.get(d.group).ids.push(d.id)
+    } else entries.push({ id: d.id })
+  }
+  const sel = new Set(value)
+  const setIds = (ids, on) => {
+    const next = new Set(sel)
+    ids.forEach(id => (on ? next.add(id) : next.delete(id)))
+    onChange(sortByItemOrder([...next]))
+  }
+  const label = value.length === 0 ? '全業務'
+    : (() => {
+        // a fully chosen group is shown by its name
+        const names = []
+        const left = new Set(value)
+        for (const e of entries) {
+          if (e.ids && e.ids.length > 1 && e.ids.every(id => left.has(id))) { names.push(e.group); e.ids.forEach(id => left.delete(id)) }
+        }
+        sortByItemOrder([...left]).forEach(id => names.push(itemLabel(id)))
+        return names.length <= 2 ? names.join('・') : `${names.slice(0, 2).join('・')} ほか${names.length - 2}件`
+      })()
+
+  return (
+    <div className={styles.workFilter} ref={boxRef}>
+      <button
+        type="button"
+        className={[styles.usersFilterBtn, value.length > 0 ? styles.usersFilterBtnActive : ''].join(' ')}
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >業務：{label} ▾</button>
+      {open && (
+        <div className={styles.workFilterPanel}>
+          <button type="button" className={styles.workFilterAll} disabled={value.length === 0} onClick={() => onChange([])}>全業務に戻す</button>
+          {entries.map(e => e.ids ? (
+            e.ids.length === 1 ? (
+              <label key={'g' + e.group} className={styles.workFilterRow}>
+                <input type="checkbox" checked={sel.has(e.ids[0])} onChange={ev => setIds(e.ids, ev.target.checked)} />
+                {itemLabel(e.ids[0])}
+              </label>
+            ) : (
+              <div key={'g' + e.group} className={styles.workFilterGroup}>
+                <label className={styles.workFilterRow}>
+                  <input
+                    type="checkbox"
+                    checked={e.ids.every(id => sel.has(id))}
+                    ref={el => { if (el) el.indeterminate = e.ids.some(id => sel.has(id)) && !e.ids.every(id => sel.has(id)) }}
+                    onChange={ev => setIds(e.ids, ev.target.checked)}
+                  />
+                  <strong>{e.group}</strong>
+                </label>
+                {e.ids.map(id => (
+                  <label key={id} className={[styles.workFilterRow, styles.workFilterSub].join(' ')}>
+                    <input type="checkbox" checked={sel.has(id)} onChange={ev => setIds([id], ev.target.checked)} />
+                    {itemLabel(id)}
+                  </label>
+                ))}
+              </div>
+            )
+          ) : (
+            <label key={e.id} className={styles.workFilterRow}>
+              <input type="checkbox" checked={sel.has(e.id)} onChange={ev => setIds([e.id], ev.target.checked)} />
+              {itemLabel(e.id)}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── UsersTab ─────────────────────────────────────────────────────────────────
 
 function UsersTab({ users, today, onRefresh, isTablet }) {
@@ -3040,6 +3130,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [workFilter, setWorkFilter] = useState([])   // item ids; [] = 全業務
 
   useEffect(() => { loadStatuses() }, [])
 
@@ -3071,9 +3162,13 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
     const matchType = typeFilter === 'all'
       || (typeFilter === 'salaried' && isSal)
       || (typeFilter === 'hourly' && !isSal)
-    return matchSearch && matchStatus && matchType
+    // 担当業務 (u.workItems) of one of the chosen items. 社員 have no 業務 in use
+    // (the items kept from their アルバイト days are not their current work).
+    const matchWork = workFilter.length === 0
+      || (!isSal && (u.workItems || []).some(id => workFilter.includes(id)))
+    return matchSearch && matchStatus && matchType && matchWork
   })
-  const isFiltering = !!searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
+  const isFiltering = !!searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || workFilter.length > 0
   const countLabel = isFiltering
     ? `${users.length}名中 ${filtered.length}名を表示`
     : `登録従業員 ${users.length}名`
@@ -3123,6 +3218,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
               >{l}</button>
             ))}
           </div>
+          <WorkFilter value={workFilter} onChange={setWorkFilter} />
           <span className={styles.usersCount}>{countLabel}</span>
         </div>
 
