@@ -1335,7 +1335,9 @@ export function attendanceDates(byDate) {
 
 // Export monthly attendance register (出勤簿) as XLSX
 // Fully dynamic columns: one sheet per user, time and pay sections separated
-export async function exportKinmubo({ dateFrom, dateTo } = {}) {
+// types: which 種別 to put in the file ('hourly' / 'salaried' / 'contract'; all when omitted).
+// The 集計 sheet (アルバイト・パート's pay by item) is there only when アルバイト・パート is included.
+export async function exportKinmubo({ dateFrom, dateTo, types } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
   // straight from the server: the offline copy of the roster has no rates (pay would be 0).
   // Each person as the type they had in this month (a later change to/from 委託 doesn't alter it)
@@ -1549,14 +1551,15 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const dayCountCells = (row, cells) => cells.map(([col, text]) =>
     `<c r="${col}${row}" s="${S.username}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`).join('')
 
-  const userEntries = users.filter(u =>
+  const typeOf = u => (isContractUser(u) ? 'contract' : isSalariedUser(u) ? 'salaried' : 'hourly')
+  const withHourly = !types || types.includes('hourly')
+  const userEntries = users.filter(u => (!types || types.includes(typeOf(u))) && (
     logs.some(l => l.user_id === u.id) ||
     Object.keys(allWorkReports).some(k => k.slice(0, -11) === u.id) ||
     Object.keys(paidLeaves).some(k => k.slice(0, -11) === u.id)
-  )
+  ))
   const sheetXmls = []
   const summaryData = { types: {} }
-  const contractRecords = [] // 委託: one list of all their punches (the 「委託一覧」 sheet)
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -1605,7 +1608,6 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     // Salaried employees and 委託: attendance only (日付・曜日・QR出勤・QR退勤). 委託 has no
     // 有給 / 食費補助 and nothing of theirs goes into the pay tables or 業務別集計.
     const contract = isContractUser(user)
-    if (contract) contractRecords.push({ user, byDate })
     if (user.employeeType === 'salaried' || contract) {
       const WB_NS_SAL = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
       const WB_REL_SAL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -2110,8 +2112,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     )
   }
 
-  // Build "集計" summary sheet (inserted as sheet1)
-  {
+  // Build "集計" summary sheet (inserted as sheet1; only with アルバイト・パート)
+  if (withHourly) {
     const WB_NS_S = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const WB_REL_S = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
     const shdrCell = (col, rn, text) =>
@@ -2145,47 +2147,16 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     sheetXmls.unshift(summarySheetXml)
   }
 
-  // 「委託一覧」: every 委託 punch of the month, one row per shift (氏名・従業員ID・日付・曜日・出勤・退勤)
-  let contractSheet = false
-  if (contractRecords.length) {
-    const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-    const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
-    const txt = (ref, style, t) => `<c r="${ref}" s="${style}" t="inlineStr"><is><t>${esc(t)}</t></is></c>`
-    let rows = `<row r="1" ht="22">${txt('A1', S.title, yearMonthLabel + ' 委託 出退勤記録')}</row>` +
-      `<row r="2" ht="30">${['氏名', '従業員ID', '日付', '曜日', '出勤', '退勤'].map((h, i) => txt(`${colLetter(i)}2`, S.hdr, h)).join('')}</row>`
-    let r = 3
-    for (const { user, byDate } of contractRecords) {
-      for (const ds of Object.keys(byDate).sort()) {
-        if (!ds.startsWith(`${ym_y_str}-${ym_m_str}`)) continue
-        const [y, m, d] = ds.split('-').map(Number)
-        const dow = new Date(y, m - 1, d).getDay()
-        const dt = dow === 0 ? 'su' : dow === 6 ? 'sa' : 'wd'
-        for (const se of byDate[ds].sessions) {
-          if (!se.inLog && !se.outLog) continue
-          rows += `<row r="${r}">` + txt(`A${r}`, S.pay_lbl, user.name) + txt(`B${r}`, S.pay_rate, user.id) +
-            `<c r="C${r}" s="${S.date[dt]}"><v>${excelDate(y, m, d)}</v></c>` + txt(`D${r}`, S.dow[dt], DOW_NAMES[dow]) +
-            timeCell(`E${r}`, S.time[dt], se.inLog?.time?.substring(0, 5)) + timeCell(`F${r}`, S.time[dt], se.outLog?.time?.substring(0, 5)) + `</row>`
-          r++
-        }
-      }
-    }
-    sheetXmls.splice(1, 0,
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS}" xmlns:r="${REL}">` +
-      `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
-      `<cols><col min="1" max="1" width="${colAWidth(rows.replace(/^<row r="1".*?<\/row>/, ''), 16)}" customWidth="1"/><col min="2" max="2" width="12" customWidth="1"/><col min="3" max="3" width="13" customWidth="1"/><col min="4" max="4" width="8" customWidth="1"/><col min="5" max="6" width="12" customWidth="1"/></cols>` +
-      `<sheetData>${rows}</sheetData></worksheet>`)
-    contractSheet = true
-  }
-
   // Build XLSX package from scratch (no template needed)
   const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
   const WB_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
   const PKG_REL = 'http://schemas.openxmlformats.org/package/2006/relationships'
   const WS_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
-  const sheetTitles = ['集計', ...(contractSheet ? ['委託一覧'] : []), ...userEntries.map(u => u.name)]
+  if (userEntries.length === 0 && !withHourly) throw new Error('選んだ種別の記録がこの月にありません')
+  const sheetTitles = [...(withHourly ? ['集計'] : []), ...userEntries.map(u => u.name)]
   const N = sheetTitles.length - 1
 
-  // sheet1 = 集計, (委託一覧), then one sheet per person
+  // sheet1 = 集計 (with アルバイト・パート), then one sheet per person
   // Excel sheet names: no : \ / ? * [ ], at most 31 characters, unique ignoring case
   const usedNames = new Set()
   const sheetName = raw => {

@@ -2205,6 +2205,9 @@ function KinmuboTab({ today }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [onlyIssues, setOnlyIssues] = useState(false)
+  // 種別 put in the Excel file (one file; all checked = everyone)
+  const [exportTypes, setExportTypes] = useState(['hourly', 'salaried', 'contract'])
+  const typeOfEntry = p => (p.isContractUser ? 'contract' : p.isSalariedUser ? 'salaried' : 'hourly')
   const [foldSummary, toggleSummary] = useFold('kinmubo.summary')
   const [salariedDayEdits, setSalariedDayEdits] = useState({})
   const [salariedDaysData, setSalariedDaysData] = useState({})
@@ -2508,12 +2511,13 @@ function KinmuboTab({ today }) {
   async function handleCreate() {
     if (exporting) return
 
-    // Warn if any user has data integrity issues
+    const chosen = (preview || []).filter(p => exportTypes.includes(typeOfEntry(p)))
+    // Warn if any user (of the chosen types) has data integrity issues
     if (preview) {
       const incomplete = []
       const inconsistent = []
       const incompleteContract = []
-      for (const p of preview) {
+      for (const p of chosen) {
         if (p.isContractUser) {
           p.contractRows.filter(r => !r.completed).forEach(r => { const [, mo, dd] = r.ds.split('-').map(Number); incompleteContract.push(`${p.user.name}（${mo}/${dd}）`) })
           continue
@@ -2535,7 +2539,7 @@ function KinmuboTab({ today }) {
       }
       // part-timers: a day with punches but no work entered is paid 0 yen (no 準備時間 / 交通費 either)
       const noWork = [], openHourly = []
-      for (const p of preview) {
+      for (const p of chosen) {
         if (p.isSalariedUser || p.isContractUser) continue
         Object.keys(p.byDate).sort().forEach(ds => {
           const e = p.byDate[ds], [, mo, dd] = ds.split('-').map(Number)
@@ -2561,8 +2565,11 @@ function KinmuboTab({ today }) {
       const dateFrom = `${selectedYM}-01`
       const lastDay = new Date(y, m, 0).getDate()
       const dateTo = `${selectedYM}-${String(lastDay).padStart(2, '0')}`
-      const buf = await exportKinmubo({ dateFrom, dateTo })
-      const fileName = `出勤簿_${selectedYM}.xlsx`
+      const present = ['hourly', 'salaried', 'contract'].filter(t => (preview || []).some(p => typeOfEntry(p) === t))
+      const types = present.filter(t => exportTypes.includes(t))
+      // everyone of the month: the file is the same as before (集計 included)
+      const buf = await exportKinmubo({ dateFrom, dateTo, types: types.length === present.length ? undefined : types })
+      const fileName = types.length === present.length ? `出勤簿_${selectedYM}.xlsx` : `出勤簿_${selectedYM}_${types.map(t => EMPLOYEE_TYPE_LABELS[t]).join('・')}.xlsx`
       if (Capacitor.isNativePlatform()) {
         const bytes = new Uint8Array(buf)
         let binary = ''
@@ -2634,10 +2641,25 @@ function KinmuboTab({ today }) {
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          {!previewLoading && hasData && (
+            <div className={styles.exportTypes}>
+              {['hourly', 'salaried', 'contract'].map(t => {
+                const n = preview.filter(p => typeOfEntry(p) === t).length
+                if (!n) return null
+                return (
+                  <label key={t} className={styles.exportTypeCheck}>
+                    <input type="checkbox" checked={exportTypes.includes(t)}
+                      onChange={e => setExportTypes(prev => e.target.checked ? [...prev, t] : prev.filter(x => x !== t))} />
+                    {EMPLOYEE_TYPE_LABELS[t]}（{n}名）
+                  </label>
+                )
+              })}
+            </div>
+          )}
           <button
             className={styles.kinmuboExportBtn}
             onClick={handleCreate}
-            disabled={exporting || previewLoading || !hasData}
+            disabled={exporting || previewLoading || !hasData || !preview.some(p => exportTypes.includes(typeOfEntry(p)))}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -2646,7 +2668,6 @@ function KinmuboTab({ today }) {
             </svg>
             {exporting ? '出力中' : 'Excelを出力'}
           </button>
-          {!previewLoading && hasData && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>この月の全員分を出力</div>}
           </div>
 
         </div>
