@@ -3138,6 +3138,7 @@
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+  scrollbar-gutter: stable;   /* no width change when the list gets short */
 }
 
 .usersPageHeader {
@@ -3281,6 +3282,7 @@
 .usersTable {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;   /* same column widths however many rows are shown */
 }
 
 .usersTh {

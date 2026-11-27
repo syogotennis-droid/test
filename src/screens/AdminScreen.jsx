@@ -3247,8 +3247,8 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
               <thead>
                 <tr>
                   <th className={styles.usersTh}>氏名</th>
-                  <th className={styles.usersTh}>従業員ID</th>
-                  <th className={styles.usersTh}>本日の状態</th>
+                  <th className={styles.usersTh} style={{width:'22%'}}>従業員ID</th>
+                  <th className={styles.usersTh} style={{width:'18%'}}>本日の状態</th>
                   <th className={styles.usersTh} style={{width:90}}>操作</th>
                 </tr>
               </thead>
