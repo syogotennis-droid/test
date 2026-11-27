@@ -268,6 +268,7 @@ function cacheUsers(users) {
   writeJSON(USERS_CACHE_KEY, users.map(u => ({
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
     asksTransport: u.asksTransport ?? getCommute(u).asks, transportOptions: u.transportOptions ?? getCommute(u).options, formerIds: u.formerIds || [],
+    ...(Array.isArray(u.typeHistory) ? { typeHistory: u.typeHistory } : {}),
   })))
 }
 
@@ -423,7 +424,7 @@ export function prepTimeRows(sessionDates, history) {
 export function planMinWageChange(users, items, newWage, from) {
   const out = []
   for (const u of users) {
-    if (u.employeeType === 'salaried') continue
+    if (!isHourlyUser(u)) continue
     for (const item of items) {
       if (!(u.workItems || []).includes(item)) continue
       const cur = getRatesForDate(u.itemRates?.[item], from)
@@ -501,6 +502,43 @@ export const CLOCK_OUT_HIDDEN = new Set(['準備', '有給', '固定手当', '�
 
 // Calculation items (pay logic depends on them); not managed on the screen
 export const SYSTEM_ITEMS = new Set(['休憩', '準備', '交通費', '有給', '固定手当'])
+
+// ── 従業員の種別 ────────────────────────────────────────────────────────────
+// hourly = アルバイト・パート (also when unset, as before), salaried = 社員, contract = 委託.
+// 委託 only punches 出勤・退勤 (no work input, no transport, no pay); it can be chosen only
+// where config.contractEnabled = '1' (set per facility with setup-new-client.js --enable-contract).
+export const EMPLOYEE_TYPE_LABELS = { hourly: 'アルバイト・パート', salaried: '社員', contract: '委託' }
+export const isSalariedUser = u => u?.employeeType === 'salaried'
+export const isContractUser = u => u?.employeeType === 'contract'
+// アルバイト・パート: the only type whose pay is calculated
+export const isHourlyUser = u => !isSalariedUser(u) && !isContractUser(u)
+// The type of a month. A change to or from 委託 is saved with the month it starts
+// (typeHistory: [{ from: '' | 'YYYY-MM', type }]), so earlier months keep the type they had.
+export function employeeTypeFor(user, ym) {
+  const h = Array.isArray(user?.typeHistory) ? [...user.typeHistory].sort((a, b) => (a.from || '').localeCompare(b.from || '')) : []
+  if (!h.length || !ym) return user?.employeeType || 'hourly'
+  let t = h[0].type
+  for (const e of h) if (!e.from || e.from <= ym.slice(0, 7)) t = e.type
+  return t || 'hourly'
+}
+// The user as of a month (same object when the type is unchanged)
+export function userAsOf(user, ym) {
+  const t = employeeTypeFor(user, ym)
+  return t === (user?.employeeType || 'hourly') ? user : { ...user, employeeType: t }
+}
+// typeHistory after changing the type from `from` (a month) on. A change that doesn't involve
+// 委託 is recorded only once a history exists (社員 ⇔ アルバイト works as before).
+export function typeHistoryWith(user, newType, from) {
+  const oldType = user?.employeeType || 'hourly'
+  const h = Array.isArray(user?.typeHistory) ? user.typeHistory : null
+  if (newType === oldType) return h
+  if (!h && newType !== 'contract' && oldType !== 'contract') return null
+  const base = h ? h.filter(e => (e.from || '') < from) : [{ from: '', type: oldType }]
+  return [...base, { from, type: newType }]
+}
+export async function getContractEnabled() {
+  try { return (await api('/config')).contractEnabled === '1' } catch { return false }
+}
 
 export const DEFAULT_WORK_ITEM_DEFS = [
   { id: 'アスレ', name: 'アスレ' },
@@ -1033,9 +1071,8 @@ export function commuteOn(user, dateStr) {
 // Must match asksTransport() in the API.
 export function getCommute(user) {
   const c = commuteOn(user, getTodayDate())
-  const salaried = user?.employeeType === 'salaried'
   const daily = c.list.filter(isDaily)
-  const asks = !salaried && daily.length > 0
+  const asks = isHourlyUser(user) && daily.length > 0
   const label = c.list.length ? c.list.map(m => commuteLabel(m.key)).join('・') : c.legacy ? '未設定' : '交通費なし'
   return { ...c, label, asks, options: asks ? daily.filter(m => m.key !== 'legacy').map(m => m.key) : [] }
 }
@@ -1300,8 +1337,9 @@ export function attendanceDates(byDate) {
 // Fully dynamic columns: one sheet per user, time and pay sections separated
 export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const logs = await getLogs({ dateFrom, dateTo })
-  // straight from the server: the offline copy of the roster has no rates (pay would be 0)
-  const users = await api('/users')
+  // straight from the server: the offline copy of the roster has no rates (pay would be 0).
+  // Each person as the type they had in this month (a later change to/from 委託 doesn't alter it)
+  const users = (await api('/users')).map(u => userAsOf(u, dateFrom))
   await loadWorkItemDefs() // latest names / order for the columns
 
   const [ym_y_str, ym_m_str] = (dateFrom || '').split('-')
@@ -1518,6 +1556,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   )
   const sheetXmls = []
   const summaryData = { types: {} }
+  const contractRecords = [] // 委託: one list of all their punches (the 「委託一覧」 sheet)
 
   for (const user of userEntries) {
     const userLogs = logs.filter(l => l.user_id === user.id)
@@ -1563,8 +1602,11 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       se.breaks = sid ? pairBreaks(logsBySession[sid] || []) : []
     }))
 
-    // Salaried employees: attendance only (日付・曜日・QR出勤・QR退勤)
-    if (user.employeeType === 'salaried') {
+    // Salaried employees and 委託: attendance only (日付・曜日・QR出勤・QR退勤). 委託 has no
+    // 有給 / 食費補助 and nothing of theirs goes into the pay tables or 業務別集計.
+    const contract = isContractUser(user)
+    if (contract) contractRecords.push({ user, byDate })
+    if (user.employeeType === 'salaried' || contract) {
       const WB_NS_SAL = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
       const WB_REL_SAL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
       const hdrCellSal = (col, rn, text) => `<c r="${col}${rn}" s="${S.hdr}" t="inlineStr"><is><t>${esc(text)}</t></is></c>`
@@ -1575,7 +1617,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
       const nBreaksSal = Math.max(0, ...Object.keys(byDate).filter(ds => ds.startsWith(`${ym_y_str}-${ym_m_str}`)).map(ds => dayBreaks(ds).length))
       const breakColsSal = Array.from({ length: nBreaksSal * 2 }, (_, i) => colLetter(3 + i))
       const OUT_SAL = colLetter(3 + nBreaksSal * 2)
-      const LV_SAL = leave ? colLetter(4 + nBreaksSal * 2) : null
+      const LV_SAL = leave && !contract ? colLetter(4 + nBreaksSal * 2) : null
 
       const t1HdrSal =
         `<row r="${T1_HDR_SAL}" ht="36">` +
@@ -1642,10 +1684,10 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
         r1sal++
       }
 
-      const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + ' 出勤簿（社員）')}</t></is></c></row>`
+      const row1sal = `<row r="1" ht="22"><c r="A1" s="${S.title}" t="inlineStr"><is><t>${esc(yearMonthLabel + (contract ? ' 出勤簿（委託）' : ' 出勤簿（社員）'))}</t></is></c></row>`
       const row2sal = `<row r="2" ht="18"><c r="A2" s="${S.username}" t="inlineStr"><is><t>${esc('担当者：' + user.name)}</t></is></c>` +
         dayCountCells(2, [['C', `出勤日数：${attendanceDates(byDate).length}日`],
-          ...[...(leave ? [leaveDaysText] : []), ...mealRows(user.id, mealDays, mealPrices).map(m => `${m.label}：${m.pay.toLocaleString()}円`)]
+          ...(contract ? [] : [...(leave ? [leaveDaysText] : []), ...mealRows(user.id, mealDays, mealPrices).map(m => `${m.label}：${m.pay.toLocaleString()}円`)])
             .map((text, i) => [colLetter(3 + i), text])]) + `</row>`
       // 合計 row (only the 有給 column has a total)
       const totSal = LV_SAL
@@ -2103,16 +2145,49 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     sheetXmls.unshift(summarySheetXml)
   }
 
+  // 「委託一覧」: every 委託 punch of the month, one row per shift (氏名・従業員ID・日付・曜日・出勤・退勤)
+  let contractSheet = false
+  if (contractRecords.length) {
+    const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    const txt = (ref, style, t) => `<c r="${ref}" s="${style}" t="inlineStr"><is><t>${esc(t)}</t></is></c>`
+    let rows = `<row r="1" ht="22">${txt('A1', S.title, yearMonthLabel + ' 委託 出退勤記録')}</row>` +
+      `<row r="2" ht="30">${['氏名', '従業員ID', '日付', '曜日', '出勤', '退勤'].map((h, i) => txt(`${colLetter(i)}2`, S.hdr, h)).join('')}</row>`
+    let r = 3
+    for (const { user, byDate } of contractRecords) {
+      for (const ds of Object.keys(byDate).sort()) {
+        if (!ds.startsWith(`${ym_y_str}-${ym_m_str}`)) continue
+        const [y, m, d] = ds.split('-').map(Number)
+        const dow = new Date(y, m - 1, d).getDay()
+        const dt = dow === 0 ? 'su' : dow === 6 ? 'sa' : 'wd'
+        for (const se of byDate[ds].sessions) {
+          if (!se.inLog && !se.outLog) continue
+          rows += `<row r="${r}">` + txt(`A${r}`, S.pay_lbl, user.name) + txt(`B${r}`, S.pay_rate, user.id) +
+            `<c r="C${r}" s="${S.date[dt]}"><v>${excelDate(y, m, d)}</v></c>` + txt(`D${r}`, S.dow[dt], DOW_NAMES[dow]) +
+            timeCell(`E${r}`, S.time[dt], se.inLog?.time?.substring(0, 5)) + timeCell(`F${r}`, S.time[dt], se.outLog?.time?.substring(0, 5)) + `</row>`
+          r++
+        }
+      }
+    }
+    sheetXmls.splice(1, 0,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS}" xmlns:r="${REL}">` +
+      `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
+      `<cols><col min="1" max="1" width="${colAWidth(rows.replace(/^<row r="1".*?<\/row>/, ''), 16)}" customWidth="1"/><col min="2" max="2" width="12" customWidth="1"/><col min="3" max="3" width="13" customWidth="1"/><col min="4" max="4" width="8" customWidth="1"/><col min="5" max="6" width="12" customWidth="1"/></cols>` +
+      `<sheetData>${rows}</sheetData></worksheet>`)
+    contractSheet = true
+  }
+
   // Build XLSX package from scratch (no template needed)
   const WB_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
   const WB_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
   const PKG_REL = 'http://schemas.openxmlformats.org/package/2006/relationships'
   const WS_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
-  const N = userEntries.length
+  const sheetTitles = ['集計', ...(contractSheet ? ['委託一覧'] : []), ...userEntries.map(u => u.name)]
+  const N = sheetTitles.length - 1
 
-  // sheet1 = 集計, sheet2..N+1 = user sheets
+  // sheet1 = 集計, (委託一覧), then one sheet per person
   // Excel sheet names: no : \ / ? * [ ], at most 31 characters, unique ignoring case
-  const usedNames = new Set(['集計'])
+  const usedNames = new Set()
   const sheetName = raw => {
     const base = (String(raw).replace(/[:\\/?*[\]]/g, '_').replace(/^'+|'+$/g, '').trim() || 'シート').substring(0, 31)
     let name = base, n = 2
@@ -2120,11 +2195,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     usedNames.add(name.toLowerCase())
     return name
   }
-  const sheetEls =
-    `<sheet name="集計" sheetId="1" r:id="rId1"/>` +
-    userEntries.map((u, i) =>
-      `<sheet name="${esc(sheetName(u.name))}" sheetId="${i + 2}" r:id="rId${i + 2}"/>`
-    ).join('')
+  const sheetEls = sheetTitles.map((t, i) =>
+    `<sheet name="${esc(sheetName(t))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')
   const wbXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<workbook xmlns="${WB_NS}" xmlns:r="${WB_REL}">` +
@@ -2136,9 +2208,8 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
   const wbRels =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<Relationships xmlns="${PKG_REL}">` +
-    `<Relationship Id="rId1" Type="${WB_REL}/worksheet" Target="worksheets/sheet1.xml"/>` +
-    userEntries.map((_, i) =>
-      `<Relationship Id="rId${i + 2}" Type="${WB_REL}/worksheet" Target="worksheets/sheet${i + 2}.xml"/>`
+    sheetTitles.map((_, i) =>
+      `<Relationship Id="rId${i + 1}" Type="${WB_REL}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`
     ).join('') +
     `<Relationship Id="rId${N + 2}" Type="${WB_REL}/styles" Target="styles.xml"/>` +
     `<Relationship Id="rId${N + 3}" Type="${WB_REL}/sharedStrings" Target="sharedStrings.xml"/>` +
@@ -2152,8 +2223,7 @@ export async function exportKinmubo({ dateFrom, dateTo } = {}) {
     `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
     `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
     `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` +
-    `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="${WS_CT}"/>` +
-    userEntries.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 2}.xml" ContentType="${WS_CT}"/>`).join('') +
+    sheetTitles.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="${WS_CT}"/>`).join('') +
     `</Types>`
 
   const relsXml =

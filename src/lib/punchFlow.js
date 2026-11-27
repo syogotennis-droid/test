@@ -68,7 +68,8 @@ async function handlePunchNow(mode, user) {
   // 退勤
   if (ps.state === 'off') return fail(`${user.name} さんはまだ出勤していません`)
   const breakTotal = todayBreakMinutes(ps.logs)
-  if (user.employeeType === 'salaried') {
+  // 社員 and 委託 clock out at once (no work input, no transport question)
+  if (user.employeeType === 'salaried' || user.employeeType === 'contract') {
     if (ps.state === 'break') await saveLog({ userId: user.id, logType: BREAK_END, sessionId: ps.sessionId, date: ps.date })
     await saveLog({ userId: user.id, workItems: {}, logType: '退勤', sessionId: ps.sessionId, date: ps.date })
     return done({ logType: '退勤', workItems: {}, user, clockInTime: ps.clockIn?.time, breakInfo: { totalMins: breakTotal } })

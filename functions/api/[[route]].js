@@ -202,6 +202,11 @@ export async function onRequest(context) {
       // an old ID of someone else (their old QR card still opens their record) can't be given to a new person
       if (sp.get('new') === '1' && await DB.prepare("SELECT 1 AS x FROM users WHERE EXISTS (SELECT 1 FROM json_each(users.data, '$.formerIds') WHERE value = ?)").bind(id).first()) throw new HttpError('user_exists', 409)
       const merged = { ...(cur ? parseJson(cur.data, {}) : {}), ...b }
+      // 委託 only where the facility has it switched on (config.contractEnabled = '1')
+      if (b.employeeType === 'contract' && parseJson(cur?.data, {}).employeeType !== 'contract') {
+        const f = await DB.prepare("SELECT value FROM config WHERE key = 'contractEnabled'").first()
+        if (f?.value !== '1') throw new HttpError('contract_disabled', 400)
+      }
       // a PIN calls up exactly one person (checked when the PIN is set, so other changes to someone
       // who already shares a PIN from earlier data still save)
       if ('pin' in b && merged.pin) {
@@ -975,7 +980,8 @@ function publicUser(u) {
   // pin is included so the tablet can match PINs while offline
   return {
     id: u.id, name: u.name, pin: u.pin || '', employeeType: u.employeeType, workItems: u.workItems || [],
-    asksTransport: asksTransport(u), transportOptions: u.employeeType === 'salaried' ? [] : commuteMethodsOf(u).filter(k => k !== 'legacy'), formerIds: Array.isArray(u.formerIds) ? u.formerIds : [],
+    asksTransport: asksTransport(u), transportOptions: u.employeeType === 'salaried' || u.employeeType === 'contract' ? [] : commuteMethodsOf(u).filter(k => k !== 'legacy'), formerIds: Array.isArray(u.formerIds) ? u.formerIds : [],
+    ...(Array.isArray(u.typeHistory) ? { typeHistory: u.typeHistory } : {}),
   }
 }
 
@@ -999,7 +1005,7 @@ function commuteMethodsOf(u) {
 
 // Whether the clock-out screen should ask "本日の交通費". Must match getCommute() in src/lib/db.js.
 function asksTransport(u) {
-  if (u.employeeType === 'salaried') return false
+  if (u.employeeType === 'salaried' || u.employeeType === 'contract') return false
   return commuteMethodsOf(u).length > 0
 }
 

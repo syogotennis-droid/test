@@ -2411,6 +2411,19 @@
   flex-shrink: 0;
 }
 
+/* 種別「委託」の印（出勤簿作成・従業員管理） */
+.contractTag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #f3e8ff;
+  color: #6b21a8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
 .kinmuboAccordionMeta {
   display: flex;
   align-items: center;

@@ -4,6 +4,8 @@
 //   node setup-new-client.js                  新しい案件を作る(DB作成→PIN設定→デプロイ)
 //   node setup-new-client.js --deploy <案件ID>  既存の案件に最新のコードを反映する
 //   node setup-new-client.js --deploy-all     すべての案件に最新のコードを反映する
+//   node setup-new-client.js --enable-contract <案件ID>   その案件で種別「委託」を使えるようにする
+//   node setup-new-client.js --disable-contract <案件ID>  「委託」を選べないようにする（登録済みの委託の人はそのまま）
 //
 // 案件ID が "abc" なら、Pagesプロジェクト・D1データベースはどちらも "kintai-abc"、
 // URL は https://kintai-abc.pages.dev になる。
@@ -212,6 +214,16 @@ async function main() {
     if (!id) { console.error('使い方: node setup-new-client.js --deploy <案件ID>'); process.exit(1) }
     const url = deploy(id)
     console.log(`\n反映しました: ${url}`)
+  } else if (args[0] === '--enable-contract' || args[0] === '--disable-contract') {
+    // 種別「委託」 is a per-facility option (config.contractEnabled), off unless switched on here
+    const on = args[0] === '--enable-contract'
+    const id = (args[1] || '').replace(new RegExp('^' + PREFIX), '')
+    if (!id) { console.error(`使い方: node setup-new-client.js ${args[0]} <案件ID>`); process.exit(1) }
+    const name = PREFIX + id
+    if (!findDatabase(name)) { console.error(`データベース ${name} が見つかりません`); process.exit(1) }
+    wr(['d1', 'execute', name, '--remote', '--yes', '--command',
+      on ? "INSERT OR REPLACE INTO config (key, value) VALUES ('contractEnabled', '1')" : "DELETE FROM config WHERE key = 'contractEnabled'"], { capture: true })
+    console.log(on ? `${name} で「委託」を使えるようにしました` : `${name} で「委託」を選べないようにしました`)
   } else if (args[0] === '--deploy-all') {
     const ids = listClientIds()
     if (ids.length === 0) { console.log('案件がありません'); return }

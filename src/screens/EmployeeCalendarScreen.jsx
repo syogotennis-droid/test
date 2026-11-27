@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, saveWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs, getPaidLeaves, savePaidLeave, leaveSessionId, PAID_LEAVE_LABEL } from '../lib/db'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { getLogs, saveSessionWorkReport, getSessionWorkReportsForUser, CLOCK_OUT_HIDDEN, pairBreaks, getWeeklyCopies, deleteWeeklyCopy, saveWeeklyCopy, getLastWeekWork, localToday, itemLabel, sortByItemOrder, isDeletedWorkItem, loadWorkItemDefs, getPaidLeaves, savePaidLeave, leaveSessionId, PAID_LEAVE_LABEL, employeeTypeFor } from '../lib/db'
 import { useIdleTimeout } from '../lib/useIdleTimeout'
 import CopyFromDay from './CopyFromDay'
 import styles from './EmployeeCalendarScreen.module.css'
@@ -583,12 +583,16 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
   const [leaves, setLeaves] = useState({}) // { dateStr: 'full' | 'half' } 有給
   const [leaveSupported, setLeaveSupported] = useState(true) // false: this place's server has no 有給 / 業務予定 yet
   const today = localToday()
+  // 委託 (in the month shown) only checks punches: shown like 社員 (no work input), without 有給 / 業務予定
+  const contract = employeeTypeFor(user, `${year}-${String(month + 1).padStart(2, '0')}`) === 'contract'
+  const viewUser = useMemo(() => (contract ? { ...user, employeeType: 'salaried' } : user), [user, contract])
+  const leaveOn = leaveSupported && !contract
 
   const loadLogs = useCallback(() => {
     setLoading(true)
     setLoadError(false)
     const { from, to } = getMonthRange(year, month)
-    const isSal = user?.employeeType === 'salaried'
+    const isSal = viewUser?.employeeType === 'salaried'
     Promise.all([
       getLogs({ dateFrom: from, dateTo: to, userId: user.id }),
       isSal ? Promise.resolve(null) : getSessionWorkReportsForUser(user.id),
@@ -613,7 +617,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
       setLoadError(true)
       setLoading(false)
     })
-  }, [year, month, user.id, user?.employeeType])
+  }, [year, month, user.id, viewUser?.employeeType])
 
   useEffect(() => { loadLogs() }, [loadLogs])
 
@@ -654,7 +658,7 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
         <span className={styles.monthLabel}>{year}年{month + 1}月</span>
         <button onClick={nextMonth} className={styles.navBtn}>▶</button>
       </div>
-      <div className={styles.calGuide}>{leaveSupported ? '日付を押すと、業務の入力・修正や有給の登録ができます' : '日付を押すと、業務の入力・修正ができます'}</div>
+      <div className={styles.calGuide}>{contract ? '日付を押すと、出勤・退勤の時刻を確認できます' : leaveSupported ? '日付を押すと、業務の入力・修正や有給の登録ができます' : '日付を押すと、業務の入力・修正ができます'}</div>
 
       {loading ? (
         <div className={styles.loading}>読み込み中</div>
@@ -676,14 +680,14 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
             const worked = sessions.length > 0
             const multiSession = sessions.length > 1
             const dow = new Date(year, month, d).getDay()
-            const isSalaried = user?.employeeType === 'salaried'
+            const isSalaried = viewUser?.employeeType === 'salaried'
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
             const sessionIds = sessions.map(s => s.sessionId).filter(Boolean)
             const copy = !isSalaried && dateStr >= today ? copies[dateStr] : null
             const workedSessions = sessionWorkStatus[dateStr]
             const leaveKind = leaves[dateStr] || ''
             // a day of this month or last month can be opened to register paid leave
-            const canOpen = worked || copy || leaveKind || (leaveSupported && dateStr >= editableFrom())
+            const canOpen = worked || copy || leaveKind || (leaveOn && dateStr >= editableFrom())
 
             let workBadgeLabel = null
             let workBadgeClass = null
@@ -756,14 +760,14 @@ export default function EmployeeCalendarScreen({ user, onBack }) {
 
       {selectedDay !== null && (
         <DayModal
-          leaveSupported={leaveSupported}
+          leaveSupported={leaveOn}
           day={selectedDay}
           year={year}
           month={month}
           sessions={dayMap[selectedDay] || []}
-          user={user}
+          user={viewUser}
           sessionWorkItems={sessionWorkItems}
-          copy={(() => { const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`; return user?.employeeType !== 'salaried' && ds >= today ? copies[ds] : null })()}
+          copy={(() => { const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`; return viewUser?.employeeType !== 'salaried' && ds >= today ? copies[ds] : null })()}
           onPlanSaved={items => {
             const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`
             setCopies(prev => {

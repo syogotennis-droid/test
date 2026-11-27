@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo } from 'react'
 import QRCode from 'qrcode'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
@@ -23,6 +23,7 @@ import {
   prepTimeRows, PREP_HOURS, planMinWageChange, withRateFrom, ratePeriods,
   getWorkItemDefs, activeWorkItemDefs, itemLabel, sortByItemOrder, isDeletedWorkItem, SYSTEM_ITEMS,
   saveWorkItemDefs, newWorkItemId,
+  isContractUser, isHourlyUser, employeeTypeFor, userAsOf, typeHistoryWith, getContractEnabled, EMPLOYEE_TYPE_LABELS,
 } from '../lib/db'
 import QRGeneratorScreen from './QRGeneratorScreen'
 import CopyFromDay from './CopyFromDay'
@@ -604,8 +605,9 @@ function CalendarTab({ users, today, isTablet }) {
               const workDoneSessionIds = entry?.workDoneSessionIds || new Set()
               const hasLegacyWork = entry?.hasLegacyWork || false
               const hasWorkConflict = entry?.hasWorkConflict || false
-              // Work status badge for non-salaried: check if all completed sessions have work reports
-              const isSalUser = selectedUser?.employeeType === 'salaried'
+              // Work status badge for part-timers: check if all completed sessions have work reports
+              // (社員 / 委託 enter no work)
+              const isSalUser = ['salaried', 'contract'].includes(employeeTypeFor(selectedUser, `${year}-${String(month + 1).padStart(2, '0')}`))
               let calWorkBadgeClass = null, calWorkBadgeText = null
               if (!isSalUser && worked) {
                 const sessionsWithIn = sessions.filter(s => s.in)
@@ -993,7 +995,9 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
   const dow = new Date(year, month, day).getDay()
   const dateLabel = `${year}年${month + 1}月${day}日（${DOW_LABELS[dow]}）`
-  const isSalaried = user?.employeeType === 'salaried'
+  // the type in that month: 委託 is edited like 社員 (punches only) and has no 有給 / 交通費 / 食費補助
+  const contract = employeeTypeFor(user, dateStr) === 'contract'
+  const isSalaried = contract || employeeTypeFor(user, dateStr) === 'salaried'
 
   function initHM(timeStr) {
     if (!timeStr) return { h: '', m: '' }
@@ -1094,7 +1098,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
   const initialWorkRowsSnapshot = useRef({})
   // the methods registered for that day (two or more → choose which ones were used)
   const dayCommute = commuteOn(user, dateStr)
-  const asksTransport = user?.employeeType !== 'salaried' && dayCommute.list.length > 0
+  const asksTransport = !isSalaried && dayCommute.list.length > 0
   const dayOptions = dayCommute.list.filter(m => m.key !== 'legacy').map(m => m.key)
   const [transportInit, setTransportInit] = useState(null) // null = loading / not applicable
   const [transportCur, setTransportCur] = useState(true)
@@ -1877,7 +1881,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 </div>
               )}
 
-              {leaveInit !== null && (
+              {leaveInit !== null && !contract && (
                 <div className={styles.dayEditTransport}>
                   <span className={styles.dayEditTransportLabel}>この日の有給</span>
                   <div className={styles.dayEditTransportBtns}>
@@ -1934,7 +1938,7 @@ function DayEditModal({ user, year, month, day, dayLogs, onClose, onSaved, isTab
                 </div>
               )}
 
-              {mealInit !== null && (
+              {mealInit !== null && !contract && (
                 <div className={styles.dayEditTransport}>
                   <span className={styles.dayEditTransportLabel}>この日の食費補助</span>
                   <div className={styles.dayEditTransportBtns}>
@@ -2234,7 +2238,8 @@ function KinmuboTab({ today }) {
         if (cancelled) return
         setSalariedDaysData(salDays)
         setSalariedDayEdits({})
-        setPreview(buildPreview(logs, users, minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves, transportCounts))
+        // each person as the type they had in this month (a later change to/from 委託 doesn't alter it)
+        setPreview(buildPreview(logs, users.map(u => userAsOf(u, selectedYM)), minWageHistory, salDays, workReports, sessionWorkBySession, transportFlags, carRates, transportMethods, mealDays, mealPrices, paidLeaves, transportCounts))
         setPreviewLoading(false)
       })
       .catch(() => { if (!cancelled) { setPreviewLoading(false); setLoadError('データを読み込めません。通信を確認し、再読み込みしてください') } })
@@ -2286,6 +2291,16 @@ function KinmuboTab({ today }) {
         return sid ? breakMinutes(pairBreaks(userLogs.filter(l => l.session_id === sid))) : 0
       }
       Object.values(byDate).forEach(entry => entry.sessions.forEach(se => { se.breakMins = breakMinsOf(se) }))
+
+      // ─── 委託: punches only (no pay, nothing added to 給与合計 / 業務別集計) ───
+      if (isContractUser(user)) {
+        const contractRows = []
+        Object.keys(byDate).sort().forEach(ds => byDate[ds].sessions.forEach(se => {
+          if (se.inLog || se.outLog) contractRows.push({ ds, inTime: (se.inLog?.time || '').substring(0, 5), outTime: (se.outLog?.time || '').substring(0, 5), completed: !!(se.inLog && se.outLog) })
+        }))
+        const incompleteDays = Object.values(byDate).filter(e => e.sessions.some(se => !se.inLog || !se.outLog)).length
+        return { user, workingDays: 0, attendanceDays: attendanceDates(byDate).length, transportDays: null, incompleteDays, totalWorkMins: 0, rows: [], totalPay: 0, byDate, isContractUser: true, contractRows, leave: null }
+      }
 
       // ─── Salaried employee handling ───
       if (user.employeeType === 'salaried') {
@@ -2496,7 +2511,12 @@ function KinmuboTab({ today }) {
     if (preview) {
       const incomplete = []
       const inconsistent = []
+      const incompleteContract = []
       for (const p of preview) {
+        if (p.isContractUser) {
+          p.contractRows.filter(r => !r.completed).forEach(r => { const [, mo, dd] = r.ds.split('-').map(Number); incompleteContract.push(`${p.user.name}（${mo}/${dd}）`) })
+          continue
+        }
         if (p.isSalariedUser && p.dailySalariedRows) {
           for (const row of p.dailySalariedRows) {
             if (!row.completed) {
@@ -2515,7 +2535,7 @@ function KinmuboTab({ today }) {
       // part-timers: a day with punches but no work entered is paid 0 yen (no 準備時間 / 交通費 either)
       const noWork = [], openHourly = []
       for (const p of preview) {
-        if (p.isSalariedUser) continue
+        if (p.isSalariedUser || p.isContractUser) continue
         Object.keys(p.byDate).sort().forEach(ds => {
           const e = p.byDate[ds], [, mo, dd] = ds.split('-').map(Number)
           if (e.sessions.some(x => x.inLog && x.outLog) && !Object.values(e.workReportItems || {}).some(m => m > 0)) noWork.push(`${p.user.name}（${mo}/${dd}）`)
@@ -2524,6 +2544,7 @@ function KinmuboTab({ today }) {
       }
       const warns = []
       if (incomplete.length > 0) warns.push(`打刻未完了（社員）：\n${incomplete.join('\n')}`)
+      if (incompleteContract.length > 0) warns.push(`打刻未完了（委託）：\n${incompleteContract.join('\n')}`)
       if (openHourly.length > 0) warns.push(`退勤の打刻がない日（アルバイト・パート）：\n${openHourly.join('\n')}`)
       if (noWork.length > 0) warns.push(`業務入力のない日（給与なし）：\n${noWork.join('\n')}`)
       if (inconsistent.length > 0) warns.push(`業務申告あり・打刻なし：\n${inconsistent.join('\n')}`)
@@ -2721,7 +2742,7 @@ function KinmuboTab({ today }) {
               <div className={styles.kinmuboEmpty}>該当なし</div>
             )}
 
-            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates, leave }) => {
+            {filteredPreview.map(({ user, workingDays, attendanceDays, transportDays, incompleteDays, noWorkSessions, totalWorkMins, rows, totalPay, byDate, isSalariedUser, dailySalariedRows, inconsistentDates, leave, isContractUser: contractUser, contractRows }) => {
               const isOpen = expandedIds.has(user.id)
               return (
                 <div key={user.id} className={[styles.kinmuboAccordion, isOpen ? styles.kinmuboAccordionOpen : ''].join(' ')}>
@@ -2730,7 +2751,12 @@ function KinmuboTab({ today }) {
                     onClick={() => toggleExpand(user.id)}
                     aria-expanded={isOpen}
                   >
-                    <span className={styles.kinmuboAccordionName}>{user.name}</span>
+                    <span className={styles.kinmuboAccordionName}>{user.name}{contractUser && <span className={styles.contractTag}>委託</span>}</span>
+                    {contractUser ? (
+                    <span className={styles.kinmuboAccordionMeta}>
+                      <span className={styles.kinmuboAccordionDays}>出勤日数：{attendanceDays}日</span>
+                    </span>
+                    ) : (
                     <span className={styles.kinmuboAccordionMeta}>
                       <span className={styles.kinmuboAccordionDays}>勤務申告：{workingDays}日</span>
                       <span className={styles.kinmuboAccordionSep}> ｜ </span>
@@ -2750,16 +2776,17 @@ function KinmuboTab({ today }) {
                       <span className={styles.kinmuboAccordionSep}> ｜ </span>
                       <span className={styles.kinmuboAccordionTime}>申告時間合計：{fmtMins(totalWorkMins) || "0分"}</span>
                     </span>
+                    )}
                     {inconsistentDates?.length > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>打刻要確認 {inconsistentDates.length}件</span>
                     )}
                     {incompleteDays > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>打刻未完了 {incompleteDays}日</span>
                     )}
-                    {!isSalariedUser && noWorkSessions > 0 && (
+                    {!isSalariedUser && !contractUser && noWorkSessions > 0 && (
                       <span className={styles.kinmuboAccordionWarn}>業務未入力 {noWorkSessions}回</span>
                     )}
-                    {!isSalariedUser && <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>}
+                    {!isSalariedUser && !contractUser && <span className={styles.kinmuboAccordionPay}>給与合計：{totalPay.toLocaleString()}円</span>}
                     <svg
                       className={[styles.kinmuboAccordionChevron, isOpen ? styles.kinmuboAccordionChevronOpen : ''].join(' ')}
                       width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -2770,6 +2797,40 @@ function KinmuboTab({ today }) {
 
                   {isOpen && (
                     <div className={styles.kinmuboAccordionBody}>
+                      {/* 委託: the punches (出勤・退勤) of each shift */}
+                      {contractUser && contractRows.length > 0 && (
+                        <div className={styles.kinmuboDailySection}>
+                          <div className={styles.kinmuboDailySectionTitle}>出退勤記録</div>
+                          <table className={styles.kinmuboDailyTable}>
+                            <thead>
+                              <tr>
+                                <th className={styles.kinmuboDailyTh}>日付</th>
+                                <th className={styles.kinmuboDailyTh}>出勤</th>
+                                <th className={styles.kinmuboDailyTh}>退勤</th>
+                                <th className={styles.kinmuboDailyTh}>状態</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {contractRows.map(({ ds, inTime, outTime, completed }, i) => {
+                                const [y, mo, d] = ds.split('-').map(Number)
+                                const dow = new Date(y, mo - 1, d).getDay()
+                                return (
+                                  <tr key={ds + i} className={[styles.kinmuboDailyRow, dow === 0 ? styles.kinmuboDailyRowSun : dow === 6 ? styles.kinmuboDailyRowSat : ''].filter(Boolean).join(' ')}>
+                                    <td className={[styles.kinmuboDailyTd, styles.kinmuboDailyDateTd].join(' ')}>{`${mo}/${d}（${'日月火水木金土'[dow]}）`}</td>
+                                    <td className={styles.kinmuboDailyTd} style={{ color: '#2e7d32', fontWeight: 600 }}>{inTime || '—'}</td>
+                                    <td className={styles.kinmuboDailyTd} style={{ color: '#c62828', fontWeight: 600 }}>{outTime || '—'}</td>
+                                    <td className={styles.kinmuboDailyTd}>
+                                      {completed
+                                        ? <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.8rem' }}>出勤確定</span>
+                                        : <span style={{ color: '#b45309', fontWeight: 700, fontSize: '0.8rem' }}>打刻未完了</span>}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                       {/* Salaried employee: per-day break/overtime inputs */}
                       {isSalariedUser && dailySalariedRows && dailySalariedRows.length > 0 && (
                         <div className={styles.kinmuboDailySection}>
@@ -2885,7 +2946,7 @@ function KinmuboTab({ today }) {
                         </div>
                       )}
                       {/* 打刻記録: show all dates with punch or work report data */}
-                      {!isSalariedUser && Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0 || Object.keys(byDate[ds].workReportItems || {}).length > 0) && (
+                      {!isSalariedUser && !contractUser && Object.keys(byDate).sort().some(ds => byDate[ds].sessions.length > 0 || Object.keys(byDate[ds].workReportItems || {}).length > 0) && (
                         <div className={styles.kinmuboDailySection}>
                           <div className={styles.kinmuboDailySectionTitle}>打刻記録</div>
                           <table className={styles.kinmuboDailyTable}>
@@ -2976,7 +3037,7 @@ function KinmuboTab({ today }) {
                           </table>
                         </div>
                       )}
-                      {isSalariedUser ? null : rows.length === 0 ? (
+                      {isSalariedUser || contractUser ? null : rows.length === 0 ? (
                         <div className={styles.kinmuboNoData}>業務時間の入力なし</div>
                       ) : (
                         <table className={styles.kinmuboDetailTable}>
@@ -3062,7 +3123,15 @@ function workFilterUnits(value) {
 
 function WorkFilter({ value, onChange }) {
   const [open, setOpen] = useState(false)
+  const [alignLeft, setAlignLeft] = useState(false) // opens to the right when there is no room on the left
   const boxRef = useRef(null)
+  const panelRef = useRef(null)
+  useLayoutEffect(() => {
+    if (!open || !boxRef.current || !panelRef.current) return
+    const area = boxRef.current.closest('[class*=usersPage]') || document.body
+    const box = boxRef.current.getBoundingClientRect(), w = panelRef.current.offsetWidth
+    setAlignLeft(box.right - w < area.getBoundingClientRect().left)
+  }, [open])
   useEffect(() => {
     if (!open) return
     const close = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
@@ -3094,7 +3163,7 @@ function WorkFilter({ value, onChange }) {
         aria-expanded={open}
       >業務：{label} ▾</button>
       {open && (
-        <div className={styles.workFilterPanel}>
+        <div ref={panelRef} className={styles.workFilterPanel} style={alignLeft ? { left: 0, right: 'auto' } : undefined}>
           <button type="button" className={styles.workFilterAll} disabled={value.length === 0} onClick={() => onChange([])}>全業務に戻す</button>
           {entries.map(e => e.ids ? (
             e.ids.length === 1 ? (
@@ -3144,6 +3213,10 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [workFilter, setWorkFilter] = useState([])   // item ids; [] = 全業務
+  // 委託 is offered only where the facility has it (config.contractEnabled)
+  const [contractOn, setContractOn] = useState(false)
+  useEffect(() => { getContractEnabled().then(setContractOn) }, [])
+  const showContract = contractOn || users.some(isContractUser)
 
   useEffect(() => { loadStatuses() }, [])
 
@@ -3175,11 +3248,12 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
     const isSal = u.employeeType === 'salaried'
     const matchType = typeFilter === 'all'
       || (typeFilter === 'salaried' && isSal)
-      || (typeFilter === 'hourly' && !isSal)
-    // 担当業務 (u.workItems) covering every chosen item / group. 社員 have no 業務 in
+      || (typeFilter === 'contract' && isContractUser(u))
+      || (typeFilter === 'hourly' && isHourlyUser(u))
+    // 担当業務 (u.workItems) covering every chosen item / group. 社員 / 委託 have no 業務 in
     // use (the items kept from their アルバイト days are not their current work).
     const matchWork = workUnits.length === 0
-      || (!isSal && workUnits.every(unit => unit.ids.some(id => (u.workItems || []).includes(id))))
+      || (isHourlyUser(u) && workUnits.every(unit => unit.ids.some(id => (u.workItems || []).includes(id))))
     return matchSearch && matchStatus && matchType && matchWork
   })
   const isFiltering = !!searchQuery || statusFilter !== 'all' || typeFilter !== 'all' || workFilter.length > 0
@@ -3224,7 +3298,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
             ))}
           </div>
           <div className={styles.usersStatusFilter}>
-            {[['all','全種別'],['hourly','アルバイト・パート'],['salaried','社員']].map(([v,l]) => (
+            {[['all','全種別'],['hourly','アルバイト・パート'],['salaried','社員'], ...(showContract ? [['contract','委託']] : [])].map(([v,l]) => (
               <button
                 key={v}
                 className={[styles.usersFilterBtn, typeFilter === v ? styles.usersFilterBtnActive : ''].join(' ')}
@@ -3267,6 +3341,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
                         <div className={styles.usersNameCell}>
                           <div className={styles.usersAvatar}>{user.name.charAt(0)}</div>
                           <span className={styles.usersName}>{user.name}</span>
+                          {isContractUser(user) && <span className={styles.contractTag}>委託</span>}
                         </div>
                       </td>
                       <td className={styles.usersTd}>
@@ -3296,6 +3371,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
       {adding && (
         <AddUserModal
           users={users}
+          contractOn={contractOn}
           onClose={() => setAdding(false)}
           onAdded={newUser => { setAdding(false); onRefresh(); setQrUser(newUser) }}
         />
@@ -3324,6 +3400,7 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
       {editingUser && (
         <UserEditModal
           user={editingUser}
+          contractOn={contractOn}
           isIn={statuses[editingUser.id] === true}
           onClose={() => setEditingUser(null)}
           onSaved={handleModalSaved}
@@ -3337,10 +3414,10 @@ function UsersTab({ users, today, onRefresh, isTablet }) {
 
 // ─── AddUserModal ─────────────────────────────────────────────────────────────
 
-// Next free employee ID: part-timers USER001…USER099, salaried staff USER101…
+// Next free employee ID: part-timers USER001…USER099, salaried staff and 委託 USER101…
 // (the number after the highest one in use, so a retired person's old QR card never matches a new person)
 export function nextUserId(users, employeeType) {
-  const salaried = employeeType === 'salaried'
+  const salaried = employeeType === 'salaried' || employeeType === 'contract'
   const ids = (users || []).flatMap(u => [u.id, ...(u.formerIds || [])])
   const nums = ids.map(id => /^USER(\d+)$/i.exec(id || '')).filter(Boolean).map(m => Number(m[1]))
     .filter(n => (salaried ? n >= 101 : n >= 1 && n <= 99))
@@ -3352,7 +3429,7 @@ export function nextUserId(users, employeeType) {
   return `USER${String(n).padStart(3, '0')}`
 }
 
-function AddUserModal({ users, onClose, onAdded }) {
+function AddUserModal({ users, contractOn, onClose, onAdded }) {
   const [addId, setAddId] = useState(() => nextUserId(users, 'hourly'))
   const [commuteTried, setCommuteTried] = useState(false)
   const [idEdited, setIdEdited] = useState(false)
@@ -3430,13 +3507,14 @@ function AddUserModal({ users, onClose, onAdded }) {
     if (!addId.trim() || !addName.trim() || saving) return
     if (/[\/?#%\s]/.test(addId.trim())) { alert('従業員IDに、空白と / ? # % は使えません'); return }
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
-    if (employeeType !== 'salaried' && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
-    if (employeeType !== 'salaried') {
+    const hourly = employeeType === 'hourly'
+    if (hourly && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
+    if (hourly) {
       const mw = minWageForDate(await getMinWageHistory().catch(() => []), getTodayJst())
       const low = workItems.filter(t => Number(itemRates[t]?.normal) > 0 && Number(itemRates[t].normal) < mw)
       if (mw > 0 && low.length && !window.confirm(`次の業務の時給が、最低賃金（${mw.toLocaleString()}円）より低くなっています。\n${low.map(t => `・${itemLabel(t)} ${Number(itemRates[t].normal).toLocaleString()}円`).join('\n')}\nこのまま追加しますか？`)) return
     }
-    if (employeeType !== 'salaried' && workItems.length === 0 &&
+    if (hourly && workItems.length === 0 &&
       !window.confirm('担当業務が未選択です（退勤画面に業務が出ません）。\nこのまま追加しますか？')) return
     setSaving(true)
     try {
@@ -3450,9 +3528,10 @@ function AddUserModal({ users, onClose, onAdded }) {
       }
       const newUser = {
         id: addId.trim(), name: addName.trim(), pin, employeeType,
-        workItems: employeeType === 'salaried' ? [] : workItems,
-        itemRates: employeeType === 'salaried' ? {} : buildItemRates(),
-        ...(employeeType !== 'salaried' ? { commuteMethods: commuteMethodsFromForm(commuteForm) } : {}),
+        // 社員 / 委託: no work items, rates or commute
+        workItems: hourly ? workItems : [],
+        itemRates: hourly ? buildItemRates() : {},
+        ...(hourly ? { commuteMethods: commuteMethodsFromForm(commuteForm) } : {}),
         ...(employeeType === 'salaried' ? {
           fixedStartTime, fixedEndTime,
           monthlySalary: Number(monthlySalary) || 0,
@@ -3505,6 +3584,13 @@ function AddUserModal({ users, onClose, onAdded }) {
                     className={[styles.empTypeBtn, employeeType === 'salaried' ? styles.empTypeBtnActive : ''].join(' ')}
                     onClick={() => { setEmployeeType('salaried'); if (!idEdited) setAddId(nextUserId(users, 'salaried')) }}
                   >社員</button>
+                  {contractOn && (
+                    <button
+                      type="button"
+                      className={[styles.empTypeBtn, employeeType === 'contract' ? styles.empTypeBtnActive : ''].join(' ')}
+                      onClick={() => { setEmployeeType('contract'); if (!idEdited) setAddId(nextUserId(users, 'contract')) }}
+                    >委託</button>
+                  )}
                 </div>
               </div>
               <div />
@@ -3518,7 +3604,7 @@ function AddUserModal({ users, onClose, onAdded }) {
                   autoFocus
                 />
                 {!idEdited && (addId
-                  ? <div className={styles.userEditHintText}>次の番号を自動で入れています（アルバイト・パート 001〜099、社員 101〜。変更もできます）</div>
+                  ? <div className={styles.userEditHintText}>次の番号を自動で入れています（アルバイト・パート 001〜099、社員{contractOn ? '・委託' : ''} 101〜。変更もできます）</div>
                   : <div className={styles.userEditHintText}>アルバイト・パートの番号（001〜099）が埋まっています。IDを入力してください</div>)}
               </div>
               <div>
@@ -3551,7 +3637,7 @@ function AddUserModal({ users, onClose, onAdded }) {
           </div>
 
           {/* 作業項目・時給 */}
-          {employeeType !== 'salaried' && (
+          {employeeType === 'hourly' && (
             <div className={styles.userEditSection}>
               <div className={styles.userEditSectionTitle}>業務・時給</div>
               {workItems.filter(i => i !== '交通費').length === 0 && (
@@ -3662,7 +3748,7 @@ function AddUserModal({ users, onClose, onAdded }) {
               )}
             </div>
           )}
-          {employeeType !== 'salaried' && (
+          {employeeType === 'hourly' && (
             <CommuteSection form={commuteForm} onChange={setCommuteForm} carRates={carRates} isTablet={false} onNumpad={() => {}} showErrors={commuteTried} />
           )}
         </div>
@@ -3737,7 +3823,7 @@ function MinWageSettings({ onUsersChanged }) {
     const users = await getUsers()
     const linked = items.filter(i => !isDeletedWorkItem(i)) // deleted items are not raised
     const rows = planMinWageChange(users, linked, wage, from)
-    const higher = users.filter(u => u.employeeType !== 'salaried')
+    const higher = users.filter(isHourlyUser)
       .reduce((n, u) => n + linked.filter(i => (u.workItems || []).includes(i) && getRatesForDate(u.itemRates?.[i], from).normal >= wage).length, 0)
     setPlan({ wage, from, rows, keep: new Set(rows.map((_, k) => k)), higher, users })
   }
@@ -4094,7 +4180,7 @@ function CommuteListSettings({ users, onUsersChanged }) {
   const [carRates, setCarRates] = useState([])
   useEffect(() => { getCarRates().then(setCarRates).catch(() => {}) }, [])
   const today = getTodayJst()
-  const list = (users || []).filter(u => u.employeeType !== 'salaried')
+  const list = (users || []).filter(isHourlyUser)
     .sort((a, b) => String(a.id).localeCompare(String(b.id), 'ja', { numeric: true }))
   const formOf = u => {
     const f = commuteFormFromUser(u)
@@ -4982,7 +5068,7 @@ function rateItems(user) {
   ])]
 }
 
-function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
+function UserEditModal({ user, contractOn, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [step, setStep] = useState('main')
   const [foldBasic, toggleBasic] = useFold('userEdit.basic')
   const [foldItems, toggleItems] = useFold('userEdit.items')
@@ -5022,6 +5108,11 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [historyModalItem, setHistoryModalItem] = useState(null)
   const [addRateForm, setAddRateForm] = useState(null) // { item, date, normalStr, multiplierStr, sundayStr }
   const [employeeType, setEmployeeType] = useState(user.employeeType || 'hourly')
+  // a change to / from 委託 starts in a month (earlier months keep the type they had)
+  const thisMonth = getTodayJst().slice(0, 7)
+  const [typeFrom, setTypeFrom] = useState(thisMonth)
+  const typeHistory = typeHistoryWith(user, employeeType, typeFrom)
+  const asksTypeFrom = employeeType !== (user.employeeType || 'hourly') && !!typeHistory
   const [fixedStartTime, setFixedStartTime] = useState(user.fixedStartTime || '09:00')
   const [fixedEndTime, setFixedEndTime] = useState(user.fixedEndTime || '18:00')
   const [monthlySalary, setMonthlySalary] = useState(user.monthlySalary != null ? String(user.monthlySalary) : '')
@@ -5037,7 +5128,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   const [minWages, setMinWages] = useState([])
   useEffect(() => { getMinWageHistory().then(setMinWages).catch(() => {}) }, [])
   // unsaved changes = the form differs from how it was opened (or last saved)
-  const formSnap = JSON.stringify([name, pin, newUserId, workItems, transportAmount, commuteForm, rateHistory, employeeType, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
+  const formSnap = JSON.stringify([name, pin, newUserId, workItems, transportAmount, commuteForm, rateHistory, employeeType, asksTypeFrom && typeFrom, fixedStartTime, fixedEndTime, monthlySalary, overtimeRateSal, regularHoursH, regularHoursM, standardBreakMins])
   const savedSnap = useRef(formSnap)
   const isDirty = formSnap !== savedSnap.current
   const setIsDirty = dirty => { if (!dirty) savedSnap.current = formSnap }
@@ -5141,7 +5232,8 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
   async function handleSaveAll() {
     if (!name.trim()) return
     if (pin && !/^\d{4}$/.test(pin)) { setPinError('PINは4桁の数字'); return }
-    if (employeeType !== 'salaried' && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
+    if (employeeType === 'hourly' && Object.keys(commuteFormErrors(commuteForm)).length > 0) { setCommuteTried(true); return }
+    if (asksTypeFrom && !(/^\d{4}-\d{2}$/.test(typeFrom) && typeFrom <= thisMonth)) { alert('適用開始月は今月以前の月を選んでください'); return }
     setSaving(true)
     setPinError('')
     setUserIdError('')
@@ -5156,9 +5248,10 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
       }
       await upsertUser({
         id: user.id, name: name.trim(), pin, employeeType,
-        // switching to 社員 keeps the hourly items and rates, so switching back loses nothing
-        ...(employeeType === 'salaried' ? {} : { workItems, itemRates: buildItemRates() }),
-        ...(employeeType !== 'salaried' && commuteChanged ? {
+        ...(typeHistory ? { typeHistory } : {}),
+        // switching to 社員 / 委託 keeps the hourly items and rates, so switching back loses nothing
+        ...(employeeType === 'hourly' ? { workItems, itemRates: buildItemRates() } : {}),
+        ...(employeeType === 'hourly' && commuteChanged ? {
           commuteMethods: commuteMethodsFromForm(commuteForm),
           commuteHistory: commuteHistoryWith(user, { from: commuteFrom, methods: commuteMethodsFromForm(commuteForm) }),
         } : {}),
@@ -5291,7 +5384,20 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
                     className={[styles.empTypeBtn, employeeType === 'salaried' ? styles.empTypeBtnActive : ''].join(' ')}
                     onClick={() => setEmployeeType('salaried')}
                   >社員</button>
+                  {(contractOn || user.employeeType === 'contract') && (
+                    <button
+                      type="button"
+                      className={[styles.empTypeBtn, employeeType === 'contract' ? styles.empTypeBtnActive : ''].join(' ')}
+                      onClick={() => setEmployeeType('contract')}
+                    >委託</button>
+                  )}
                 </div>
+                {asksTypeFrom && (
+                  <div style={{ marginTop: 8 }}>
+                    <label className={styles.userEditLabel}>適用開始月</label>
+                    <input type="month" className={styles.userEditInput} value={typeFrom} max={thisMonth} onChange={e => setTypeFrom(e.target.value)} />
+                  </div>
+                )}
               </div>
               <div>
                 <label className={styles.userEditLabel}>氏名 <span className={styles.userEditRequired}>必須</span></label>
@@ -5344,7 +5450,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
           </div>
 
           {/* 作業項目・時給 */}
-          {employeeType !== 'salaried' && (
+          {employeeType === 'hourly' && (
             <div className={styles.userEditSection}>
               <FoldTitle open={foldItems} onToggle={toggleItems} className={styles.userEditSectionTitle}>業務・時給</FoldTitle>
               {foldItems && (
@@ -5457,7 +5563,7 @@ function UserEditModal({ user, isIn, onClose, onSaved, onDeleted, isTablet }) {
             </div>
           )}
 
-          {employeeType !== 'salaried' && (
+          {employeeType === 'hourly' && (
             <CommuteSection
               form={commuteForm} onChange={setCommuteForm} foldable showErrors={commuteTried}
               carRates={carRates} isTablet={isTablet}
